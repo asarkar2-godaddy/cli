@@ -287,7 +287,7 @@ function applyGlobalOptions(
 ): void {
 	const options = extractCommandOptions(rootCommand, parsedRootValue);
 
-	if (options.debug === true) {
+	if (options.debug === true || options.verbose === true) {
 		setDebugMode(true);
 	}
 
@@ -332,12 +332,15 @@ export function createCliProgram(): Command {
 			"-e, --env <environment>",
 			"Set the target environment for commands (ote, prod)",
 		)
+		.option(
+			"-v, --verbose",
+			"Enable verbose output for HTTP requests and responses",
+		)
 		.option("--debug", "Enable debug logging for HTTP requests and responses")
 		.action(async () => {
 			const envResult = await envGet();
 			const commandTree = getRootCommandTree();
 			let authSnapshot: { error: string } | Record<string, unknown> | undefined;
-
 			try {
 				const authModule = await import("./core/auth");
 				const authResult = await authModule.authStatus();
