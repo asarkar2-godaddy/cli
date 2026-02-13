@@ -86,6 +86,8 @@ esbuild
 			"keytar",
 			// TypeScript is a peer dependency and should not be bundled
 			"typescript",
+			// pino-pretty uses worker threads and must be external
+			"pino-pretty",
 		],
 	})
 	.catch((e) => {

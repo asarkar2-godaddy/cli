@@ -14,6 +14,7 @@ import {
 	getApiUrl,
 	getClientId,
 } from "./environment";
+import { loggedFetch } from "../services/logger";
 
 const KEYCHAIN_SERVICE = "godaddy-cli";
 const PORT = 7443;
@@ -97,7 +98,7 @@ export async function authLogin(): Promise<CmdResult<AuthResult>> {
 							);
 						}
 
-						const tokenResponse = await fetch(oauthTokenUrl, {
+						const tokenResponse = await loggedFetch(oauthTokenUrl, {
 							method: "POST",
 							headers: {
 								"Content-Type": "application/x-www-form-urlencoded",

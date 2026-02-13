@@ -1,11 +1,13 @@
 import pino from "pino";
+import pinoPretty from "pino-pretty";
 
-// Global debug state
-let isDebugEnabled = false;
+// Global verbosity level: 0 = none, 1 = basic, 2 = full
+let verbosityLevel = 0;
 
-// Configure logger based on environment and debug flag
+// Configure logger based on environment and verbosity level
 const createLogger = () => {
-	const level = isDebugEnabled ? "debug" : "info";
+	const isDev = process.env.NODE_ENV === "development";
+	const level = verbosityLevel > 0 ? "debug" : "info";
 
 	const redact = {
 		paths: [
@@ -16,6 +18,22 @@ const createLogger = () => {
 		],
 		censor: "[REDACTED]",
 	};
+
+	if (isDev || verbosityLevel > 0) {
+		const prettyStream = pinoPretty({
+			colorize: true,
+			translateTime: "HH:MM:ss",
+			ignore: "pid,hostname",
+			destination: 2,
+		});
+		return pino(
+			{
+				level,
+				redact,
+			},
+			prettyStream,
+		);
+	}
 
 	// Always log to stderr to keep stdout reserved for JSON command envelopes.
 	return pino(
@@ -29,8 +47,8 @@ const createLogger = () => {
 
 let logger = createLogger();
 
-export const setDebugMode = (enabled: boolean) => {
-	isDebugEnabled = enabled;
+export const setVerbosityLevel = (level: number) => {
+	verbosityLevel = level;
 	logger = createLogger();
 };
 
@@ -43,7 +61,7 @@ export const logHttpRequest = (options: {
 	headers?: Record<string, string>;
 	body?: unknown;
 }) => {
-	if (isDebugEnabled) {
+	if (verbosityLevel >= 2) {
 		logger.debug(
 			{
 				type: "http_request",
@@ -54,6 +72,8 @@ export const logHttpRequest = (options: {
 			},
 			`→ ${options.method} ${options.url}`,
 		);
+	} else if (verbosityLevel === 1) {
+		logger.debug(`→ ${options.method} ${options.url}`);
 	}
 };
 
@@ -66,7 +86,7 @@ export const logHttpResponse = (options: {
 	body?: unknown;
 	duration?: number;
 }) => {
-	if (isDebugEnabled) {
+	if (verbosityLevel >= 2) {
 		logger.debug(
 			{
 				type: "http_response",
@@ -82,5 +102,81 @@ export const logHttpResponse = (options: {
 				options.duration ? `(${options.duration}ms)` : ""
 			}`,
 		);
+	} else if (verbosityLevel === 1) {
+		logger.debug(
+			`← ${options.status} ${options.method} ${options.url} ${
+				options.duration ? `(${options.duration}ms)` : ""
+			}`,
+		);
 	}
+};
+
+const redactSensitiveFields = (obj: unknown): unknown => {
+	if (typeof obj !== "object" || obj === null) {
+		return obj;
+	}
+
+	if (Array.isArray(obj)) {
+		return obj.map(redactSensitiveFields);
+	}
+
+	const result: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(obj)) {
+		if (key === "access_token" || key === "accessToken") {
+			result[key] = "[REDACTED]";
+		} else if (typeof value === "object" && value !== null) {
+			result[key] = redactSensitiveFields(value);
+		} else {
+			result[key] = value;
+		}
+	}
+	return result;
+};
+
+export const loggedFetch = async (
+	url: string,
+	init?: RequestInit,
+): Promise<Response> => {
+	const method = init?.method ?? "(unknown)";
+	const headers = init?.headers;
+	const body = init?.body;
+
+	logHttpRequest({
+		method,
+		url,
+		headers: headers as Record<string, string>,
+		body:
+			body instanceof URLSearchParams
+				? Object.fromEntries(body.entries())
+				: body,
+	});
+
+	const startTime = Date.now();
+	const response = await fetch(url, init);
+	const duration = Date.now() - startTime;
+
+	let responseBody: unknown;
+	if (verbosityLevel >= 2 && response.ok) {
+		const contentType = response.headers.get("content-type");
+		if (contentType?.includes("application/json")) {
+			const clonedResponse = response.clone();
+			try {
+				const jsonBody = await clonedResponse.json();
+				responseBody = redactSensitiveFields(jsonBody);
+			} catch {
+				responseBody = undefined;
+			}
+		}
+	}
+
+	logHttpResponse({
+		method,
+		url,
+		status: response.status,
+		statusText: response.statusText,
+		body: responseBody,
+		duration,
+	});
+
+	return response;
 };

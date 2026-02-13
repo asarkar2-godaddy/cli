@@ -29,7 +29,7 @@ import { createActionsCommand } from "./cli/commands/actions";
 import { createApplicationCommand } from "./cli/commands/application";
 import { createWebhookCommand } from "./cli/commands/webhook";
 import { envGet, validateEnvironment } from "./core/environment";
-import { setDebugMode } from "./services/logger";
+import { setVerbosityLevel } from "./services/logger";
 
 type Descriptor = CommandDescriptor.Command<unknown>;
 
@@ -287,8 +287,21 @@ function applyGlobalOptions(
 ): void {
 	const options = extractCommandOptions(rootCommand, parsedRootValue);
 
-	if (options.debug === true || options.verbose === true) {
-		setDebugMode(true);
+	let verbosity = 0;
+	if (options.verbose === true || options.info === true) {
+		verbosity = 1;
+	}
+	if (options.debug === true) {
+		verbosity = 2;
+	}
+
+	if (verbosity > 0) {
+		setVerbosityLevel(verbosity);
+		if (verbosity === 1) {
+			process.stderr.write("(verbose output enabled)\n");
+		} else {
+			process.stderr.write("(verbose output enabled: full details)\n");
+		}
 	}
 
 	const environment = typeof options.env === "string" ? options.env : undefined;
@@ -334,9 +347,10 @@ export function createCliProgram(): Command {
 		)
 		.option(
 			"-v, --verbose",
-			"Enable verbose output for HTTP requests and responses",
+			"Enable basic verbose output for HTTP requests and responses",
 		)
-		.option("--debug", "Enable debug logging for HTTP requests and responses")
+		.option("--info", "Enable basic verbose output (same as -v)")
+		.option("--debug", "Enable full verbose output (same as -vv)")
 		.action(async () => {
 			const envResult = await envGet();
 			const commandTree = getRootCommandTree();
