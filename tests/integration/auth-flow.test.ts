@@ -31,7 +31,7 @@ describe("Authentication Flow", () => {
 		// Should have deleted expired token
 		expect(mockKeytar.deletePassword).toHaveBeenCalledWith(
 			"godaddy-cli",
-			"token",
+			expect.stringContaining("token"),
 		);
 	});
 

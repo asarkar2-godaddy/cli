@@ -13,7 +13,7 @@ const VALID_METHODS: HttpMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
  * Extract a value from an object using a simple JSON path
  * Supports: .key, .key.nested, .key[0], .key[0].nested
  */
-function extractPath(obj: unknown, path: string): unknown {
+export function extractPath(obj: unknown, path: string): unknown {
 	if (!path || path === ".") {
 		return obj;
 	}
@@ -27,13 +27,13 @@ function extractPath(obj: unknown, path: string): unknown {
 	// Parse path into segments
 	const segments: (string | number)[] = [];
 	const regex = /([\w-]+)|\[(\d+)\]/g;
-	let match: RegExpExecArray | null;
-
-	while ((match = regex.exec(normalizedPath)) !== null) {
-		if (match[1] !== undefined) {
-			segments.push(match[1]);
-		} else if (match[2] !== undefined) {
-			segments.push(Number.parseInt(match[2], 10));
+	for (const match of normalizedPath.matchAll(regex)) {
+		const key = match[1];
+		const index = match[2];
+		if (key !== undefined) {
+			segments.push(key);
+		} else if (index !== undefined) {
+			segments.push(Number.parseInt(index, 10));
 		}
 	}
 
@@ -69,11 +69,11 @@ export function createApiCommand(): Command {
 			"GET",
 		)
 		.option(
-			"-f, --field <key=value...>",
+			"-f, --field <key=value>",
 			"Add field to request body (can be repeated)",
 		)
 		.option("-F, --file <path>", "Read request body from JSON file")
-		.option("-H, --header <header...>", "Add custom header (can be repeated)")
+		.option("-H, --header <header>", "Add custom header (can be repeated)")
 		.option(
 			"-q, --query <path>",
 			"Extract value at JSON path (e.g., .status, .data[0].name)",

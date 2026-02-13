@@ -46,7 +46,21 @@ export async function apiRequest(
 	} = options;
 
 	// Get access token with expiry info
-	const tokenInfo = await getTokenInfo();
+	let tokenInfo: Awaited<ReturnType<typeof getTokenInfo>>;
+	try {
+		tokenInfo = await getTokenInfo();
+	} catch (err) {
+		const error = new AuthenticationError(
+			`Failed to access token from keychain: ${err}`,
+		);
+		error.userMessage =
+			"Unable to access secure credentials. Unlock your keychain and try again.";
+		return {
+			success: false,
+			error,
+		};
+	}
+
 	if (!tokenInfo) {
 		const error = new AuthenticationError("No valid access token found");
 		error.userMessage = "Not authenticated. Run 'godaddy auth login' first.";
