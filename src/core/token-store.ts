@@ -9,7 +9,9 @@ import {
 
 const KEYCHAIN_SERVICE = "godaddy-cli";
 const LEGACY_TOKEN_KEY = "token";
-const TOKEN_KEY_VERSION = "v2";
+const TOKEN_KEY_VERSION = "v3";
+const LEGACY_SCOPED_TOKEN_KEY_VERSION = "v2";
+const SCOPED_TOKEN_KEY_BYTES = 16;
 
 interface StoredTokenPayload {
 	accessToken: string;
@@ -30,13 +32,15 @@ function getScopedTokenKey(
 	tokenEndpoint: string,
 	clientId: string,
 ): string {
-	const scopeMaterial = `${environment}|${tokenEndpoint}|${clientId}`;
+	const scopeMaterial = `${environment}|${tokenEndpoint}`;
 	const scopeHash = crypto
-		.createHash("sha256")
-		.update(scopeMaterial)
-		.digest("hex")
-		.slice(0, 16);
+		.scryptSync(clientId, scopeMaterial, SCOPED_TOKEN_KEY_BYTES)
+		.toString("hex");
 	return `token:${TOKEN_KEY_VERSION}:${environment}:${scopeHash}`;
+}
+
+function getLegacyScopedTokenKeyPrefix(environment: Environment): string {
+	return `token:${LEGACY_SCOPED_TOKEN_KEY_VERSION}:${environment}:`;
 }
 
 async function getCurrentEnvironment(): Promise<Environment> {
@@ -69,6 +73,49 @@ function getKeyContext(environment: Environment): {
 		scopedTokenKey: getScopedTokenKey(environment, tokenEndpoint, clientId),
 		legacyEnvironmentTokenKey: getEnvironmentTokenKey(environment),
 	};
+}
+
+async function findLegacyScopedToken(
+	environment: Environment,
+): Promise<{ tokenKey: string; token: StoredToken } | null> {
+	try {
+		const legacyPrefix = getLegacyScopedTokenKeyPrefix(environment);
+		const credentials = await keytar.findCredentials(KEYCHAIN_SERVICE);
+
+		for (const credential of credentials) {
+			if (!credential.account.startsWith(legacyPrefix)) {
+				continue;
+			}
+
+			const token = await parseTokenValue(credential.password, credential.account);
+			if (token) {
+				return {
+					tokenKey: credential.account,
+					token,
+				};
+			}
+		}
+	} catch {
+		// Ignore lookup failures and continue with other fallback keys.
+	}
+
+	return null;
+}
+
+async function deleteLegacyScopedTokens(environment: Environment): Promise<void> {
+	try {
+		const legacyPrefix = getLegacyScopedTokenKeyPrefix(environment);
+		const credentials = await keytar.findCredentials(KEYCHAIN_SERVICE);
+		const deletions = credentials
+			.filter((credential) => credential.account.startsWith(legacyPrefix))
+			.map((credential) =>
+				keytar.deletePassword(KEYCHAIN_SERVICE, credential.account),
+			);
+
+		await Promise.all(deletions);
+	} catch {
+		// Ignore cleanup failures.
+	}
 }
 
 function serializeToken(token: StoredToken): string {
@@ -157,6 +204,23 @@ export async function getStoredToken(
 		}
 	}
 
+	// Backward compatibility: migrate from previous v2 scoped token key.
+	const legacyScopedToken = await findLegacyScopedToken(env);
+	if (legacyScopedToken) {
+		try {
+			await keytar.setPassword(
+				KEYCHAIN_SERVICE,
+				scopedTokenKey,
+				serializeToken(legacyScopedToken.token),
+			);
+			await keytar.deletePassword(KEYCHAIN_SERVICE, legacyScopedToken.tokenKey);
+		} catch {
+			// Non-fatal: return token even if migration write fails.
+		}
+
+		return legacyScopedToken.token;
+	}
+
 	// Backward compatibility: migrate from legacy token key if present.
 	const legacyValue = await keytar.getPassword(
 		KEYCHAIN_SERVICE,
@@ -192,6 +256,7 @@ export async function deleteStoredToken(
 	const env = environment ?? (await getCurrentEnvironment());
 	const { scopedTokenKey, legacyEnvironmentTokenKey } = getKeyContext(env);
 	await keytar.deletePassword(KEYCHAIN_SERVICE, scopedTokenKey);
+	await deleteLegacyScopedTokens(env);
 	await keytar.deletePassword(KEYCHAIN_SERVICE, legacyEnvironmentTokenKey);
 	await keytar.deletePassword(KEYCHAIN_SERVICE, LEGACY_TOKEN_KEY);
 }

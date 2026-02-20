@@ -20,7 +20,7 @@ describe("Token Store", () => {
 
 		expect(mockKeytar.setPassword).toHaveBeenCalledWith(
 			"godaddy-cli",
-			expect.stringMatching(/^token:v2:prod:/),
+			expect.stringMatching(/^token:v3:prod:/),
 			expect.stringContaining('"accessToken":"test-token"'),
 		);
 	});
@@ -38,7 +38,7 @@ describe("Token Store", () => {
 		expect(result?.accessToken).toBe("env-token");
 		expect(mockKeytar.getPassword).toHaveBeenCalledWith(
 			"godaddy-cli",
-			expect.stringMatching(/^token:v2:ote:/),
+			expect.stringMatching(/^token:v3:ote:/),
 		);
 	});
 
@@ -55,12 +55,38 @@ describe("Token Store", () => {
 		expect(result?.accessToken).toBe("old-env-token");
 		expect(mockKeytar.setPassword).toHaveBeenCalledWith(
 			"godaddy-cli",
-			expect.stringMatching(/^token:v2:prod:/),
+			expect.stringMatching(/^token:v3:prod:/),
 			expect.stringContaining('"accessToken":"old-env-token"'),
 		);
 		expect(mockKeytar.deletePassword).toHaveBeenCalledWith(
 			"godaddy-cli",
 			"token:prod",
+		);
+	});
+
+	test("migrates previous v2 scoped key to active scoped key", async () => {
+		mockKeytar.getPassword.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+		mockKeytar.findCredentials.mockResolvedValueOnce([
+			{
+				account: "token:v2:prod:legacy-scope",
+				password: JSON.stringify({
+					accessToken: "legacy-scoped-token",
+					expiresAt: new Date(Date.now() + 60_000).toISOString(),
+				}),
+			},
+		]);
+
+		const result = await getStoredToken("prod");
+
+		expect(result?.accessToken).toBe("legacy-scoped-token");
+		expect(mockKeytar.setPassword).toHaveBeenCalledWith(
+			"godaddy-cli",
+			expect.stringMatching(/^token:v3:prod:/),
+			expect.stringContaining('"accessToken":"legacy-scoped-token"'),
+		);
+		expect(mockKeytar.deletePassword).toHaveBeenCalledWith(
+			"godaddy-cli",
+			"token:v2:prod:legacy-scope",
 		);
 	});
 
@@ -80,7 +106,7 @@ describe("Token Store", () => {
 		expect(result?.accessToken).toBe("legacy-token");
 		expect(mockKeytar.setPassword).toHaveBeenCalledWith(
 			"godaddy-cli",
-			expect.stringMatching(/^token:v2:prod:/),
+			expect.stringMatching(/^token:v3:prod:/),
 			expect.stringContaining('"accessToken":"legacy-token"'),
 		);
 		expect(mockKeytar.deletePassword).toHaveBeenCalledWith(
@@ -90,11 +116,22 @@ describe("Token Store", () => {
 	});
 
 	test("deletes environment and legacy token keys during logout", async () => {
+		mockKeytar.findCredentials.mockResolvedValueOnce([
+			{
+				account: "token:v2:prod:legacy-scope",
+				password: "ignored",
+			},
+		]);
+
 		await deleteStoredToken("prod");
 
 		expect(mockKeytar.deletePassword).toHaveBeenCalledWith(
 			"godaddy-cli",
-			expect.stringMatching(/^token:v2:prod:/),
+			expect.stringMatching(/^token:v3:prod:/),
+		);
+		expect(mockKeytar.deletePassword).toHaveBeenCalledWith(
+			"godaddy-cli",
+			"token:v2:prod:legacy-scope",
 		);
 		expect(mockKeytar.deletePassword).toHaveBeenCalledWith(
 			"godaddy-cli",

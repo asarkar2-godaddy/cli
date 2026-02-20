@@ -5,6 +5,7 @@ export const mockKeytar = {
 	setPassword: vi.fn().mockResolvedValue(undefined),
 	getPassword: vi.fn().mockResolvedValue(null),
 	deletePassword: vi.fn().mockResolvedValue(true),
+	findCredentials: vi.fn().mockResolvedValue([]),
 };
 
 // Mock open for browser launching
