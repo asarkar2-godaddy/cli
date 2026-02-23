@@ -1,27 +1,15 @@
 import { Command } from "commander";
-import {
-	type Application,
-	type ApplicationInfo,
-	type CreateApplicationInput,
-	type CreateReleaseInput,
-	type CreatedApplicationInfo,
-	type DeployResult,
-	type ExtensionSecurityReport,
-	type ReleaseInfo,
-	type ValidationResult,
-	applicationArchive,
-	applicationDeploy,
-	applicationDisable,
-	applicationEnable,
-	applicationInfo,
-	applicationInit,
-	applicationList,
-	applicationRelease,
-	applicationUpdate,
-	applicationValidate,
+import { join, resolve } from "node:path";
+import type {
+	Application,
+	ApplicationInfo,
+	CreateApplicationInput,
+	DeployResult,
+	ReleaseInfo,
+	ValidationResult,
 } from "../../core/applications";
 import { type Environment, envGet } from "../../core/environment";
-import type { Finding } from "../../core/security/types";
+import { ValidationError } from "../../shared/types";
 import {
 	type ActionConfig,
 	type BlocksExtensionConfig,
@@ -32,15 +20,120 @@ import {
 	addExtensionToConfig,
 	addSubscriptionToConfig,
 	getConfigFile,
+	getConfigFilePath,
 } from "../../services/config";
-import { getExtensions } from "../../services/extension/workspace";
+import { mapRuntimeError } from "../agent/errors";
+import {
+	commandIds,
+	findRegistryNodeById,
+	registryNodeToResult,
+} from "../agent/registry";
+import { nextActionsFor } from "../agent/next-actions";
+import {
+	currentCommandString,
+	emitError,
+	emitSuccess,
+	unwrapResult,
+} from "../agent/respond";
+import { protectPayload, truncateList } from "../agent/truncation";
 
-async function getEnvironment(): Promise<Environment> {
-	const result = await envGet();
-	if (!result.success || !result.data) {
-		throw result.error ?? new Error("Failed to get environment");
+interface AddBaseOptions {
+	config?: string;
+	environment?: string;
+}
+
+interface AddActionOptions extends AddBaseOptions {
+	name: string;
+	url: string;
+}
+
+interface AddSubscriptionOptions extends AddBaseOptions {
+	name: string;
+	events: string;
+	url: string;
+}
+
+interface AddExtensionEmbedOptions extends AddBaseOptions {
+	name: string;
+	handle: string;
+	source: string;
+	target: string;
+}
+
+interface AddExtensionBlocksOptions extends AddBaseOptions {
+	source: string;
+}
+
+interface InitOptions extends AddBaseOptions {
+	name?: string;
+	description?: string;
+	url?: string;
+	proxyUrl?: string;
+	scopes?: string[];
+}
+
+interface ReleaseOptions extends AddBaseOptions {
+	releaseVersion: string;
+	description?: string;
+}
+
+interface DeployOptions extends AddBaseOptions {}
+
+async function resolveEnvironment(environment?: string): Promise<Environment> {
+	if (environment) {
+		return unwrapResult(
+			await envGet(environment),
+			"Failed to resolve environment",
+		) as Environment;
 	}
-	return result.data as Environment;
+
+	return unwrapResult(await envGet(), "Failed to resolve environment") as Environment;
+}
+
+function ensureSuccess(
+	result: { success: boolean; error?: unknown },
+	fallbackMessage: string,
+): void {
+	if (!result.success) {
+		throw result.error instanceof Error
+			? result.error
+			: new Error(fallbackMessage);
+	}
+}
+
+function resolveConfigPath(configPath: string | undefined, env: Environment): string {
+	if (configPath) {
+		return resolve(process.cwd(), configPath);
+	}
+	return getConfigFilePath(env);
+}
+
+function parseSpaceSeparated(value: string): string[] {
+	return value
+		.split(" ")
+		.map((item) => item.trim())
+		.filter((item) => item.length > 0);
+}
+
+function parseCommaSeparated(value: string): string[] {
+	return value
+		.split(",")
+		.map((item) => item.trim())
+		.filter((item) => item.length > 0);
+}
+
+function emitRuntimeError(commandId: keyof typeof commandIds, error: unknown): void {
+	const mapped = mapRuntimeError(error);
+	emitError(
+		currentCommandString(),
+		{ message: mapped.message, code: mapped.code },
+		mapped.fix,
+		nextActionsFor(commandIds[commandId]),
+	);
+}
+
+async function loadApplicationModule() {
+	return import("../../core/applications");
 }
 
 export function createApplicationCommand(): Command {
@@ -48,153 +141,137 @@ export function createApplicationCommand(): Command {
 		.alias("app")
 		.description("Manage applications");
 
-	// application info [name]
+	app.action(async () => {
+		const node = findRegistryNodeById(commandIds.applicationGroup);
+		if (!node) {
+			emitRuntimeError(
+				"root",
+				new Error("Application command registry metadata is missing"),
+			);
+			return;
+		}
+
+		emitSuccess(
+			currentCommandString(),
+			registryNodeToResult(node),
+			nextActionsFor(commandIds.applicationGroup),
+		);
+	});
+
 	app
 		.command("info")
 		.description("Show application information")
-		.argument("[name]", "Application name")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (name, options) => {
-			if (!name) {
-				console.error("Application name is required");
-				console.log("Usage: godaddy application info <name>");
-				process.exit(1);
-			}
+		.argument("<name>", "Application name")
+		.action(async (name: string) => {
+			try {
+				const { applicationInfo } = await loadApplicationModule();
+				const appInfo = unwrapResult(
+					await applicationInfo(name),
+					"Failed to get application info",
+				) as ApplicationInfo;
+				const latestRelease = appInfo.releases?.[0]
+					? {
+							id: appInfo.releases[0].id,
+							version: appInfo.releases[0].version,
+							description: appInfo.releases[0].description,
+							created_at: appInfo.releases[0].createdAt,
+						}
+					: null;
 
-			const result = await applicationInfo(name);
-
-			if (!result.success) {
-				console.error(
-					result.error?.userMessage || "Failed to get application info",
+				emitSuccess(
+					currentCommandString(),
+					{
+						id: appInfo.id,
+						label: appInfo.label,
+						name: appInfo.name,
+						description: appInfo.description,
+						status: appInfo.status,
+						url: appInfo.url,
+						proxy_url: appInfo.proxyUrl,
+						authorization_scopes: appInfo.authorizationScopes ?? [],
+						latest_release: latestRelease,
+					},
+					nextActionsFor(commandIds.applicationInfo, {
+						applicationName: name,
+					}),
 				);
-				process.exit(1);
+			} catch (error) {
+				emitRuntimeError("applicationGroup", error);
 			}
-
-			const appInfo = result.data as ApplicationInfo;
-
-			if (options.output === "json") {
-				console.log(JSON.stringify(appInfo, null, 2));
-			} else {
-				console.log(`Application: ${appInfo.name}`);
-				console.log(`  ID: ${appInfo.id}`);
-				console.log(`  Label: ${appInfo.label}`);
-				console.log(`  Description: ${appInfo.description}`);
-				console.log(`  Status: ${appInfo.status}`);
-				console.log(`  URL: ${appInfo.url}`);
-				console.log(`  Proxy URL: ${appInfo.proxyUrl}`);
-
-				if (appInfo.authorizationScopes?.length) {
-					console.log(
-						`  Authorization Scopes: ${appInfo.authorizationScopes.join(", ")}`,
-					);
-				}
-
-				if (appInfo.releases?.length) {
-					console.log(`  Latest Release: ${appInfo.releases[0].version}`);
-					if (appInfo.releases[0].description) {
-						console.log(`    Description: ${appInfo.releases[0].description}`);
-					}
-					console.log(
-						`    Created: ${new Date(appInfo.releases[0].createdAt).toLocaleString()}`,
-					);
-				}
-			}
-			process.exit(0);
 		});
 
-	// application list
 	app
 		.command("list")
 		.alias("ls")
 		.description("List all applications")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (options) => {
-			const result = await applicationList();
+		.action(async () => {
+			try {
+				const { applicationList } = await loadApplicationModule();
+				const applications = unwrapResult(
+					await applicationList(),
+					"Failed to list applications",
+				) as Application[];
 
-			if (!result.success) {
-				console.error(
-					result.error?.userMessage || "Failed to list applications",
+				const truncated = truncateList(applications, "application-list");
+
+				emitSuccess(
+					currentCommandString(),
+					{
+						applications: truncated.items,
+						total: truncated.metadata.total,
+						shown: truncated.metadata.shown,
+						truncated: truncated.metadata.truncated,
+						full_output: truncated.metadata.full_output,
+					},
+					nextActionsFor(commandIds.applicationList),
 				);
-				process.exit(1);
+			} catch (error) {
+				emitRuntimeError("applicationGroup", error);
 			}
-
-			const applications = result.data as Application[];
-
-			if (options.output === "json") {
-				console.log(JSON.stringify(applications, null, 2));
-			} else {
-				if (applications.length === 0) {
-					console.log("No applications found");
-					return;
-				}
-
-				console.log(`Found ${applications.length} application(s):`);
-				for (const app of applications) {
-					console.log(`  ${app.name} (${app.status})`);
-					console.log(`    Label: ${app.label}`);
-					console.log(`    Description: ${app.description}`);
-					console.log(`    URL: ${app.url}`);
-					console.log("");
-				}
-			}
-			process.exit(0);
 		});
 
-	// application validate [name]
 	app
 		.command("validate")
 		.description("Validate application configuration")
-		.argument("[name]", "Application name")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (name, options) => {
-			if (!name) {
-				console.error("Application name is required");
-				console.log("Usage: godaddy application validate <name>");
-				process.exit(1);
-			}
+		.argument("<name>", "Application name")
+		.action(async (name: string) => {
+			try {
+				const { applicationValidate } = await loadApplicationModule();
+				const validation = unwrapResult(
+					await applicationValidate(name),
+					"Failed to validate application",
+				) as ValidationResult;
 
-			const result = await applicationValidate(name);
-
-			if (!result.success) {
-				console.error(
-					result.error?.userMessage || "Failed to validate application",
+				const protectedPayload = protectPayload(
+					{
+						valid: validation.valid,
+						errors: validation.errors,
+						warnings: validation.warnings,
+					},
+					`application-validate-${name}`,
 				);
-				process.exit(1);
+
+				emitSuccess(
+					currentCommandString(),
+					{
+						valid: validation.valid,
+						error_count: validation.errors.length,
+						warning_count: validation.warnings.length,
+						details: protectedPayload.value,
+						truncated: protectedPayload.metadata?.truncated ?? false,
+						total: protectedPayload.metadata?.total,
+						shown: protectedPayload.metadata?.shown,
+						full_output: protectedPayload.metadata?.full_output,
+					},
+					nextActionsFor(commandIds.applicationValidate, {
+						applicationName: name,
+					}),
+				);
+			} catch (error) {
+				emitRuntimeError("applicationGroup", error);
 			}
-
-			const validation = result.data as ValidationResult;
-
-			if (options.output === "json") {
-				console.log(JSON.stringify(validation, null, 2));
-			} else {
-				if (validation.valid) {
-					console.log(`✅ Application '${name}' is valid`);
-				} else {
-					console.log(`❌ Application '${name}' has validation errors`);
-				}
-
-				if (validation.errors.length > 0) {
-					console.log("\nErrors:");
-					for (const error of validation.errors) {
-						console.log(`  ❌ ${error}`);
-					}
-				}
-
-				if (validation.warnings.length > 0) {
-					console.log("\nWarnings:");
-					for (const warning of validation.warnings) {
-						console.log(`  ⚠️  ${warning}`);
-					}
-				}
-
-				if (!validation.valid) {
-					process.exit(1);
-				}
-			}
-			process.exit(0);
 		});
 
-	// application update <name>
 	app
 		.command("update")
 		.description("Update application configuration")
@@ -202,142 +279,131 @@ export function createApplicationCommand(): Command {
 		.option("--label <label>", "Application label")
 		.option("--description <description>", "Application description")
 		.option("--status <status>", "Application status (ACTIVE|INACTIVE)")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (name, options) => {
-			const config: {
-				label?: string;
-				description?: string;
-				status?: "ACTIVE" | "INACTIVE";
-			} = {};
+		.action(async (name: string, options) => {
+			try {
+				const { applicationUpdate } = await loadApplicationModule();
+				const config: {
+					label?: string;
+					description?: string;
+					status?: "ACTIVE" | "INACTIVE";
+				} = {};
 
-			if (options.label) config.label = options.label;
-			if (options.description) config.description = options.description;
-			if (options.status) {
-				if (!["ACTIVE", "INACTIVE"].includes(options.status)) {
-					console.error("Status must be either ACTIVE or INACTIVE");
-					process.exit(1);
+				if (options.label) {
+					config.label = options.label;
 				}
-				config.status = options.status;
-			}
+				if (options.description) {
+					config.description = options.description;
+				}
+				if (options.status) {
+					if (!["ACTIVE", "INACTIVE"].includes(options.status)) {
+						throw new ValidationError(
+							"Status must be either ACTIVE or INACTIVE",
+							"Status must be either ACTIVE or INACTIVE",
+						);
+					}
+					config.status = options.status;
+				}
 
-			if (Object.keys(config).length === 0) {
-				console.error("At least one field must be specified for update");
-				console.log("Available options: --label, --description, --status");
-				process.exit(1);
-			}
+				if (Object.keys(config).length === 0) {
+					throw new ValidationError(
+						"At least one field must be specified for update",
+						"Provide one of: --label, --description, --status",
+					);
+				}
 
-			const result = await applicationUpdate(name, config);
-
-			if (!result.success) {
-				console.error(
-					result.error?.userMessage || "Failed to update application",
+				ensureSuccess(
+					await applicationUpdate(name, config),
+					"Failed to update application",
 				);
-				process.exit(1);
-			}
 
-			if (options.output === "json") {
-				console.log(JSON.stringify({ success: true }, null, 2));
-			} else {
-				console.log(`✅ Successfully updated application '${name}'`);
+				emitSuccess(
+					currentCommandString(),
+					{
+						name,
+						updated_fields: Object.keys(config),
+						status: config.status,
+					},
+					nextActionsFor(commandIds.applicationUpdate, {
+						applicationName: name,
+					}),
+				);
+			} catch (error) {
+				emitRuntimeError("applicationGroup", error);
 			}
-			process.exit(0);
 		});
 
-	// application enable <name>
 	app
 		.command("enable")
 		.description("Enable application on a store")
 		.argument("<name>", "Application name")
-		.option("--store-id <storeId>", "Store ID")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (name, options) => {
-			if (!options.storeId) {
-				console.error("Store ID is required");
-				console.log(
-					"Usage: godaddy application enable <name> --store-id <storeId>",
+		.requiredOption("--store-id <storeId>", "Store ID")
+		.action(async (name: string, options) => {
+			try {
+				const { applicationEnable } = await loadApplicationModule();
+				ensureSuccess(
+					await applicationEnable(name, options.storeId),
+					"Failed to enable application",
 				);
-				process.exit(1);
-			}
 
-			const result = await applicationEnable(name, options.storeId);
-
-			if (!result.success) {
-				console.error(
-					result.error?.userMessage || "Failed to enable application",
+				emitSuccess(
+					currentCommandString(),
+					{ name, store_id: options.storeId, enabled: true },
+					nextActionsFor(commandIds.applicationEnable, {
+						applicationName: name,
+						storeId: options.storeId,
+					}),
 				);
-				process.exit(1);
+			} catch (error) {
+				emitRuntimeError("applicationGroup", error);
 			}
-
-			if (options.output === "json") {
-				console.log(JSON.stringify({ success: true }, null, 2));
-			} else {
-				console.log(
-					`✅ Successfully enabled application '${name}' on store ${options.storeId}`,
-				);
-			}
-			process.exit(0);
 		});
 
-	// application disable <name>
 	app
 		.command("disable")
 		.description("Disable application on a store")
 		.argument("<name>", "Application name")
-		.option("--store-id <storeId>", "Store ID")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (name, options) => {
-			if (!options.storeId) {
-				console.error("Store ID is required");
-				console.log(
-					"Usage: godaddy application disable <name> --store-id <storeId>",
+		.requiredOption("--store-id <storeId>", "Store ID")
+		.action(async (name: string, options) => {
+			try {
+				const { applicationDisable } = await loadApplicationModule();
+				ensureSuccess(
+					await applicationDisable(name, options.storeId),
+					"Failed to disable application",
 				);
-				process.exit(1);
-			}
 
-			const result = await applicationDisable(name, options.storeId);
-
-			if (!result.success) {
-				console.error(
-					result.error?.userMessage || "Failed to disable application",
+				emitSuccess(
+					currentCommandString(),
+					{ name, store_id: options.storeId, enabled: false },
+					nextActionsFor(commandIds.applicationDisable, {
+						applicationName: name,
+						storeId: options.storeId,
+					}),
 				);
-				process.exit(1);
+			} catch (error) {
+				emitRuntimeError("applicationGroup", error);
 			}
-
-			if (options.output === "json") {
-				console.log(JSON.stringify({ success: true }, null, 2));
-			} else {
-				console.log(
-					`✅ Successfully disabled application '${name}' on store ${options.storeId}`,
-				);
-			}
-			process.exit(0);
 		});
 
-	// application archive <name>
 	app
 		.command("archive")
 		.description("Archive application")
 		.argument("<name>", "Application name")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (name, options) => {
-			const result = await applicationArchive(name);
-
-			if (!result.success) {
-				console.error(
-					result.error?.userMessage || "Failed to archive application",
+		.action(async (name: string) => {
+			try {
+				const { applicationArchive } = await loadApplicationModule();
+				ensureSuccess(await applicationArchive(name), "Failed to archive application");
+				emitSuccess(
+					currentCommandString(),
+					{ name, archived: true },
+					nextActionsFor(commandIds.applicationArchive, {
+						applicationName: name,
+					}),
 				);
-				process.exit(1);
+			} catch (error) {
+				emitRuntimeError("applicationGroup", error);
 			}
-
-			if (options.output === "json") {
-				console.log(JSON.stringify({ success: true }, null, 2));
-			} else {
-				console.log(`✅ Successfully archived application '${name}'`);
-			}
-			process.exit(0);
 		});
 
-	// application init
 	app
 		.command("init")
 		.description("Initialize/create a new application")
@@ -348,637 +414,495 @@ export function createApplicationCommand(): Command {
 		.option(
 			"--scopes <scopes>",
 			"Authorization scopes (space-separated)",
-			(value) => value.split(" "),
+			parseSpaceSeparated,
 		)
 		.option("-c, --config <path>", "Path to configuration file")
 		.option("--environment <env>", "Environment (ote|prod)")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (options) => {
-			// Load config file if specified
-			let cfg: ReturnType<typeof getConfigFile> | undefined;
+		.action(async (options: InitOptions) => {
 			try {
+				const { applicationInit } = await loadApplicationModule();
+				let cfg: ReturnType<typeof getConfigFile> | undefined;
 				if (options.config || options.environment) {
-					const result = getConfigFile({
+					const candidate = getConfigFile({
 						configPath: options.config,
-						env: options.environment,
+						env: options.environment as Environment | undefined,
 					});
-					if (typeof result === "object" && "problems" in result) {
-						// Handle arktype validation errors
-						console.error("Config file validation failed:");
-						for (const problem of result.problems || []) {
-							console.error(`  ${problem.summary}`);
-						}
-						process.exit(1);
+					if (
+						typeof candidate === "object" &&
+						candidate !== null &&
+						"problems" in candidate
+					) {
+						const problems = Array.isArray(candidate.problems)
+							? candidate.problems
+								.map((problem) => problem.summary)
+								.join("; ")
+							: "Config file validation failed";
+						throw new ValidationError(problems, problems);
 					}
-					cfg = result;
+					cfg = candidate;
 				}
-			} catch (err) {
-				console.error(err instanceof Error ? err.message : String(err));
-				process.exit(1);
-			}
 
-			// Merge config file values with CLI options (CLI overrides config)
-			const input: CreateApplicationInput = {
-				name: options.name ?? cfg?.name ?? "",
-				description: options.description ?? cfg?.description ?? "",
-				url: options.url ?? cfg?.url ?? "",
-				proxyUrl: options.proxyUrl ?? cfg?.proxy_url ?? "",
-				authorizationScopes: options.scopes ?? cfg?.authorization_scopes ?? [],
-			};
+				const input: CreateApplicationInput = {
+					name: options.name ?? cfg?.name ?? "",
+					description: options.description ?? cfg?.description ?? "",
+					url: options.url ?? cfg?.url ?? "",
+					proxyUrl: options.proxyUrl ?? cfg?.proxy_url ?? "",
+					authorizationScopes:
+						options.scopes ?? cfg?.authorization_scopes ?? [],
+				};
 
-			// Validate required fields
-			if (!input.name) {
-				console.log("Application name is required");
-				process.exit(1);
-			}
+				if (!input.name) {
+					throw new ValidationError(
+						"Application name is required",
+						"Application name is required",
+					);
+				}
+				if (!input.description) {
+					throw new ValidationError(
+						"Application description is required",
+						"Application description is required",
+					);
+				}
+				if (!input.url) {
+					throw new ValidationError(
+						"Application URL is required",
+						"Application URL is required",
+					);
+				}
+				if (!input.proxyUrl) {
+					throw new ValidationError(
+						"Proxy URL is required",
+						"Proxy URL is required",
+					);
+				}
+				if (!input.authorizationScopes.length) {
+					throw new ValidationError(
+						"Authorization scopes are required",
+						"Authorization scopes are required",
+					);
+				}
 
-			if (!input.description) {
-				console.log("Application description is required");
-				process.exit(1);
-			}
-
-			if (!input.url) {
-				console.log("Application URL is required");
-				process.exit(1);
-			}
-
-			if (!input.proxyUrl) {
-				console.log("Proxy URL is required");
-				process.exit(1);
-			}
-
-			if (
-				!input.authorizationScopes ||
-				input.authorizationScopes.length === 0
-			) {
-				console.log("Authorization scopes are required");
-				process.exit(1);
-			}
-
-			const environment = await getEnvironment();
-			const result = await applicationInit(input, environment);
-
-			if (!result.success) {
-				console.error(
-					result.error?.userMessage || "Failed to create application",
+				const environment = await resolveEnvironment(options.environment);
+				const appData = unwrapResult(
+					await applicationInit(input, environment),
+					"Failed to create application",
 				);
-				process.exit(1);
-			}
 
-			const appData = result.data as CreatedApplicationInfo;
-
-			if (options.output === "json") {
-				console.log(JSON.stringify(appData, null, 2));
-			} else {
-				console.log("✅ Application created successfully!");
-				console.log(`  Name: ${appData.name}`);
-				console.log(`  ID: ${appData.id}`);
-				console.log(`  Client ID: ${appData.clientId}`);
-				console.log(`  Status: ${appData.status}`);
-				console.log(`  URL: ${appData.url}`);
-				console.log(`  Proxy URL: ${appData.proxyUrl}`);
-				console.log(
-					`  Authorization Scopes: ${appData.authorizationScopes.join(", ")}`,
+				emitSuccess(
+					currentCommandString(),
+					{
+						id: appData.id,
+						name: appData.name,
+						status: appData.status,
+						url: appData.url,
+						proxy_url: appData.proxyUrl,
+						authorization_scopes: appData.authorizationScopes,
+						client_id: appData.clientId,
+						files_written: {
+							config: getConfigFilePath(environment),
+							env: join(process.cwd(), `.env.${environment}`),
+						},
+					},
+					nextActionsFor(commandIds.applicationInit, {
+						applicationName: appData.name,
+					}),
 				);
-				console.log("\n🔑 Credentials saved:");
-				console.log("  GODADDY_CLIENT_ID");
-				console.log("  GODADDY_CLIENT_SECRET");
-				console.log("  GODADDY_WEBHOOK_SECRET");
-				console.log("  GODADDY_PUBLIC_KEY");
+			} catch (error) {
+				emitRuntimeError("applicationGroup", error);
 			}
-			process.exit(0);
 		});
 
-	// application add
 	const addCommand = new Command("add").description(
 		"Add configurations to application",
 	);
 
-	// application add action
+	addCommand.action(async () => {
+		const node = findRegistryNodeById(commandIds.applicationAddGroup);
+		if (!node) {
+			emitRuntimeError(
+				"applicationGroup",
+				new Error("Application add registry metadata is missing"),
+			);
+			return;
+		}
+
+		emitSuccess(
+			currentCommandString(),
+			registryNodeToResult(node),
+			nextActionsFor(commandIds.applicationAddGroup),
+		);
+	});
+
 	addCommand
 		.command("action")
 		.description("Add action configuration to godaddy.toml")
-		.option("--name <name>", "Action name")
-		.option("--url <url>", "Action endpoint URL")
+		.requiredOption("--name <name>", "Action name")
+		.requiredOption("--url <url>", "Action endpoint URL")
 		.option("--config <path>", "Path to configuration file")
 		.option("--environment <env>", "Environment (ote|prod)")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (options) => {
-			const actionName = options.name;
-			const actionUrl = options.url;
-
-			// Validate required fields
-			if (!actionName) {
-				console.error("Action name is required");
-				console.log(
-					"Usage: godaddy application add action --name <name> --url <url>",
-				);
-				process.exit(1);
-			}
-
-			if (!actionUrl) {
-				console.error("Action URL is required");
-				console.log(
-					"Usage: godaddy application add action --name <name> --url <url>",
-				);
-				process.exit(1);
-			}
-
-			// Validate action name format
-			if (actionName.length < 3) {
-				console.error("Action name must be at least 3 characters long");
-				process.exit(1);
-			}
-
-			const action: ActionConfig = {
-				name: actionName,
-				url: actionUrl,
-			};
-
+		.action(async (options: AddActionOptions) => {
 			try {
-				const env = options.environment || (await getEnvironment());
-				await addActionToConfig(action, {
-					configPath: options.config,
-					env: env,
-				});
-
-				if (options.output === "json") {
-					console.log(JSON.stringify({ success: true, action }, null, 2));
-				} else {
-					console.log(`✅ Action '${actionName}' added successfully!`);
-					console.log(`  Name: ${actionName}`);
-					console.log(`  URL: ${actionUrl}`);
+				if (options.name.length < 3) {
+					throw new ValidationError(
+						"Action name must be at least 3 characters long",
+						"Action name must be at least 3 characters long",
+					);
 				}
-			} catch (error) {
-				console.error(
-					error instanceof Error ? error.message : "Failed to add action",
+
+				const environment = await resolveEnvironment(options.environment);
+				const action: ActionConfig = { name: options.name, url: options.url };
+				ensureSuccess(
+					await addActionToConfig(action, {
+						configPath: options.config,
+						env: environment,
+					}),
+					"Failed to add action",
 				);
-				process.exit(1);
+
+				emitSuccess(
+					currentCommandString(),
+					{
+						action,
+						config_path: resolveConfigPath(options.config, environment),
+					},
+					nextActionsFor(commandIds.applicationAddAction),
+				);
+			} catch (error) {
+				emitRuntimeError("applicationAddGroup", error);
 			}
-			process.exit(0);
 		});
 
-	// application add subscription
 	addCommand
 		.command("subscription")
 		.description("Add webhook subscription configuration to godaddy.toml")
-		.option("--name <name>", "Subscription name")
-		.option("--events <events>", "Comma-separated list of events")
-		.option("--url <url>", "Webhook endpoint URL")
+		.requiredOption("--name <name>", "Subscription name")
+		.requiredOption("--events <events>", "Comma-separated list of events")
+		.requiredOption("--url <url>", "Webhook endpoint URL")
 		.option("--config <path>", "Path to configuration file")
 		.option("--environment <env>", "Environment (ote|prod)")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (options) => {
-			const subscriptionName = options.name;
-			const events = options.events;
-			const webhookUrl = options.url;
-
-			// Validate required fields
-			if (!subscriptionName) {
-				console.error("Subscription name is required");
-				console.log(
-					"Usage: godaddy application add subscription --name <name> --events <events> --url <url>",
-				);
-				process.exit(1);
-			}
-
-			if (!events) {
-				console.error("Events are required");
-				console.log(
-					"Usage: godaddy application add subscription --name <name> --events <events> --url <url>",
-				);
-				process.exit(1);
-			}
-
-			if (!webhookUrl) {
-				console.error("Webhook URL is required");
-				console.log(
-					"Usage: godaddy application add subscription --name <name> --events <events> --url <url>",
-				);
-				process.exit(1);
-			}
-
-			// Validate subscription name format
-			if (subscriptionName.length < 3) {
-				console.error("Subscription name must be at least 3 characters long");
-				process.exit(1);
-			}
-
-			// Parse events from comma-separated string
-			const eventList = events
-				.split(",")
-				.map((e) => e.trim())
-				.filter((e) => e.length > 0);
-			if (eventList.length === 0) {
-				console.error("At least one event is required");
-				process.exit(1);
-			}
-
-			const subscription: SubscriptionConfig = {
-				name: subscriptionName,
-				events: eventList,
-				url: webhookUrl,
-			};
-
+		.action(async (options: AddSubscriptionOptions) => {
 			try {
-				const env = options.environment || (await getEnvironment());
-				await addSubscriptionToConfig(subscription, {
-					configPath: options.config,
-					env: env,
-				});
-
-				if (options.output === "json") {
-					console.log(JSON.stringify({ success: true, subscription }, null, 2));
-				} else {
-					console.log(
-						`✅ Subscription '${subscriptionName}' added successfully!`,
+				if (options.name.length < 3) {
+					throw new ValidationError(
+						"Subscription name must be at least 3 characters long",
+						"Subscription name must be at least 3 characters long",
 					);
-					console.log(`  Name: ${subscriptionName}`);
-					console.log(`  Events: ${eventList.join(", ")}`);
-					console.log(`  URL: ${webhookUrl}`);
 				}
-			} catch (error) {
-				console.error(
-					error instanceof Error ? error.message : "Failed to add subscription",
+
+				const eventList = parseCommaSeparated(options.events);
+				if (!eventList.length) {
+					throw new ValidationError(
+						"At least one event is required",
+						"At least one event is required",
+					);
+				}
+
+				const environment = await resolveEnvironment(options.environment);
+				const subscription: SubscriptionConfig = {
+					name: options.name,
+					events: eventList,
+					url: options.url,
+				};
+				ensureSuccess(
+					await addSubscriptionToConfig(subscription, {
+						configPath: options.config,
+						env: environment,
+					}),
+					"Failed to add subscription",
 				);
-				process.exit(1);
+
+				emitSuccess(
+					currentCommandString(),
+					{
+						subscription,
+						config_path: resolveConfigPath(options.config, environment),
+					},
+					nextActionsFor(commandIds.applicationAddSubscription),
+				);
+			} catch (error) {
+				emitRuntimeError("applicationAddGroup", error);
 			}
-			process.exit(0);
 		});
 
-	// application add extension (parent command for extension types)
 	const extensionCommand = addCommand
 		.command("extension")
 		.description("Add UI extension configuration to godaddy.toml");
 
-	// application add extension embed
+	extensionCommand.action(async () => {
+		const node = findRegistryNodeById(commandIds.applicationAddExtensionGroup);
+		if (!node) {
+			emitRuntimeError(
+				"applicationAddGroup",
+				new Error("Application add extension registry metadata is missing"),
+			);
+			return;
+		}
+
+		emitSuccess(
+			currentCommandString(),
+			registryNodeToResult(node),
+			nextActionsFor(commandIds.applicationAddExtensionGroup),
+		);
+	});
+
 	extensionCommand
 		.command("embed")
-		.description(
-			"Add an embed extension (injected UI at specific page locations)",
-		)
-		.option("--name <name>", "Extension name")
-		.option("--handle <handle>", "Extension handle (unique identifier)")
-		.option("--source <source>", "Path to extension source file")
-		.option(
+		.description("Add an embed extension")
+		.requiredOption("--name <name>", "Extension name")
+		.requiredOption("--handle <handle>", "Extension handle")
+		.requiredOption("--source <source>", "Path to extension source file")
+		.requiredOption(
 			"--target <targets>",
-			"Comma-separated list of target locations (e.g., body.end)",
+			"Comma-separated list of target locations",
 		)
 		.option("--config <path>", "Path to configuration file")
 		.option("--environment <env>", "Environment (ote|prod)")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (options) => {
-			const { name, handle, source, target } = options;
-
-			if (!name) {
-				console.error("Extension name is required");
-				console.log(
-					"Usage: godaddy application add extension embed --name <name> --handle <handle> --source <source> --target <targets>",
-				);
-				process.exit(1);
-			}
-
-			if (!handle) {
-				console.error("Extension handle is required");
-				console.log(
-					"Usage: godaddy application add extension embed --name <name> --handle <handle> --source <source> --target <targets>",
-				);
-				process.exit(1);
-			}
-
-			if (!source) {
-				console.error("Extension source is required");
-				console.log(
-					"Usage: godaddy application add extension embed --name <name> --handle <handle> --source <source> --target <targets>",
-				);
-				process.exit(1);
-			}
-
-			if (!target) {
-				console.error("At least one target is required for embed extensions");
-				console.log(
-					"Usage: godaddy application add extension embed --name <name> --handle <handle> --source <source> --target <targets>",
-				);
-				process.exit(1);
-			}
-
-			if (name.length < 3) {
-				console.error("Extension name must be at least 3 characters long");
-				process.exit(1);
-			}
-
-			if (handle.length < 3) {
-				console.error("Extension handle must be at least 3 characters long");
-				process.exit(1);
-			}
-
-			const targets = target
-				.split(",")
-				.map((t: string) => t.trim())
-				.filter((t: string) => t.length > 0)
-				.map((t: string) => ({ target: t }));
-
-			if (targets.length === 0) {
-				console.error("At least one valid target is required");
-				process.exit(1);
-			}
-
-			const extension: EmbedExtensionConfig = {
-				name,
-				handle,
-				source,
-				targets,
-			};
-
+		.action(async (options: AddExtensionEmbedOptions) => {
 			try {
-				const env = options.environment || (await getEnvironment());
-				await addExtensionToConfig("embed", extension, {
-					configPath: options.config,
-					env: env,
-				});
-
-				if (options.output === "json") {
-					console.log(JSON.stringify({ success: true, extension }, null, 2));
-				} else {
-					console.log(`✅ Embed extension '${name}' added successfully!`);
-					console.log(`  Name: ${name}`);
-					console.log(`  Handle: ${handle}`);
-					console.log(`  Source: ${source}`);
-					console.log(
-						`  Targets: ${targets.map((t: { target: string }) => t.target).join(", ")}`,
+				if (options.name.length < 3) {
+					throw new ValidationError(
+						"Extension name must be at least 3 characters long",
+						"Extension name must be at least 3 characters long",
 					);
 				}
-			} catch (error) {
-				console.error(
-					error instanceof Error ? error.message : "Failed to add extension",
+				if (options.handle.length < 3) {
+					throw new ValidationError(
+						"Extension handle must be at least 3 characters long",
+						"Extension handle must be at least 3 characters long",
+					);
+				}
+
+				const targets = parseCommaSeparated(options.target).map((target) => ({
+					target,
+				}));
+				if (!targets.length) {
+					throw new ValidationError(
+						"At least one valid target is required",
+						"At least one valid target is required",
+					);
+				}
+
+				const extension: EmbedExtensionConfig = {
+					name: options.name,
+					handle: options.handle,
+					source: options.source,
+					targets,
+				};
+				const environment = await resolveEnvironment(options.environment);
+				ensureSuccess(
+					await addExtensionToConfig("embed", extension, {
+						configPath: options.config,
+						env: environment,
+					}),
+					"Failed to add extension",
 				);
-				process.exit(1);
+
+				emitSuccess(
+					currentCommandString(),
+					{
+						extension_type: "embed",
+						extension,
+						config_path: resolveConfigPath(options.config, environment),
+					},
+					nextActionsFor(commandIds.applicationAddExtensionEmbed),
+				);
+			} catch (error) {
+				emitRuntimeError("applicationAddExtensionGroup", error);
 			}
-			process.exit(0);
 		});
 
-	// application add extension checkout
 	extensionCommand
 		.command("checkout")
-		.description("Add a checkout extension (checkout flow UI)")
-		.option("--name <name>", "Extension name")
-		.option("--handle <handle>", "Extension handle (unique identifier)")
-		.option("--source <source>", "Path to extension source file")
-		.option(
+		.description("Add a checkout extension")
+		.requiredOption("--name <name>", "Extension name")
+		.requiredOption("--handle <handle>", "Extension handle")
+		.requiredOption("--source <source>", "Path to extension source file")
+		.requiredOption(
 			"--target <targets>",
 			"Comma-separated list of checkout target locations",
 		)
 		.option("--config <path>", "Path to configuration file")
 		.option("--environment <env>", "Environment (ote|prod)")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (options) => {
-			const { name, handle, source, target } = options;
-
-			if (!name) {
-				console.error("Extension name is required");
-				console.log(
-					"Usage: godaddy application add extension checkout --name <name> --handle <handle> --source <source> --target <targets>",
-				);
-				process.exit(1);
-			}
-
-			if (!handle) {
-				console.error("Extension handle is required");
-				console.log(
-					"Usage: godaddy application add extension checkout --name <name> --handle <handle> --source <source> --target <targets>",
-				);
-				process.exit(1);
-			}
-
-			if (!source) {
-				console.error("Extension source is required");
-				console.log(
-					"Usage: godaddy application add extension checkout --name <name> --handle <handle> --source <source> --target <targets>",
-				);
-				process.exit(1);
-			}
-
-			if (!target) {
-				console.error(
-					"At least one target is required for checkout extensions",
-				);
-				console.log(
-					"Usage: godaddy application add extension checkout --name <name> --handle <handle> --source <source> --target <targets>",
-				);
-				process.exit(1);
-			}
-
-			if (name.length < 3) {
-				console.error("Extension name must be at least 3 characters long");
-				process.exit(1);
-			}
-
-			if (handle.length < 3) {
-				console.error("Extension handle must be at least 3 characters long");
-				process.exit(1);
-			}
-
-			const targets = target
-				.split(",")
-				.map((t: string) => t.trim())
-				.filter((t: string) => t.length > 0)
-				.map((t: string) => ({ target: t }));
-
-			if (targets.length === 0) {
-				console.error("At least one valid target is required");
-				process.exit(1);
-			}
-
-			const extension: CheckoutExtensionConfig = {
-				name,
-				handle,
-				source,
-				targets,
-			};
-
+		.action(async (options: AddExtensionEmbedOptions) => {
 			try {
-				const env = options.environment || (await getEnvironment());
-				await addExtensionToConfig("checkout", extension, {
-					configPath: options.config,
-					env: env,
-				});
-
-				if (options.output === "json") {
-					console.log(JSON.stringify({ success: true, extension }, null, 2));
-				} else {
-					console.log(`✅ Checkout extension '${name}' added successfully!`);
-					console.log(`  Name: ${name}`);
-					console.log(`  Handle: ${handle}`);
-					console.log(`  Source: ${source}`);
-					console.log(
-						`  Targets: ${targets.map((t: { target: string }) => t.target).join(", ")}`,
+				if (options.name.length < 3) {
+					throw new ValidationError(
+						"Extension name must be at least 3 characters long",
+						"Extension name must be at least 3 characters long",
 					);
 				}
-			} catch (error) {
-				console.error(
-					error instanceof Error ? error.message : "Failed to add extension",
+				if (options.handle.length < 3) {
+					throw new ValidationError(
+						"Extension handle must be at least 3 characters long",
+						"Extension handle must be at least 3 characters long",
+					);
+				}
+
+				const targets = parseCommaSeparated(options.target).map((target) => ({
+					target,
+				}));
+				if (!targets.length) {
+					throw new ValidationError(
+						"At least one valid target is required",
+						"At least one valid target is required",
+					);
+				}
+
+				const extension: CheckoutExtensionConfig = {
+					name: options.name,
+					handle: options.handle,
+					source: options.source,
+					targets,
+				};
+				const environment = await resolveEnvironment(options.environment);
+				ensureSuccess(
+					await addExtensionToConfig("checkout", extension, {
+						configPath: options.config,
+						env: environment,
+					}),
+					"Failed to add extension",
 				);
-				process.exit(1);
+
+				emitSuccess(
+					currentCommandString(),
+					{
+						extension_type: "checkout",
+						extension,
+						config_path: resolveConfigPath(options.config, environment),
+					},
+					nextActionsFor(commandIds.applicationAddExtensionCheckout),
+				);
+			} catch (error) {
+				emitRuntimeError("applicationAddExtensionGroup", error);
 			}
-			process.exit(0);
 		});
 
-	// application add extension blocks
 	extensionCommand
 		.command("blocks")
-		.description(
-			"Set the blocks extension source (consolidated UI blocks package)",
-		)
-		.option("--source <source>", "Path to blocks extension source file")
+		.description("Set the blocks extension source")
+		.requiredOption("--source <source>", "Path to blocks extension source file")
 		.option("--config <path>", "Path to configuration file")
 		.option("--environment <env>", "Environment (ote|prod)")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (options) => {
-			const { source } = options;
-
-			if (!source) {
-				console.error("Extension source is required");
-				console.log(
-					"Usage: godaddy application add extension blocks --source <source>",
-				);
-				process.exit(1);
-			}
-
-			const extension: BlocksExtensionConfig = {
-				source,
-			};
-
+		.action(async (options: AddExtensionBlocksOptions) => {
 			try {
-				const env = options.environment || (await getEnvironment());
-				await addExtensionToConfig("blocks", extension, {
-					configPath: options.config,
-					env: env,
-				});
-
-				if (options.output === "json") {
-					console.log(JSON.stringify({ success: true, extension }, null, 2));
-				} else {
-					console.log("✅ Blocks extension configured successfully!");
-					console.log(`  Source: ${source}`);
-				}
-			} catch (error) {
-				console.error(
-					error instanceof Error ? error.message : "Failed to add extension",
+				const extension: BlocksExtensionConfig = {
+					source: options.source,
+				};
+				const environment = await resolveEnvironment(options.environment);
+				ensureSuccess(
+					await addExtensionToConfig("blocks", extension, {
+						configPath: options.config,
+						env: environment,
+					}),
+					"Failed to add extension",
 				);
-				process.exit(1);
+
+				emitSuccess(
+					currentCommandString(),
+					{
+						extension_type: "blocks",
+						extension,
+						config_path: resolveConfigPath(options.config, environment),
+					},
+					nextActionsFor(commandIds.applicationAddExtensionBlocks),
+				);
+			} catch (error) {
+				emitRuntimeError("applicationAddExtensionGroup", error);
 			}
-			process.exit(0);
 		});
 
 	app.addCommand(addCommand);
 
-	// application release
 	app
 		.command("release")
 		.description("Create a new release for the application")
 		.argument("<name>", "Application name")
-		.option("--release-version <version>", "Release version")
+		.requiredOption("--release-version <version>", "Release version")
 		.option("--description <description>", "Release description")
 		.option("--config <path>", "Path to configuration file")
 		.option("--environment <env>", "Environment (ote|prod)")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (name, options) => {
-			// Validate required fields
-			if (!options.releaseVersion) {
-				console.error("Release version is required");
-				console.log(
-					"Usage: godaddy application release <name> --release-version <version>",
+		.action(async (name: string, options: ReleaseOptions) => {
+			try {
+				const { applicationRelease } = await loadApplicationModule();
+				const environment = await resolveEnvironment(options.environment);
+				const releaseInfo = unwrapResult(
+					await applicationRelease({
+						applicationName: name,
+						version: options.releaseVersion,
+						description: options.description,
+						configPath: options.config,
+						env: environment,
+					}),
+					"Failed to create release",
+				) as ReleaseInfo;
+
+				emitSuccess(
+					currentCommandString(),
+					{
+						id: releaseInfo.id,
+						version: releaseInfo.version,
+						description: releaseInfo.description,
+						created_at: releaseInfo.createdAt,
+					},
+					nextActionsFor(commandIds.applicationRelease, {
+						applicationName: name,
+					}),
 				);
-				process.exit(1);
+			} catch (error) {
+				emitRuntimeError("applicationGroup", error);
 			}
-
-			const env = options.environment || "ote"; // || (await getEnvironment());
-			const input = {
-				// : CreateReleaseInput
-				applicationName: name,
-				version: options.releaseVersion,
-				description: options.description,
-				configPath: options.config,
-				env: env,
-			};
-
-			const result = await applicationRelease(input);
-
-			if (!result.success) {
-				console.error(result.error?.userMessage || "Failed to create release");
-				process.exit(1);
-			}
-
-			const releaseInfo = result.data as ReleaseInfo;
-
-			if (options.output === "json") {
-				console.log(JSON.stringify(releaseInfo, null, 2));
-			} else {
-				console.log("✅ Release created successfully!");
-				console.log(`  ID: ${releaseInfo.id}`);
-				console.log(`  Version: ${releaseInfo.version}`);
-				if (releaseInfo.description) {
-					console.log(`  Description: ${releaseInfo.description}`);
-				}
-				console.log(
-					`  Created: ${new Date(releaseInfo.createdAt).toLocaleString()}`,
-				);
-			}
-			process.exit(0);
 		});
 
-	// application deploy
 	app
 		.command("deploy")
 		.description("Deploy application (change status to ACTIVE)")
 		.argument("<name>", "Application name")
 		.option("--config <path>", "Path to configuration file")
 		.option("--environment <env>", "Environment (ote|prod)")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (name, options) => {
-			const env = options.environment || (await getEnvironment());
-			const result = await applicationDeploy(name, {
-				configPath: options.config,
-				env,
-			});
+		.action(async (name: string, options: DeployOptions) => {
+			try {
+				const { applicationDeploy } = await loadApplicationModule();
+				const environment = await resolveEnvironment(options.environment);
+				const deployResult = unwrapResult(
+					await applicationDeploy(name, {
+						configPath: options.config,
+						env: environment,
+					}),
+					"Failed to deploy application",
+				) as DeployResult;
 
-			if (!result.success) {
-				console.error(
-					result.error?.userMessage || "Failed to deploy application",
+				const summarizedPayload = protectPayload(
+					{
+						total_extensions: deployResult.totalExtensions,
+						blocked_extensions: deployResult.blockedExtensions,
+						security_reports: deployResult.securityReports,
+						bundle_reports: deployResult.bundleReports.map((report) => ({
+							extension_name: report.extensionName,
+							artifact_name: report.artifactName,
+							size_bytes: report.size,
+							targets: report.targets,
+							uploaded: report.uploaded,
+						})),
+					},
+					`application-deploy-${name}`,
 				);
-				process.exit(1);
-			}
 
-			if (options.output === "json") {
-				console.log(JSON.stringify({ success: true, ...result.data }, null, 2));
-			} else {
-				console.log(`✅ Application '${name}' deployed successfully!`);
-				console.log("  Status changed to ACTIVE");
-				if (result.data) {
-					console.log(`  Scanned ${result.data.totalExtensions} extension(s)`);
-					const totalFiles = result.data.securityReports.reduce(
-						(sum, r) => sum + r.scannedFiles,
-						0,
-					);
-					console.log(`  Total files scanned: ${totalFiles}`);
-
-					// Show bundle information
-					if (result.data.bundleReports?.length > 0) {
-						console.log(
-							`  Bundled ${result.data.bundleReports.length} extension(s):`,
-						);
-						for (const bundle of result.data.bundleReports) {
-							const targetsInfo = bundle.targets?.length
-								? ` → ${bundle.targets.join(", ")}`
-								: "";
-							console.log(
-								`    - ${bundle.extensionName}: ${bundle.artifactName} (${(bundle.size / 1024).toFixed(2)} KB)${targetsInfo}`,
-							);
-						}
-					}
-				}
+				emitSuccess(
+					currentCommandString(),
+					{
+						...summarizedPayload.value,
+						truncated: summarizedPayload.metadata?.truncated ?? false,
+						total: summarizedPayload.metadata?.total,
+						shown: summarizedPayload.metadata?.shown,
+						full_output: summarizedPayload.metadata?.full_output,
+					},
+					nextActionsFor(commandIds.applicationDeploy, {
+						applicationName: name,
+					}),
+				);
+			} catch (error) {
+				emitRuntimeError("applicationGroup", error);
 			}
-			process.exit(0);
 		});
 
 	return app;

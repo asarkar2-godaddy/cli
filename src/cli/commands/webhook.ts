@@ -1,47 +1,78 @@
 import { Command } from "commander";
-import { type WebhookEvent, webhookEvents } from "../../core/webhooks";
+import { webhookEvents } from "../../core/webhooks";
+import { mapRuntimeError } from "../agent/errors";
+import {
+	commandIds,
+	findRegistryNodeById,
+	registryNodeToResult,
+} from "../agent/registry";
+import { nextActionsFor } from "../agent/next-actions";
+import {
+	currentCommandString,
+	emitError,
+	emitSuccess,
+	unwrapResult,
+} from "../agent/respond";
+import { truncateList } from "../agent/truncation";
 
 export function createWebhookCommand(): Command {
 	const webhook = new Command("webhook").description(
 		"Manage webhook integrations",
 	);
 
-	// webhook events
+	webhook.action(async () => {
+		const node = findRegistryNodeById(commandIds.webhookGroup);
+		if (!node) {
+			const mapped = mapRuntimeError(
+				new Error("Webhook command registry metadata is missing"),
+			);
+			emitError(
+				currentCommandString(),
+				{ message: mapped.message, code: mapped.code },
+				mapped.fix,
+				nextActionsFor(commandIds.root),
+			);
+			return;
+		}
+
+		emitSuccess(
+			currentCommandString(),
+			registryNodeToResult(node),
+			nextActionsFor(commandIds.webhookGroup),
+		);
+	});
+
 	webhook
 		.command("events")
 		.description("List available webhook event types")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (options) => {
-			const result = await webhookEvents();
-
-			if (!result.success) {
-				console.error(
-					result.error?.userMessage || "Failed to get webhook events",
+		.action(async () => {
+			try {
+				const events = unwrapResult(
+					await webhookEvents(),
+					"Failed to get webhook events",
 				);
-				process.exit(1);
+				const truncated = truncateList(events, "webhook-events");
+
+				emitSuccess(
+					currentCommandString(),
+					{
+						events: truncated.items,
+						total: truncated.metadata.total,
+						shown: truncated.metadata.shown,
+						truncated: truncated.metadata.truncated,
+						full_output: truncated.metadata.full_output,
+					},
+					nextActionsFor(commandIds.webhookEvents),
+				);
+			} catch (error) {
+				const mapped = mapRuntimeError(error);
+				emitError(
+					currentCommandString(),
+					{ message: mapped.message, code: mapped.code },
+					mapped.fix,
+					nextActionsFor(commandIds.webhookGroup),
+				);
 			}
-
-			const events = result.data as WebhookEvent[];
-
-			if (options.output === "json") {
-				console.log(JSON.stringify(events, null, 2));
-			} else {
-				if (events.length === 0) {
-					console.log("No webhook events available");
-					return;
-				}
-
-				console.log(`Available Webhook Events (${events.length}):`);
-				console.log("");
-				for (const event of events) {
-					console.log(`• ${event.eventType}`);
-					if (event.description) {
-						console.log(`  ${event.description}`);
-					}
-					console.log("");
-				}
-			}
-			process.exit(0);
 		});
 
 	return webhook;

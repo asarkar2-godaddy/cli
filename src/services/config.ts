@@ -239,12 +239,7 @@ export function getConfigFile({
 			return Config(TOML.parse(content));
 		}
 
-		// Only show fallback message if we're not in prod environment
-		if (env !== "prod") {
-			console.warn(
-				`No environment-specific config found for ${env}, falling back to default`,
-			);
-		}
+		// Fallback to the default file without logging to stdout/stderr.
 	}
 
 	// Fall back to default config file
@@ -274,7 +269,6 @@ export async function createConfigFile(data: Config, env?: Environment) {
 		}
 	} catch (error) {
 		// File doesn't exist or can't be parsed, use empty object
-		console.log(`Creating new config file: ${filePath}`);
 	}
 
 	// Convert actions to the proper format
@@ -348,8 +342,6 @@ export async function createConfigFile(data: Config, env?: Environment) {
 
 	const tomlString = TOML.stringify(cleanedTomlData); // No need to cast here anymore
 	fs.writeFileSync(filePath, tomlString);
-
-	console.log(`Config file updated: ${filePath}`);
 }
 
 export async function updateVersionNumber(version: string | null) {
@@ -512,7 +504,6 @@ export async function createEnvFile(
 	}
 
 	fs.writeFileSync(envPath, envContent);
-	console.log(`Environment file updated: ${envFileName}`);
 }
 
 export async function addExtensionToConfig(

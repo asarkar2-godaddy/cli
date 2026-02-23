@@ -1,128 +1,140 @@
 import { Command } from "commander";
+import { envGet } from "../../core/environment";
+import { mapRuntimeError } from "../agent/errors";
 import {
-	type AuthResult,
-	type AuthStatus,
-	authLogin,
-	authLogout,
-	authStatus,
-} from "../../core/auth";
+	commandIds,
+	findRegistryNodeById,
+	registryNodeToResult,
+} from "../agent/registry";
+import { nextActionsFor } from "../agent/next-actions";
+import {
+	currentCommandString,
+	emitError,
+	emitSuccess,
+	unwrapResult,
+} from "../agent/respond";
+
+async function loadAuthModule() {
+	return import("../../core/auth");
+}
 
 export function createAuthCommand(): Command {
 	const auth = new Command("auth").description(
 		"Manage authentication with GoDaddy Developer Platform",
 	);
 
-	// auth login (explicit)
+	auth.action(async () => {
+		const node = findRegistryNodeById(commandIds.authGroup);
+		if (!node) {
+			const mapped = mapRuntimeError(
+				new Error("Auth command registry metadata is missing"),
+			);
+			emitError(currentCommandString(), mapped, mapped.fix, nextActionsFor(commandIds.root));
+			return;
+		}
+
+		emitSuccess(
+			currentCommandString(),
+			registryNodeToResult(node),
+			nextActionsFor(commandIds.authGroup),
+		);
+	});
+
 	auth
 		.command("login")
 		.description("Login to GoDaddy Developer Platform")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (options) => {
-			const result = await authLogin();
-
-			if (!result.success) {
-				console.error(result.error?.userMessage || "Authentication failed");
-				process.exit(1);
-			}
-
-			const authResult = result.data as AuthResult;
-
-			if (options.output === "json") {
-				console.log(
-					JSON.stringify(
-						{
-							success: authResult.success,
-							authenticated: true,
-							expiresAt: authResult.expiresAt?.toISOString(),
-						},
-						null,
-						2,
-					),
+		.action(async () => {
+			try {
+				const { authLogin } = await loadAuthModule();
+				const loginResult = unwrapResult(
+					await authLogin(),
+					"Authentication failed",
 				);
-			} else {
-				console.log(
-					"✅ Successfully authenticated with GoDaddy Developer Platform!",
+				const environmentResult = await envGet();
+				const environment = environmentResult.success
+					? String(environmentResult.data)
+					: "unknown";
+
+				emitSuccess(
+					currentCommandString(),
+					{
+						authenticated: loginResult.success,
+						environment,
+						expires_at: loginResult.expiresAt?.toISOString(),
+					},
+					nextActionsFor(commandIds.authLogin),
 				);
-				if (authResult.expiresAt) {
-					console.log(
-						`Token expires: ${authResult.expiresAt.toLocaleString()}`,
-					);
-				}
+			} catch (error) {
+				const mapped = mapRuntimeError(error);
+				emitError(
+					currentCommandString(),
+					{ message: mapped.message, code: mapped.code },
+					mapped.fix,
+					nextActionsFor(commandIds.authGroup),
+				);
 			}
-			process.exit(0);
 		});
 
-	// auth logout
 	auth
 		.command("logout")
 		.description("Logout and clear stored credentials")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (options) => {
-			const result = await authLogout();
+		.action(async () => {
+			try {
+				const { authLogout } = await loadAuthModule();
+				unwrapResult(await authLogout(), "Logout failed");
+				const environmentResult = await envGet();
+				const environment = environmentResult.success
+					? String(environmentResult.data)
+					: "unknown";
 
-			if (!result.success) {
-				console.error(result.error?.userMessage || "Logout failed");
-				process.exit(1);
-			}
-
-			if (options.output === "json") {
-				console.log(
-					JSON.stringify({ success: true, authenticated: false }, null, 2),
+				emitSuccess(
+					currentCommandString(),
+					{ authenticated: false, environment },
+					nextActionsFor(commandIds.authLogout),
 				);
-			} else {
-				console.log("✅ Successfully logged out. Credentials cleared.");
+			} catch (error) {
+				const mapped = mapRuntimeError(error);
+				emitError(
+					currentCommandString(),
+					{ message: mapped.message, code: mapped.code },
+					mapped.fix,
+					nextActionsFor(commandIds.authGroup),
+				);
 			}
-			process.exit(0);
 		});
 
-	// auth status
 	auth
 		.command("status")
 		.description("Check authentication status")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (options) => {
-			const result = await authStatus();
-
-			if (!result.success) {
-				console.error(
-					result.error?.userMessage || "Failed to check authentication status",
+		.action(async () => {
+			try {
+				const { authStatus } = await loadAuthModule();
+				const status = unwrapResult(
+					await authStatus(),
+					"Failed to check authentication status",
 				);
-				process.exit(1);
-			}
 
-			const status = result.data as AuthStatus;
-
-			if (options.output === "json") {
-				console.log(
-					JSON.stringify(
-						{
-							authenticated: status.authenticated,
-							hasToken: status.hasToken,
-							environment: status.environment,
-							tokenExpiry: status.tokenExpiry?.toISOString(),
-						},
-						null,
-						2,
-					),
+				emitSuccess(
+					currentCommandString(),
+					{
+						authenticated: status.authenticated,
+						has_token: status.hasToken,
+						token_expiry: status.tokenExpiry?.toISOString(),
+						environment: status.environment,
+					},
+					nextActionsFor(commandIds.authStatus, {
+						authenticated: status.authenticated,
+					}),
 				);
-			} else {
-				if (status.authenticated) {
-					console.log(
-						"✅ You are authenticated with GoDaddy Developer Platform",
-					);
-					console.log(`Environment: ${status.environment.toUpperCase()}`);
-					if (status.tokenExpiry) {
-						console.log(
-							`Token expires: ${status.tokenExpiry.toLocaleString()}`,
-						);
-					}
-				} else {
-					console.log("❌ You are not authenticated");
-					console.log(`Environment: ${status.environment.toUpperCase()}`);
-					console.log("Run 'godaddy auth' to authenticate");
-				}
+			} catch (error) {
+				const mapped = mapRuntimeError(error);
+				emitError(
+					currentCommandString(),
+					{ message: mapped.message, code: mapped.code },
+					mapped.fix,
+					nextActionsFor(commandIds.authGroup),
+				);
 			}
-			process.exit(0);
 		});
 
 	return auth;

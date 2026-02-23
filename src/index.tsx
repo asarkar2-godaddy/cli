@@ -1,13 +1,57 @@
 #!/usr/bin/env node
 
+import { CommanderError } from "commander";
 import { createCliProgram } from "./cli-entry";
+import { mapCommanderError, mapRuntimeError } from "./cli/agent/errors";
+import { commandIds } from "./cli/agent/registry";
+import { nextActionsFor } from "./cli/agent/next-actions";
+import {
+	currentCommandString,
+	emitError,
+	hasWrittenEnvelope,
+	resetEnvelopeWriter,
+} from "./cli/agent/respond";
 
 /**
  * Main entry point for the GoDaddy CLI
  */
 async function main(): Promise<void> {
+	resetEnvelopeWriter();
 	const program = createCliProgram();
-	program.parse();
+
+	try {
+		await program.parseAsync(process.argv);
+	} catch (error) {
+		if (error instanceof CommanderError) {
+			if (
+				error.code === "commander.helpDisplayed" ||
+				error.code === "commander.version"
+			) {
+				return;
+			}
+
+			if (!hasWrittenEnvelope()) {
+				const mapped = mapCommanderError(error);
+				emitError(
+					currentCommandString(),
+					{ message: mapped.message, code: mapped.code },
+					mapped.fix,
+					nextActionsFor(commandIds.root),
+				);
+			}
+			return;
+		}
+
+		if (!hasWrittenEnvelope()) {
+			const mapped = mapRuntimeError(error);
+			emitError(
+				currentCommandString(),
+				{ message: mapped.message, code: mapped.code },
+				mapped.fix,
+				nextActionsFor(commandIds.root),
+			);
+		}
+	}
 }
 
 // Restore cursor visibility on exit or signals
@@ -32,7 +76,13 @@ process.on("SIGTERM", () => {
 
 // Start the application
 main().catch((error) => {
-	console.error("Failed to start application:");
-	console.error(error instanceof Error ? error.message : String(error));
-	process.exit(1);
+	if (!hasWrittenEnvelope()) {
+		const mapped = mapRuntimeError(error);
+		emitError(
+			currentCommandString(),
+			{ message: mapped.message, code: mapped.code },
+			mapped.fix,
+			nextActionsFor(commandIds.root),
+		);
+	}
 });

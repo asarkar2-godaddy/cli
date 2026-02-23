@@ -5,7 +5,6 @@ let isDebugEnabled = false;
 
 // Configure logger based on environment and debug flag
 const createLogger = () => {
-	const isDev = process.env.NODE_ENV === "development";
 	const level = isDebugEnabled ? "debug" : "info";
 
 	const redact = {
@@ -18,25 +17,14 @@ const createLogger = () => {
 		censor: "[REDACTED]",
 	};
 
-	if (isDev || isDebugEnabled) {
-		return pino({
+	// Always log to stderr to keep stdout reserved for JSON command envelopes.
+	return pino(
+		{
 			level,
 			redact,
-			transport: {
-				target: "pino-pretty",
-				options: {
-					colorize: true,
-					translateTime: "HH:MM:ss",
-					ignore: "pid,hostname",
-				},
-			},
-		});
-	}
-
-	return pino({
-		level,
-		redact,
-	});
+		},
+		pino.destination(2),
+	);
 };
 
 let logger = createLogger();

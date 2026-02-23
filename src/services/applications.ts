@@ -184,7 +184,6 @@ export async function createApplication(
 					: error.message;
 				throw new Error(errorMessage);
 			}
-			console.log(err);
 			throw new Error("An unexpected error occurred");
 		}
 
@@ -221,7 +220,6 @@ export async function updateApplication(
 					: error.message;
 				throw new Error(errorMessage);
 			}
-			console.log(err);
 			throw new Error("An unexpected error occurred");
 		}
 
@@ -323,7 +321,6 @@ export async function createRelease(
 					: error.message;
 				throw new Error(errorMessage);
 			}
-			console.log(err);
 			throw new Error("An unexpected error occurred");
 		}
 
@@ -359,7 +356,6 @@ export async function enableApplication(
 					: error.message;
 				throw new Error(errorMessage);
 			}
-			console.log(err);
 			throw new Error("An unexpected error occurred");
 		}
 
@@ -395,7 +391,6 @@ export async function disableApplication(
 					: error.message;
 				throw new Error(errorMessage);
 			}
-			console.log(err);
 			throw new Error("An unexpected error occurred");
 		}
 
@@ -448,7 +443,6 @@ export async function archiveApplication(
 					: error.message;
 				throw new Error(errorMessage);
 			}
-			console.log(err);
 			throw new Error("An unexpected error occurred");
 		}
 

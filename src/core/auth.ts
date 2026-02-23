@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 import http from "node:http";
 import { URL } from "node:url";
-import keytar from "keytar";
 import openBrowser from "open";
 import {
 	AuthenticationError,
@@ -34,6 +33,14 @@ export interface AuthStatus {
 }
 
 let server: http.Server | null = null;
+let keytarInstance: Promise<typeof import("keytar").default> | undefined;
+
+async function getKeytar(): Promise<typeof import("keytar").default> {
+	if (!keytarInstance) {
+		keytarInstance = import("keytar").then((module) => module.default);
+	}
+	return keytarInstance;
+}
 
 /**
  * Authenticate with GoDaddy OAuth
@@ -196,6 +203,7 @@ export async function authLogin(): Promise<CmdResult<AuthResult>> {
  */
 export async function authLogout(): Promise<CmdResult<void>> {
 	try {
+		const keytar = await getKeytar();
 		await keytar.deletePassword(KEYCHAIN_SERVICE, "token");
 		return { success: true };
 	} catch (error) {
@@ -238,6 +246,7 @@ export async function authStatus(): Promise<CmdResult<AuthStatus>> {
 
 		// If we have a token, parse it to check expiry
 		try {
+			const keytar = await getKeytar();
 			const value = await keytar.getPassword(KEYCHAIN_SERVICE, "token");
 			if (!value) {
 				return {
@@ -276,8 +285,9 @@ export async function authStatus(): Promise<CmdResult<AuthStatus>> {
 					environment,
 				},
 			};
-		} catch (parseError) {
+		} catch {
 			// Invalid token format, clean it up
+			const keytar = await getKeytar();
 			await keytar.deletePassword(KEYCHAIN_SERVICE, "token");
 			return {
 				success: true,
@@ -355,10 +365,13 @@ async function getOauthClientId(): Promise<string> {
 }
 
 function saveToKeychain(key: string, value: string): Promise<void> {
-	return keytar.setPassword(KEYCHAIN_SERVICE, key, value);
+	return getKeytar().then((keytar) =>
+		keytar.setPassword(KEYCHAIN_SERVICE, key, value),
+	);
 }
 
 export async function getFromKeychain(key: string): Promise<string | null> {
+	const keytar = await getKeytar();
 	const value = await keytar.getPassword(KEYCHAIN_SERVICE, key);
 	if (!value) return null;
 

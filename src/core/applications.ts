@@ -206,8 +206,7 @@ export async function applicationInit(
 				environment,
 			);
 		} catch (fileError) {
-			// Note the file error but don't fail the entire operation
-			console.warn(`Warning: Failed to create config files: ${fileError}`);
+			// Ignore file generation errors without affecting API-level operation.
 		}
 
 		return {

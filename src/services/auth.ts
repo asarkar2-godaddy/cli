@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 import http from "node:http";
 import { URL } from "node:url";
-import keytar from "keytar"; // This will now be handled by our build plugin
 import openBrowser from "open";
 import {
 	type Environment,
@@ -16,6 +15,14 @@ const PORT = 7443;
 const OAUTH_SCOPE = "apps.app-registry:read apps.app-registry:write";
 
 let server: http.Server | null = null;
+let keytarInstance: Promise<typeof import("keytar").default> | undefined;
+
+async function getKeytar(): Promise<typeof import("keytar").default> {
+	if (!keytarInstance) {
+		keytarInstance = import("keytar").then((module) => module.default);
+	}
+	return keytarInstance;
+}
 
 async function getEnvironment(): Promise<Environment> {
 	const result = await envGet();
@@ -47,10 +54,13 @@ async function getOauthClientId(): Promise<string> {
 }
 
 function saveToKeychain(key: string, value: string): Promise<void> {
-	return keytar.setPassword(KEYCHAIN_SERVICE, key, value);
+	return getKeytar().then((keytar) =>
+		keytar.setPassword(KEYCHAIN_SERVICE, key, value),
+	);
 }
 
 export async function getFromKeychain(key: string): Promise<string | null> {
+	const keytar = await getKeytar();
 	const value = await keytar.getPassword(KEYCHAIN_SERVICE, key);
 	if (!value) return null;
 
@@ -208,6 +218,7 @@ export function stopAuthServer() {
 }
 
 export async function logout(): Promise<void> {
+	const keytar = await getKeytar();
 	await keytar.deletePassword(KEYCHAIN_SERVICE, "token");
 }
 

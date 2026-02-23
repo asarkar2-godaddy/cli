@@ -1,4 +1,17 @@
 import { Command } from "commander";
+import { mapRuntimeError } from "../agent/errors";
+import {
+	commandIds,
+	findRegistryNodeById,
+	registryNodeToResult,
+} from "../agent/registry";
+import { nextActionsFor } from "../agent/next-actions";
+import {
+	currentCommandString,
+	emitError,
+	emitSuccess,
+} from "../agent/respond";
+import { protectPayload, truncateList } from "../agent/truncation";
 
 // Available actions list
 const AVAILABLE_ACTIONS = [
@@ -1794,67 +1807,107 @@ export function createActionsCommand(): Command {
 		"Manage application actions",
 	);
 
-	// actions list
+	actions.action(async () => {
+		const node = findRegistryNodeById(commandIds.actionsGroup);
+		if (!node) {
+			const mapped = mapRuntimeError(
+				new Error("Actions command registry metadata is missing"),
+			);
+			emitError(
+				currentCommandString(),
+				{ message: mapped.message, code: mapped.code },
+				mapped.fix,
+				nextActionsFor(commandIds.root),
+			);
+			return;
+		}
+
+		emitSuccess(
+			currentCommandString(),
+			registryNodeToResult(node),
+			nextActionsFor(commandIds.actionsGroup),
+		);
+	});
+
 	actions
 		.command("list")
 		.description(
 			"List all available actions that an application developer can hook into",
 		)
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (options) => {
-			const availableActions = AVAILABLE_ACTIONS;
-
-			if (options.output === "json") {
-				console.log(JSON.stringify({ actions: availableActions }, null, 2));
-			} else {
-				if (availableActions.length === 0) {
-					console.log("No actions found");
-					return;
-				}
-
-				console.log(`Available actions (${availableActions.length}):`);
-				for (const action of availableActions) {
-					console.log(`  ${action}`);
-				}
+		.action(async () => {
+			try {
+				const truncated = truncateList(AVAILABLE_ACTIONS, "actions-list");
+				emitSuccess(
+					currentCommandString(),
+					{
+						actions: truncated.items,
+						total: truncated.metadata.total,
+						shown: truncated.metadata.shown,
+						truncated: truncated.metadata.truncated,
+						full_output: truncated.metadata.full_output,
+					},
+					nextActionsFor(commandIds.actionsList, {
+						actionName: truncated.items[0],
+					}),
+				);
+			} catch (error) {
+				const mapped = mapRuntimeError(error);
+				emitError(
+					currentCommandString(),
+					{ message: mapped.message, code: mapped.code },
+					mapped.fix,
+					nextActionsFor(commandIds.actionsGroup),
+				);
 			}
-			process.exit(0);
 		});
 
-	// actions describe <action-name>
 	actions
 		.command("describe")
 		.description("Show detailed interface information for a specific action")
 		.argument("<action>", "Action name")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (actionName, options) => {
-			if (!AVAILABLE_ACTIONS.includes(actionName)) {
-				console.error(`Action '${actionName}' not found`);
-				console.log(`Available actions: ${AVAILABLE_ACTIONS.join(", ")}`);
-				process.exit(1);
-			}
+		.action(async (actionName) => {
+			try {
+				if (!AVAILABLE_ACTIONS.includes(actionName)) {
+					throw new Error(`Action '${actionName}' not found`);
+				}
 
-			const actionInterface = ACTION_INTERFACES[actionName];
+				const actionInterface = ACTION_INTERFACES[actionName];
+				if (!actionInterface) {
+					throw new Error(
+						`Interface definition not available for action '${actionName}'`,
+					);
+				}
 
-			if (!actionInterface) {
-				console.error(
-					`Interface definition not available for action '${actionName}'`,
+				const protectedPayload = protectPayload(
+					{
+						name: actionInterface.name,
+						description: actionInterface.description,
+						request_schema: actionInterface.requestSchema,
+						response_schema: actionInterface.responseSchema,
+					},
+					`actions-describe-${actionName}`,
 				);
-				process.exit(1);
-			}
 
-			if (options.output === "json") {
-				console.log(JSON.stringify(actionInterface, null, 2));
-			} else {
-				console.log(`Action: ${actionInterface.name}`);
-				console.log(`Description: ${actionInterface.description}`);
-				console.log("");
-				console.log("Request Schema:");
-				console.log(JSON.stringify(actionInterface.requestSchema, null, 2));
-				console.log("");
-				console.log("Response Schema:");
-				console.log(JSON.stringify(actionInterface.responseSchema, null, 2));
+				emitSuccess(
+					currentCommandString(),
+					{
+						...protectedPayload.value,
+						truncated: protectedPayload.metadata?.truncated ?? false,
+						total: protectedPayload.metadata?.total,
+						shown: protectedPayload.metadata?.shown,
+						full_output: protectedPayload.metadata?.full_output,
+					},
+					nextActionsFor(commandIds.actionsDescribe, { actionName }),
+				);
+			} catch (error) {
+				const mapped = mapRuntimeError(error);
+				emitError(
+					currentCommandString(),
+					{ message: mapped.message, code: mapped.code },
+					mapped.fix,
+					nextActionsFor(commandIds.actionsGroup),
+				);
 			}
-			process.exit(0);
 		});
 
 	return actions;
