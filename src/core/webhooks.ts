@@ -6,6 +6,7 @@ import {
 	type ValidationError,
 } from "../effect/errors";
 import type { FileSystem } from "../effect/services/filesystem";
+import type { HttpClient } from "../effect/services/http";
 import type { Keychain } from "../effect/services/keychain";
 import { getWebhookEventsTypesEffect } from "../services/webhook-events";
 import { getFromKeychainEffect } from "./auth";
@@ -22,7 +23,7 @@ export interface WebhookEvent {
 export function webhookEventsEffect(): Effect.Effect<
 	WebhookEvent[],
 	AuthenticationError | NetworkError | ConfigurationError | ValidationError,
-	FileSystem | Keychain
+	FileSystem | Keychain | HttpClient
 > {
 	return Effect.gen(function* () {
 		const accessToken = yield* getFromKeychainEffect("token");

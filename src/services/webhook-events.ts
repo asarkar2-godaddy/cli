@@ -7,6 +7,7 @@ import {
 	type ValidationError,
 } from "../effect/errors";
 import type { FileSystem } from "../effect/services/filesystem";
+import { HttpClient } from "../effect/services/http";
 import { logHttpRequest, logHttpResponse } from "./logger";
 
 export type WebhookEventType = {
@@ -16,7 +17,7 @@ export type WebhookEventType = {
 
 /**
  * Fetch webhook event types from the API.
- * Requires FileSystem service (via envGetEffect).
+ * Requires FileSystem service (via envGetEffect) and HttpClient.
  */
 export function getWebhookEventsTypesEffect({
 	accessToken,
@@ -25,7 +26,7 @@ export function getWebhookEventsTypesEffect({
 }): Effect.Effect<
 	{ events: Array<WebhookEventType> },
 	AuthenticationError | NetworkError | ConfigurationError | ValidationError,
-	FileSystem
+	FileSystem | HttpClient
 > {
 	return Effect.gen(function* () {
 		if (!accessToken) {
@@ -36,6 +37,8 @@ export function getWebhookEventsTypesEffect({
 				}),
 			);
 		}
+
+		const httpClient = yield* HttpClient;
 
 		// Get the current environment and build the API URL
 		const env: Environment = yield* envGetEffect();
@@ -55,7 +58,7 @@ export function getWebhookEventsTypesEffect({
 		});
 
 		const response = yield* Effect.tryPromise({
-			try: () => fetch(url, { headers }),
+			try: () => httpClient.fetch(url, { headers }),
 			catch: (error) =>
 				new NetworkError({
 					message: `Failed to fetch webhook events: ${error instanceof Error ? error.message : String(error)}`,

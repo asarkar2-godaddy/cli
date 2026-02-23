@@ -65,6 +65,18 @@ describe("CLI Smoke Tests", () => {
 		expect(payload.ok).toBe(true);
 	});
 
+	it("--env overrides active environment for command execution", () => {
+		const result = runCli(["--env", "prod", "env", "get"]);
+		expect(result.status).toBe(0);
+
+		const payload = JSON.parse(result.stdout) as {
+			ok: boolean;
+			result: { environment: string };
+		};
+		expect(payload.ok).toBe(true);
+		expect(payload.result.environment).toBe("prod");
+	});
+
 	it("application parent command returns subtree discovery envelope", () => {
 		const result = runCli(["application"]);
 		expect(result.status).toBe(0);
@@ -122,6 +134,31 @@ describe("CLI Smoke Tests", () => {
 		expect(payload.ok).toBe(false);
 		expect(payload.error.code).toBe("VALIDATION_ERROR");
 		expect(payload.error.message).toContain("Missing argument <name>");
+	});
+
+	it("deploy --follow emits start before terminal error on preflight failure", () => {
+		const result = runCli([
+			"application",
+			"deploy",
+			"demo",
+			"--follow",
+			"--environment",
+			"invalid",
+		]);
+		expect(result.status).toBe(1);
+
+		const lines = result.stdout.split("\n").filter((line) => line.length > 0);
+		expect(lines.length).toBeGreaterThanOrEqual(2);
+
+		const firstEvent = JSON.parse(lines[0]) as { type: string };
+		const lastEvent = JSON.parse(lines[lines.length - 1]) as {
+			type: string;
+			error?: { code: string };
+		};
+
+		expect(firstEvent.type).toBe("start");
+		expect(lastEvent.type).toBe("error");
+		expect(lastEvent.error?.code).toBe("VALIDATION_ERROR");
 	});
 
 	it("--help still prints framework help text", () => {

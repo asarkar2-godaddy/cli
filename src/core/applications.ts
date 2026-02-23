@@ -1,4 +1,3 @@
-import { rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { type ArkErrors, type } from "arktype";
 import * as Effect from "effect/Effect";
@@ -8,7 +7,8 @@ import {
 	NetworkError,
 	ValidationError,
 } from "../effect/errors";
-import type { FileSystem } from "../effect/services/filesystem";
+import { FileSystem } from "../effect/services/filesystem";
+import type { HttpClient } from "../effect/services/http";
 import type { Keychain } from "../effect/services/keychain";
 import {
 	archiveApplicationEffect as archiveAppServiceEffect,
@@ -243,18 +243,21 @@ function emitProgress(
 function cleanupBundleArtifacts(
 	artifactPath: string,
 	sourcemapPath?: string,
-): Effect.Effect<void> {
+): Effect.Effect<void, never, FileSystem> {
 	return Effect.gen(function* () {
-		yield* Effect.tryPromise({
-			try: () => rm(artifactPath, { force: true }),
-			catch: () => undefined,
-		}).pipe(Effect.ignore);
+		const fs = yield* FileSystem;
+		try {
+			fs.rmSync(artifactPath, { force: true });
+		} catch {
+			// best-effort cleanup
+		}
 
 		if (sourcemapPath) {
-			yield* Effect.tryPromise({
-				try: () => rm(sourcemapPath, { force: true }),
-				catch: () => undefined,
-			}).pipe(Effect.ignore);
+			try {
+				fs.rmSync(sourcemapPath, { force: true });
+			} catch {
+				// best-effort cleanup
+			}
 		}
 	});
 }
@@ -829,12 +832,13 @@ export function applicationReleaseEffect(
 		let actions: ActionConfig[] = [];
 		let subscriptions: SubscriptionConfig[] = [];
 
+		const fsService = yield* FileSystem;
 		const configResult = yield* Effect.try({
 			try: () =>
 				getConfigFile({
 					configPath: input.configPath,
 					env: input.env as Environment,
-				}),
+				}, fsService),
 			catch: () =>
 				new ValidationError({
 					message: "Config file not found",
@@ -888,7 +892,7 @@ export function applicationReleaseEffect(
 export function applicationDeployEffect(
 	applicationName: string,
 	options?: DeployOptions,
-): Effect.Effect<DeployResult, CliError, FileSystem | Keychain> {
+): Effect.Effect<DeployResult, CliError, FileSystem | Keychain | HttpClient> {
 	return Effect.gen(function* () {
 		yield* emitProgress(options, {
 			type: "step",
@@ -993,10 +997,11 @@ export function applicationDeployEffect(
 			status: "started",
 		});
 		const repoRoot = process.cwd();
+		const deployFs = yield* FileSystem;
 		const extensions = getExtensionsFromConfig({
 			configPath: options?.configPath,
 			env: options?.env,
-		});
+		}, deployFs);
 		yield* emitProgress(options, {
 			type: "step",
 			name: "extensions.discover",
@@ -1235,52 +1240,68 @@ export function applicationDeployEffect(
 						? extension.targets.map((t) => t.target)
 						: [undefined]; // No targets = single upload without target info
 
-			const uploadIds: string[] = [];
-			let uploaded = false;
+			const uploadResult = yield* Effect.gen(function* () {
+				const uploadIds: string[] = [];
 
-			yield* emitProgress(options, {
-				type: "step",
-				name: "upload",
-				status: "started",
-				extensionName: extension.name,
-				details: { targetCount: targets.length },
-			});
-			for (const target of targets) {
-				const uploadTarget = yield* getUploadTargetEffect(
-					{
-						applicationId,
-						releaseId,
-						contentType: "JS",
-						target,
-					},
-					accessToken,
-				);
-
-				uploadIds.push(uploadTarget.uploadId);
-
-				// Upload to S3 (Phase 4)
-				yield* uploadArtifactEffect(uploadTarget, bundle.artifactPath, {
-					contentType: "application/javascript",
+				yield* emitProgress(options, {
+					type: "step",
+					name: "upload",
+					status: "started",
+					extensionName: extension.name,
+					details: { targetCount: targets.length },
 				});
-			}
 
-			uploaded = true;
-			yield* emitProgress(options, {
-				type: "step",
-				name: "upload",
-				status: "completed",
-				extensionName: extension.name,
-				details: { uploadCount: uploadIds.length },
-			});
-			yield* emitProgress(options, {
-				type: "progress",
-				name: "bundle.upload",
-				percent: Math.round(((index + 1) / extensions.length) * 100),
-				message: `Bundled and uploaded ${index + 1}/${extensions.length} extension(s)`,
-			});
+				for (const target of targets) {
+					const uploadTarget = yield* getUploadTargetEffect(
+						{
+							applicationId,
+							releaseId,
+							contentType: "JS",
+							target,
+						},
+						accessToken,
+					);
 
-			// Clean up artifacts after successful upload
-			yield* cleanupBundleArtifacts(bundle.artifactPath, bundle.sourcemapPath);
+					uploadIds.push(uploadTarget.uploadId);
+
+					// Upload to S3 (Phase 4)
+					yield* uploadArtifactEffect(uploadTarget, bundle.artifactPath, {
+						contentType: "application/javascript",
+					});
+				}
+
+				yield* emitProgress(options, {
+					type: "step",
+					name: "upload",
+					status: "completed",
+					extensionName: extension.name,
+					details: { uploadCount: uploadIds.length },
+				});
+				yield* emitProgress(options, {
+					type: "progress",
+					name: "bundle.upload",
+					percent: Math.round(((index + 1) / extensions.length) * 100),
+					message: `Bundled and uploaded ${index + 1}/${extensions.length} extension(s)`,
+				});
+
+				return {
+					uploadIds,
+					uploaded: true,
+				};
+			}).pipe(
+				Effect.tapError(() =>
+					emitProgress(options, {
+						type: "step",
+						name: "upload",
+						status: "failed",
+						extensionName: extension.name,
+						message: "Failed to upload extension artifact",
+					}),
+				),
+				Effect.ensuring(
+					cleanupBundleArtifacts(bundle.artifactPath, bundle.sourcemapPath),
+				),
+			);
 
 			bundleReports.push({
 				extensionName: extension.name,
@@ -1288,12 +1309,12 @@ export function applicationDeployEffect(
 				artifactPath: bundle.artifactPath,
 				size: bundle.size,
 				sha256: bundle.sha256,
-				uploadIds,
+				uploadIds: uploadResult.uploadIds,
 				targets:
 					extension.type === "blocks"
 						? ["blocks"]
 						: extension.targets?.map((t) => t.target),
-				uploaded,
+				uploaded: uploadResult.uploaded,
 			});
 		}
 

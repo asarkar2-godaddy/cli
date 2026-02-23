@@ -6,9 +6,10 @@ import { FileSystem, type FileSystemService } from "../services/filesystem";
 import { HttpClient } from "../services/http";
 import { Keychain, type KeychainService } from "../services/keychain";
 
-export const HttpClientLive = Layer.succeed(HttpClient, {
-	fetch: globalThis.fetch.bind(globalThis),
-});
+export const HttpClientLive = Layer.sync(HttpClient, () => ({
+	fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+		globalThis.fetch(input, init),
+}));
 
 export const FileSystemLive = Layer.succeed(FileSystem, {
 	readFileSync: (path: string, encoding: BufferEncoding) =>

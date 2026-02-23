@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as Effect from "effect/Effect";
@@ -7,12 +8,19 @@ import {
 	applicationDeployEffect,
 } from "../../src/core/applications";
 import * as authModule from "../../src/core/auth";
+import { NetworkError } from "../../src/effect/errors";
 import * as applicationsService from "../../src/services/applications";
 import * as configService from "../../src/services/config";
 import type { ConfigExtensionInfo } from "../../src/services/config";
+import * as bundlerService from "../../src/services/extension/bundler";
 import * as presignedUrlService from "../../src/services/extension/presigned-url";
+import * as securityScanService from "../../src/services/extension/security-scan";
 import * as uploadService from "../../src/services/extension/upload";
-import { runEffect } from "../setup/effect-test-utils";
+import {
+	extractFailure,
+	runEffect,
+	runEffectExit,
+} from "../setup/effect-test-utils";
 
 const testDir = join(process.cwd(), "tests", "fixtures", "test-app-deploy");
 const extensionsDir = join(testDir, "extensions");
@@ -26,50 +34,56 @@ describe("Application Deploy with Security Scanning", () => {
 		await mkdir(extensionsDir, { recursive: true });
 
 		// Mock authentication
-		vi.spyOn(authModule, "getFromKeychainEffect").mockReturnValue(Effect.succeed("test-token" as string | null));
+		vi.spyOn(authModule, "getFromKeychainEffect").mockReturnValue(
+			Effect.succeed("test-token" as string | null),
+		);
 
 		// Mock getApplicationAndLatestReleaseEffect to return a valid application with release
 		vi.spyOn(
 			applicationsService,
 			"getApplicationAndLatestReleaseEffect",
-		).mockReturnValue(Effect.succeed({
-			application: {
-				id: "app-123",
-				name: "test-app",
-				label: "Test App",
-				description: "Test application",
-				status: "INACTIVE",
-				url: "https://test.example.com",
-				proxyUrl: "https://proxy.test.example.com",
-				authorizationScopes: ["scope1"],
-				releases: {
-					edges: [
-						{
-							node: {
-								id: "release-123",
-								version: "1.0.0",
-								description: "Initial release",
-								createdAt: "2025-01-01T00:00:00Z",
+		).mockReturnValue(
+			Effect.succeed({
+				application: {
+					id: "app-123",
+					name: "test-app",
+					label: "Test App",
+					description: "Test application",
+					status: "INACTIVE",
+					url: "https://test.example.com",
+					proxyUrl: "https://proxy.test.example.com",
+					authorizationScopes: ["scope1"],
+					releases: {
+						edges: [
+							{
+								node: {
+									id: "release-123",
+									version: "1.0.0",
+									description: "Initial release",
+									createdAt: "2025-01-01T00:00:00Z",
+								},
 							},
-						},
-					],
+						],
+					},
 				},
-			},
-		}));
+			}),
+		);
 
 		// Mock updateApplicationEffect
-		vi.spyOn(applicationsService, "updateApplicationEffect").mockReturnValue(Effect.succeed({
-			updateApplication: {
-				id: "app-123",
-				name: "test-app",
-				label: "Test App",
-				description: "Test application",
-				status: "ACTIVE",
-				url: "https://test.example.com",
-				proxyUrl: "https://proxy.test.example.com",
-				clientId: "test-client-id",
-			},
-		}));
+		vi.spyOn(applicationsService, "updateApplicationEffect").mockReturnValue(
+			Effect.succeed({
+				updateApplication: {
+					id: "app-123",
+					name: "test-app",
+					label: "Test App",
+					description: "Test application",
+					status: "ACTIVE",
+					url: "https://test.example.com",
+					proxyUrl: "https://proxy.test.example.com",
+					clientId: "test-client-id",
+				},
+			}),
+		);
 
 		// Setup spy for getExtensionsFromConfig (will be configured per test)
 		getExtensionsFromConfigSpy = vi.spyOn(
@@ -78,22 +92,26 @@ describe("Application Deploy with Security Scanning", () => {
 		);
 
 		// Mock presigned URL generation
-		vi.spyOn(presignedUrlService, "getUploadTargetEffect").mockReturnValue(Effect.succeed({
-			uploadId: "upload-123",
-			url: "https://s3.example.com/presigned-url",
-			key: "test/bundle.js",
-			expiresAt: "2025-12-31T23:59:59Z",
-			maxSizeBytes: 10485760,
-			requiredHeaders: {},
-		}));
+		vi.spyOn(presignedUrlService, "getUploadTargetEffect").mockReturnValue(
+			Effect.succeed({
+				uploadId: "upload-123",
+				url: "https://s3.example.com/presigned-url",
+				key: "test/bundle.js",
+				expiresAt: "2025-12-31T23:59:59Z",
+				maxSizeBytes: 10485760,
+				requiredHeaders: {},
+			}),
+		);
 
 		// Mock S3 upload
-		vi.spyOn(uploadService, "uploadArtifactEffect").mockReturnValue(Effect.succeed({
-			uploadId: "upload-123",
-			etag: '"abc123"',
-			status: 200,
-			sizeBytes: 1000,
-		}));
+		vi.spyOn(uploadService, "uploadArtifactEffect").mockReturnValue(
+			Effect.succeed({
+				uploadId: "upload-123",
+				etag: '"abc123"',
+				status: 200,
+				sizeBytes: 1000,
+			}),
+		);
 	});
 
 	afterEach(async () => {
@@ -132,14 +150,12 @@ exec('rm -rf /'); // SEC001 violation
 			];
 			getExtensionsFromConfigSpy.mockReturnValue(extensions);
 
-			try {
-				await runEffect(applicationDeployEffect("test-app"));
-				expect.unreachable("Should have thrown");
-			} catch (error: unknown) {
-				const err = error as { userMessage?: string };
-				expect(err.userMessage).toContain("blocked");
-			}
-			expect(applicationsService.updateApplicationEffect).not.toHaveBeenCalled();
+			const exit = await runEffectExit(applicationDeployEffect("test-app"));
+			const err = extractFailure(exit) as { userMessage: string };
+			expect(err.userMessage).toContain("blocked");
+			expect(
+				applicationsService.updateApplicationEffect,
+			).not.toHaveBeenCalled();
 		} finally {
 			process.chdir(originalCwd);
 		}
@@ -196,20 +212,20 @@ export function greet(name: string) {
 			];
 			getExtensionsFromConfigSpy.mockReturnValue(extensions);
 
-			const result = await runEffect(applicationDeployEffect("test-app", {
-				onProgress: (event) => {
-					progressEvents.push(event);
-				},
-			}));
+			const result = await runEffect(
+				applicationDeployEffect("test-app", {
+					onProgress: (event) => {
+						progressEvents.push(event);
+					},
+				}),
+			);
 
 			expect(result.totalExtensions).toBe(2);
 			expect(result.blockedExtensions).toBe(0);
 			expect(result.securityReports).toHaveLength(2);
 			expect(result.securityReports[0].preBundleReport).toBeDefined();
 			expect(result.securityReports[0].postBundleReport).toBeDefined();
-			expect(result.securityReports[0].postBundleReport?.blocked).toBe(
-				false,
-			);
+			expect(result.securityReports[0].postBundleReport?.blocked).toBe(false);
 			expect(
 				progressEvents.some(
 					(event) =>
@@ -282,9 +298,7 @@ export function func${i}() {
 			expect(result.securityReports).toHaveLength(3);
 
 			// Verify all extensions were scanned
-			const extensionNames = result.securityReports.map(
-				(r) => r.extensionName,
-			);
+			const extensionNames = result.securityReports.map((r) => r.extensionName);
 			expect(extensionNames).toContain("@test/extension-1");
 			expect(extensionNames).toContain("@test/extension-2");
 			expect(extensionNames).toContain("@test/extension-3");
@@ -342,14 +356,12 @@ exec('dangerous command'); // SEC001
 			getExtensionsFromConfigSpy.mockReturnValue(extensions);
 
 			// Deployment should be blocked
-			try {
-				await runEffect(applicationDeployEffect("test-app"));
-				expect.unreachable("Should have thrown");
-			} catch (error: unknown) {
-				const err = error as { userMessage?: string };
-				expect(err.userMessage).toContain("blocked");
-			}
-			expect(applicationsService.updateApplicationEffect).not.toHaveBeenCalled();
+			const exit = await runEffectExit(applicationDeployEffect("test-app"));
+			const err = extractFailure(exit) as { userMessage: string };
+			expect(err.userMessage).toContain("blocked");
+			expect(
+				applicationsService.updateApplicationEffect,
+			).not.toHaveBeenCalled();
 		} finally {
 			process.chdir(originalCwd);
 		}
@@ -373,6 +385,86 @@ exec('dangerous command'); // SEC001
 				{ status: "ACTIVE" },
 				{ accessToken: "test-token" },
 			);
+		} finally {
+			process.chdir(originalCwd);
+		}
+	});
+
+	test("deployment cleans bundle artifacts when upload fails", async () => {
+		const originalCwd = process.cwd();
+		process.chdir(testDir);
+
+		try {
+			const extDir = join(extensionsDir, "extension-upload-fail");
+			await mkdir(extDir, { recursive: true });
+			await writeFile(
+				join(extDir, "index.ts"),
+				`
+export function run() {
+  return "ok";
+}
+`,
+			);
+
+			getExtensionsFromConfigSpy.mockReturnValue([
+				{
+					type: "embed",
+					name: "@test/extension-upload-fail",
+					handle: "extension-upload-fail",
+					source: "index.ts",
+					targets: [{ target: "body.start" }],
+				},
+			]);
+
+			const artifactPath = join(testDir, "upload-fail.bundle.mjs");
+			const sourcemapPath = `${artifactPath}.map`;
+			await writeFile(artifactPath, "export const value = 1;");
+			await writeFile(sourcemapPath, "{}");
+
+			const cleanReport = {
+				findings: [],
+				blocked: false,
+				summary: {
+					total: 0,
+					byRuleId: {},
+					bySeverity: { block: 0, warn: 0, off: 0 },
+				},
+				scannedFiles: 1,
+			};
+
+			vi.spyOn(securityScanService, "scanExtensionEffect").mockReturnValue(
+				Effect.succeed(cleanReport),
+			);
+			vi.spyOn(bundlerService, "bundleExtensionEffect").mockReturnValue(
+				Effect.succeed({
+					packageName: "extension-upload-fail",
+					artifactName: "upload-fail.bundle.mjs",
+					artifactPath,
+					size: 24,
+					sha256: "deadbeef",
+					sourcemapPath,
+				}),
+			);
+			vi.spyOn(securityScanService, "scanBundleEffect").mockReturnValue(
+				Effect.succeed(cleanReport),
+			);
+			vi.spyOn(uploadService, "uploadArtifactEffect").mockReturnValue(
+				Effect.fail(
+					new NetworkError({
+						message: "upload failed",
+						userMessage: "upload failed",
+					}),
+				),
+			);
+
+			const exit = await runEffectExit(applicationDeployEffect("test-app"));
+			const err = extractFailure(exit) as { userMessage: string };
+			expect(err.userMessage).toBe("upload failed");
+			expect(existsSync(artifactPath)).toBe(false);
+			expect(existsSync(sourcemapPath)).toBe(false);
+			expect(
+				applicationsService.updateApplicationEffect,
+			).not.toHaveBeenCalled();
 		} finally {
 			process.chdir(originalCwd);
 		}

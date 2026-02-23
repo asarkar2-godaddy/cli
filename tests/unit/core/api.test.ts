@@ -6,7 +6,11 @@ import {
 	readBodyFromFileEffect,
 } from "../../../src/core/api";
 import { mockKeytar, mockValidToken } from "../../setup/system-mocks";
-import { runEffect } from "../../setup/effect-test-utils";
+import {
+	extractFailure,
+	runEffect,
+	runEffectExit,
+} from "../../setup/effect-test-utils";
 
 describe("API Core Functions", () => {
 	beforeEach(() => {
@@ -26,32 +30,32 @@ describe("API Core Functions", () => {
 				new Error("Keychain locked"),
 			);
 
-			try {
-				await runEffect(apiRequestEffect({ endpoint: "/v1/domains" }));
-				expect.unreachable("Should have thrown");
-			} catch (error: unknown) {
-				const err = error as { _tag?: string; userMessage?: string };
-				expect(err._tag).toBe("AuthenticationError");
-				expect(err.userMessage).toContain(
-					"Unable to access secure credentials",
-				);
-			}
+			const exit = await runEffectExit(
+				apiRequestEffect({ endpoint: "/v1/domains" }),
+			);
+			const err = extractFailure(exit) as {
+				_tag: string;
+				userMessage: string;
+			};
+			expect(err._tag).toBe("AuthenticationError");
+			expect(err.userMessage).toContain(
+				"Unable to access secure credentials",
+			);
 			expect(fetch).not.toHaveBeenCalled();
 		});
 
 		test("returns validation error for full URL endpoints", async () => {
-			try {
-				await runEffect(
-					apiRequestEffect({
-						endpoint: "https://api.godaddy.com/v1/domains",
-					}),
-				);
-				expect.unreachable("Should have thrown");
-			} catch (error: unknown) {
-				const err = error as { _tag?: string; userMessage?: string };
-				expect(err._tag).toBe("ValidationError");
-				expect(err.userMessage).toContain("Only relative endpoints");
-			}
+			const exit = await runEffectExit(
+				apiRequestEffect({
+					endpoint: "https://api.godaddy.com/v1/domains",
+				}),
+			);
+			const err = extractFailure(exit) as {
+				_tag: string;
+				userMessage: string;
+			};
+			expect(err._tag).toBe("ValidationError");
+			expect(err.userMessage).toContain("Only relative endpoints");
 			expect(fetch).not.toHaveBeenCalled();
 		});
 
@@ -93,16 +97,15 @@ describe("API Core Functions", () => {
 				}),
 			);
 
-			try {
-				await runEffect(
-					apiRequestEffect({ endpoint: "/v1/shoppers/me" }),
-				);
-				expect.unreachable("Should have thrown");
-			} catch (error: unknown) {
-				const err = error as { _tag?: string; userMessage?: string };
-				expect(err._tag).toBe("AuthenticationError");
-				expect(err.userMessage).toContain("re-authenticate");
-			}
+			const exit = await runEffectExit(
+				apiRequestEffect({ endpoint: "/v1/shoppers/me" }),
+			);
+			const err = extractFailure(exit) as {
+				_tag: string;
+				userMessage: string;
+			};
+			expect(err._tag).toBe("AuthenticationError");
+			expect(err.userMessage).toContain("re-authenticate");
 		});
 	});
 
@@ -132,23 +135,17 @@ describe("API Core Functions", () => {
 		});
 
 		test("returns error for missing equals sign", async () => {
-			try {
-				await runEffect(parseFieldsEffect(["invalidfield"]));
-				expect.unreachable("Should have thrown");
-			} catch (error: unknown) {
-				const err = error as { userMessage?: string };
-				expect(err.userMessage).toContain("Invalid field format");
-			}
+			const exit = await runEffectExit(
+				parseFieldsEffect(["invalidfield"]),
+			);
+			const err = extractFailure(exit) as { userMessage: string };
+			expect(err.userMessage).toContain("Invalid field format");
 		});
 
 		test("returns error for empty key", async () => {
-			try {
-				await runEffect(parseFieldsEffect(["=value"]));
-				expect.unreachable("Should have thrown");
-			} catch (error: unknown) {
-				const err = error as { userMessage?: string };
-				expect(err.userMessage).toContain("Empty field key");
-			}
+			const exit = await runEffectExit(parseFieldsEffect(["=value"]));
+			const err = extractFailure(exit) as { userMessage: string };
+			expect(err.userMessage).toContain("Empty field key");
 		});
 
 		test("handles empty array", async () => {
@@ -197,23 +194,19 @@ describe("API Core Functions", () => {
 		});
 
 		test("returns error for missing colon", async () => {
-			try {
-				await runEffect(parseHeadersEffect(["InvalidHeader"]));
-				expect.unreachable("Should have thrown");
-			} catch (error: unknown) {
-				const err = error as { userMessage?: string };
-				expect(err.userMessage).toContain("Invalid header format");
-			}
+			const exit = await runEffectExit(
+				parseHeadersEffect(["InvalidHeader"]),
+			);
+			const err = extractFailure(exit) as { userMessage: string };
+			expect(err.userMessage).toContain("Invalid header format");
 		});
 
 		test("returns error for empty key", async () => {
-			try {
-				await runEffect(parseHeadersEffect([": value"]));
-				expect.unreachable("Should have thrown");
-			} catch (error: unknown) {
-				const err = error as { userMessage?: string };
-				expect(err.userMessage).toContain("Empty header key");
-			}
+			const exit = await runEffectExit(
+				parseHeadersEffect([": value"]),
+			);
+			const err = extractFailure(exit) as { userMessage: string };
+			expect(err.userMessage).toContain("Empty header key");
 		});
 
 		test("handles empty array", async () => {
@@ -224,15 +217,11 @@ describe("API Core Functions", () => {
 
 	describe("readBodyFromFileEffect", () => {
 		test("returns error for non-existent file", async () => {
-			try {
-				await runEffect(
-					readBodyFromFileEffect("/non/existent/file.json"),
-				);
-				expect.unreachable("Should have thrown");
-			} catch (error: unknown) {
-				const err = error as { userMessage?: string };
-				expect(err.userMessage).toContain("File not found");
-			}
+			const exit = await runEffectExit(
+				readBodyFromFileEffect("/non/existent/file.json"),
+			);
+			const err = extractFailure(exit) as { userMessage: string };
+			expect(err.userMessage).toContain("File not found");
 		});
 	});
 });

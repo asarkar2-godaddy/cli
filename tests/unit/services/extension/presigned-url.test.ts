@@ -1,5 +1,10 @@
-import { getUploadTarget } from "@/services/extension/presigned-url";
+import { getUploadTargetEffect } from "@/services/extension/presigned-url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	extractFailure,
+	runEffect,
+	runEffectExit,
+} from "../../../setup/effect-test-utils";
 
 // Mock logger
 vi.mock("@/services/logger", () => ({
@@ -20,7 +25,21 @@ vi.mock("graphql-request", () => ({
 vi.mock("@/core/environment", () => ({
 	getActiveEnvironment: vi.fn().mockResolvedValue("dev"),
 	getApiUrl: vi.fn().mockReturnValue("https://api.dev.example.com"),
+	envGetEffect: vi.fn().mockReturnValue({
+		pipe: () => ({ pipe: () => ({ pipe: () => "ote" }) }),
+	}),
 }));
+
+// Mock http-helpers to provide a stable base URL without needing FileSystem
+vi.mock("@/services/http-helpers", async (importOriginal) => {
+	const actual = (await importOriginal()) as Record<string, unknown>;
+	const Effect = await import("effect/Effect");
+	return {
+		...actual,
+		initApiBaseUrlEffect: () =>
+			Effect.succeed("https://api.dev.example.com/v1/apps/app-registry-subgraph"),
+	};
+});
 
 describe("presigned-url service", () => {
 	beforeEach(() => {
@@ -41,13 +60,15 @@ describe("presigned-url service", () => {
 				},
 			});
 
-			const result = await getUploadTarget(
-				{
-					applicationId: "app-123",
-					releaseId: "release-456",
-					contentType: "JS",
-				},
-				"test-access-token",
+			const result = await runEffect(
+				getUploadTargetEffect(
+					{
+						applicationId: "app-123",
+						releaseId: "release-456",
+						contentType: "JS",
+					},
+					"test-access-token",
+				),
 			);
 
 			expect(result).toEqual({
@@ -75,12 +96,14 @@ describe("presigned-url service", () => {
 				},
 			});
 
-			await getUploadTarget(
-				{
-					applicationId: "app-123",
-					releaseId: "release-456",
-				},
-				"test-access-token",
+			await runEffect(
+				getUploadTargetEffect(
+					{
+						applicationId: "app-123",
+						releaseId: "release-456",
+					},
+					"test-access-token",
+				),
 			);
 
 			expect(mockRequest).toHaveBeenCalledWith(
@@ -112,12 +135,14 @@ describe("presigned-url service", () => {
 				},
 			});
 
-			const result = await getUploadTarget(
-				{
-					applicationId: "app-123",
-					releaseId: "release-456",
-				},
-				"test-access-token",
+			const result = await runEffect(
+				getUploadTargetEffect(
+					{
+						applicationId: "app-123",
+						releaseId: "release-456",
+					},
+					"test-access-token",
+				),
 			);
 
 			expect(result.requiredHeaders).toEqual({
@@ -133,15 +158,20 @@ describe("presigned-url service", () => {
 				generateReleaseUploadUrl: null,
 			});
 
-			await expect(
-				getUploadTarget(
+			const exit = await runEffectExit(
+				getUploadTargetEffect(
 					{
 						applicationId: "app-123",
 						releaseId: "release-456",
 					},
 					"test-access-token",
 				),
-			).rejects.toThrow("Failed to generate upload URL: empty response");
+			);
+
+			const err = extractFailure(exit) as { message: string };
+			expect(err.message).toContain(
+				"Failed to generate upload URL: empty response",
+			);
 		});
 	});
 });

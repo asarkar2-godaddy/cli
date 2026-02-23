@@ -31,8 +31,15 @@ import { createApiCommand } from "./cli/commands/api";
 import { createApplicationCommand } from "./cli/commands/application";
 import { createWebhookCommand } from "./cli/commands/webhook";
 import { authStatusEffect } from "./core/auth";
-import { envGetEffect, validateEnvironment } from "./core/environment";
+import {
+	envGetEffect,
+	setRuntimeEnvironmentOverride,
+	validateEnvironment,
+} from "./core/environment";
 import { NodeLiveLayer } from "./effect/runtime";
+import { FileSystemLive } from "./effect/layers/node-live";
+import { FileSystem } from "./effect/services/filesystem";
+import { setTruncationFs } from "./cli/agent/truncation";
 import { setVerbosityLevel } from "./services/logger";
 
 type Descriptor = CommandDescriptor.Command<unknown>;
@@ -402,7 +409,9 @@ function applyGlobalOptions(
 
 	const environment = typeof options.env === "string" ? options.env : undefined;
 	if (environment) {
-		validateEnvironment(environment);
+		setRuntimeEnvironmentOverride(validateEnvironment(environment));
+	} else {
+		setRuntimeEnvironmentOverride(null);
 	}
 }
 
@@ -504,6 +513,11 @@ export function runCliEffect(
 	argv: ReadonlyArray<string>,
 ): Effect.Effect<void, unknown, never> {
 	return Effect.gen(function* () {
+		// Initialize the truncation FS from the live layer so truncation output
+		// uses the same FileSystem service as the rest of the CLI.
+		const fsService = yield* FileSystem.pipe(Effect.provide(FileSystemLive));
+		setTruncationFs(fsService);
+
 		const rootCommand = createCliProgram();
 		const descriptor = buildDescriptor(rootCommand);
 		const normalizedArgv = normalizeGlobalArgs(argv);

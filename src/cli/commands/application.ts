@@ -1002,13 +1002,13 @@ export function createApplicationCommand(): Command {
 			});
 
 			return Effect.gen(function* () {
-				const environment = yield* resolveEnvironmentEffect(
-					options.environment,
-				);
-
 				if (follow) {
 					yield* Effect.sync(() => emitStreamStart(command));
 				}
+
+				const environment = yield* resolveEnvironmentEffect(
+					options.environment,
+				);
 
 				const deployResult: DeployResult = yield* applicationDeployEffect(
 					name,

@@ -1,5 +1,5 @@
-import { readPackageJson } from "../../services/extension/workspace";
-import type { Result } from "../../shared/types";
+import type { FileSystemService } from "../../effect/services/filesystem";
+import { readPackageJsonWithFs } from "../../services/extension/workspace";
 import type { Finding } from "./types";
 
 /**
@@ -36,29 +36,16 @@ const LIFECYCLE_SCRIPTS = ["install", "postinstall", "preinstall"] as const;
  * }
  * ```
  */
-export function scanPackageScripts(pkgPath: string): Result<Finding[]> {
-	// Read package.json
-	const pkgResult = readPackageJson(pkgPath);
-	if (!pkgResult.success) {
-		return {
-			success: false,
-			error: pkgResult.error || new Error("Failed to read package.json"),
-		};
-	}
-
-	if (!pkgResult.data) {
-		return {
-			success: false,
-			error: new Error("Failed to read package.json"),
-		};
-	}
-
-	const pkg = pkgResult.data;
+export function scanPackageScripts(
+	pkgPath: string,
+	fs: FileSystemService,
+): Finding[] {
+	const pkg = readPackageJsonWithFs(pkgPath, fs);
 	const findings: Finding[] = [];
 
 	// No scripts to scan
 	if (!pkg.scripts || typeof pkg.scripts !== "object") {
-		return { success: true, data: findings };
+		return findings;
 	}
 
 	// Get suspicious patterns
@@ -81,7 +68,7 @@ export function scanPackageScripts(pkgPath: string): Result<Finding[]> {
 		}
 	}
 
-	return { success: true, data: findings };
+	return findings;
 }
 
 /**

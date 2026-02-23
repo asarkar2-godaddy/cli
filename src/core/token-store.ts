@@ -226,17 +226,30 @@ export function getStoredTokenEffect(
 		const env = environment ?? (yield* getCurrentEnvironmentEffect());
 		const { scopedTokenKey, legacyEnvironmentTokenKey } = getKeyContext(env);
 
-		const scopedValue = yield* Effect.promise(() =>
-			keychain.getPassword(KEYCHAIN_SERVICE, scopedTokenKey),
-		);
+		const scopedValue = yield* Effect.tryPromise({
+			try: () => keychain.getPassword(KEYCHAIN_SERVICE, scopedTokenKey),
+			catch: (e) =>
+				new ConfigurationError({
+					message: `Failed to read token from keychain: ${e}`,
+					userMessage:
+						"Unable to access secure credentials. Unlock your keychain and try again.",
+				}),
+		});
 		if (scopedValue) {
 			return yield* parseTokenValueEffect(scopedValue, scopedTokenKey);
 		}
 
 		// Backward compatibility: migrate from previous environment-scoped key.
-		const legacyEnvironmentValue = yield* Effect.promise(() =>
-			keychain.getPassword(KEYCHAIN_SERVICE, legacyEnvironmentTokenKey),
-		);
+		const legacyEnvironmentValue = yield* Effect.tryPromise({
+			try: () =>
+				keychain.getPassword(KEYCHAIN_SERVICE, legacyEnvironmentTokenKey),
+			catch: (e) =>
+				new ConfigurationError({
+					message: `Failed to read token from keychain: ${e}`,
+					userMessage:
+						"Unable to access secure credentials. Unlock your keychain and try again.",
+				}),
+		});
 		if (legacyEnvironmentValue) {
 			const legacyEnvironmentToken = yield* parseTokenValueEffect(
 				legacyEnvironmentValue,

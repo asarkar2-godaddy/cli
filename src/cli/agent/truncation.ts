@@ -1,6 +1,6 @@
-import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { FileSystemService } from "../../effect/services/filesystem";
 
 const MAX_LIST_ITEMS = 50;
 const MAX_STRING_LENGTH = 1000;
@@ -31,12 +31,32 @@ function slugify(commandId: string): string {
 	return commandId.replace(/[^a-zA-Z0-9-_.]+/g, "-");
 }
 
+/**
+ * Lazily initialized FileSystem service for truncation output.
+ * Set once at CLI startup from the provided layer.
+ */
+let _fs: FileSystemService | undefined;
+
+export function setTruncationFs(fs: FileSystemService): void {
+	_fs = fs;
+}
+
 function writeFullOutput(commandId: string, payload: unknown): string {
 	const dir = join(tmpdir(), "godaddy-cli");
-	mkdirSync(dir, { recursive: true });
+	if (_fs) {
+		_fs.mkdirSync(dir, { recursive: true });
+		const filename = `${Date.now()}-${slugify(commandId)}.json`;
+		const fullPath = join(dir, filename);
+		_fs.writeFileSync(fullPath, JSON.stringify(payload, null, 2));
+		return fullPath;
+	}
+	// Fallback: import node:fs synchronously (only during startup race)
+	// biome-ignore lint/style/noNamespaceImport: fallback only
+	const fs = require("node:fs") as typeof import("node:fs");
+	fs.mkdirSync(dir, { recursive: true });
 	const filename = `${Date.now()}-${slugify(commandId)}.json`;
 	const fullPath = join(dir, filename);
-	writeFileSync(fullPath, JSON.stringify(payload, null, 2), "utf8");
+	fs.writeFileSync(fullPath, JSON.stringify(payload, null, 2), "utf8");
 	return fullPath;
 }
 

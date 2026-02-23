@@ -4,10 +4,11 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
 	type Config,
-	createConfigFile,
-	createEnvFile,
+	createConfigFileEffect,
+	createEnvFileEffect,
 	getConfigFilePath,
 } from "../../../src/services/config";
+import { runEffect } from "../../setup/effect-test-utils";
 
 const TEST_CONFIG: Config = {
 	name: "test-app",
@@ -60,7 +61,7 @@ describe("Config Environment Routing", () => {
 	test("writes config to mapped environment file", async () => {
 		process.env.GODADDY_API_BASE_URL = "https://api.dev-godaddy.com";
 
-		await createConfigFile(TEST_CONFIG, "ote");
+		await runEffect(createConfigFileEffect(TEST_CONFIG, "ote"));
 
 		expect(fs.existsSync(path.join(tempDir, "godaddy.dev.toml"))).toBe(true);
 		expect(fs.existsSync(path.join(tempDir, "godaddy.ote.toml"))).toBe(false);
@@ -69,14 +70,16 @@ describe("Config Environment Routing", () => {
 	test("writes env file to mapped environment file", async () => {
 		process.env.GODADDY_API_BASE_URL = "https://api.test-godaddy.com";
 
-		await createEnvFile(
-			{
-				secret: "webhook-secret",
-				publicKey: "public-key",
-				clientId: "client-id",
-				clientSecret: "client-secret",
-			},
-			"ote",
+		await runEffect(
+			createEnvFileEffect(
+				{
+					secret: "webhook-secret",
+					publicKey: "public-key",
+					clientId: "client-id",
+					clientSecret: "client-secret",
+				},
+				"ote",
+			),
 		);
 
 		expect(fs.existsSync(path.join(tempDir, ".env.test"))).toBe(true);

@@ -2,7 +2,7 @@ import type { Stats } from "node:fs";
 import { join, resolve } from "node:path";
 import * as Effect from "effect/Effect";
 import { FileSystem } from "../../effect/services/filesystem";
-import type { Result } from "../../shared/types";
+import { ConfigurationError } from "../../effect/errors";
 import { getSecurityConfig, shouldExcludeFile } from "./config";
 
 /**
@@ -30,7 +30,7 @@ const SOURCE_EXTENSIONS = [".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"];
  */
 export function findFilesToScan(
 	rootPath: string,
-): Effect.Effect<Result<string[]>, never, FileSystem> {
+): Effect.Effect<string[], ConfigurationError, FileSystem> {
 	return Effect.gen(function* () {
 		const fs = yield* FileSystem;
 		const config = getSecurityConfig();
@@ -41,26 +41,27 @@ export function findFilesToScan(
 		try {
 			rootStats = fs.statSync(absoluteRoot);
 		} catch (error) {
-			return {
-				success: false,
-				error: error instanceof Error ? error : new Error(String(error)),
-			} as Result<string[]>;
+			return yield* Effect.fail(
+				new ConfigurationError({
+					message: error instanceof Error ? error.message : String(error),
+					userMessage: `Failed to access directory: ${absoluteRoot}`,
+				}),
+			);
 		}
 
 		if (!rootStats.isDirectory()) {
-			return {
-				success: false,
-				error: new Error(`Path is not a directory: ${absoluteRoot}`),
-			} as Result<string[]>;
+			return yield* Effect.fail(
+				new ConfigurationError({
+					message: `Path is not a directory: ${absoluteRoot}`,
+					userMessage: `Path is not a directory: ${absoluteRoot}`,
+				}),
+			);
 		}
 
 		const files: string[] = [];
 		traverseDirectory(fs, absoluteRoot, files, config);
 
-		return {
-			success: true,
-			data: files,
-		} as Result<string[]>;
+		return files;
 	});
 }
 

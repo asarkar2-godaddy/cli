@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as Effect from "effect/Effect";
 import * as ts from "typescript";
@@ -16,7 +15,7 @@ import type {
 	ScanSummary,
 } from "../../core/security/types";
 import { SecurityError } from "../../effect/errors";
-import type { FileSystem } from "../../effect/services/filesystem";
+import { FileSystem, type FileSystemService } from "../../effect/services/filesystem";
 
 /**
  * Output format for scan results
@@ -44,36 +43,26 @@ export function scanExtensionEffect(
 	packageDir: string,
 ): Effect.Effect<ScanReport, SecurityError, FileSystem> {
 	return Effect.gen(function* () {
+		const fs = yield* FileSystem;
 		// 1. Get security config (strict, immutable)
 		const config = getSecurityConfig();
 		const findings: Finding[] = [];
 
 		// 2. Scan package.json scripts (SEC011)
 		const packageJsonPath = join(packageDir, "package.json");
-		const scriptScanResult = scanPackageScripts(packageJsonPath);
-		if (scriptScanResult.success && scriptScanResult.data) {
-			findings.push(...scriptScanResult.data);
+		try {
+			const scriptFindings = scanPackageScripts(packageJsonPath, fs);
+			findings.push(...scriptFindings);
+		} catch {
+			// package.json not found or invalid - not a fatal error for scanning
 		}
 
 		// 3. Discover source files (Effect-based, requires FileSystem)
-		const filesResult = yield* findFilesToScan(packageDir);
-		if (!filesResult.success) {
-			return yield* Effect.fail(
-				new SecurityError({
-					message:
-						filesResult.error?.message ?? "Failed to discover files to scan",
-					userMessage: "Security scan failed",
-				}),
-			);
-		}
-
-		const files = filesResult.data || [];
+		const files = yield* findFilesToScan(packageDir);
 
 		// 4. For each source file: read, build alias maps, scan
 		for (const filePath of files) {
-			const sourceText = yield* Effect.promise(() =>
-				readFile(filePath, "utf-8"),
-			);
+			const sourceText = readFileWithFs(filePath, fs);
 
 			// Build alias maps
 			const sourceFile = ts.createSourceFile(
@@ -115,10 +104,10 @@ export function scanExtensionEffect(
 	}).pipe(
 		Effect.catchAll((error) =>
 			Effect.fail(
-				"_tag" in error && error._tag === "SecurityError"
-					? (error as SecurityError)
+				error instanceof SecurityError
+					? error
 					: new SecurityError({
-							message: error instanceof Error ? error.message : String(error),
+							message: "message" in error ? error.message : String(error),
 							userMessage: "Security scan failed",
 						}),
 			),
@@ -239,6 +228,13 @@ export function formatSecurityFindings(report: ScanReport): string {
 }
 
 /**
+ * Read a file using the FileSystem service (synchronous).
+ */
+function readFileWithFs(filePath: string, fs: FileSystemService): string {
+	return fs.readFileSync(filePath, "utf-8");
+}
+
+/**
  * Scan bundled artifact(s) with regex-based patterns.
  * Detects malicious code in transitive dependencies that pre-bundle scan might miss.
  *
@@ -250,36 +246,39 @@ export function formatSecurityFindings(report: ScanReport): string {
  */
 export function scanBundleEffect(
 	artifactPaths: string | string[],
-): Effect.Effect<ScanReport, SecurityError, never> {
-	return Effect.tryPromise({
-		try: async () => {
-			// 1. Normalize to array
-			const paths = Array.isArray(artifactPaths)
-				? artifactPaths
-				: [artifactPaths];
-			const allFindings: Finding[] = [];
+): Effect.Effect<ScanReport, SecurityError, FileSystem> {
+	return Effect.gen(function* () {
+		const fs = yield* FileSystem;
+		// 1. Normalize to array
+		const paths = Array.isArray(artifactPaths)
+			? artifactPaths
+			: [artifactPaths];
+		const allFindings: Finding[] = [];
 
-			// 2. For each file: read content and scan
-			for (const filePath of paths) {
-				const content = await readFile(filePath, "utf-8");
-				const fileFindings = scanBundleContent(content, BUNDLE_RULES, filePath);
-				allFindings.push(...fileFindings);
-			}
+		// 2. For each file: read content and scan
+		for (const filePath of paths) {
+			const content = readFileWithFs(filePath, fs);
+			const fileFindings = scanBundleContent(content, BUNDLE_RULES, filePath);
+			allFindings.push(...fileFindings);
+		}
 
-			// 3. Build ScanReport
-			const report: ScanReport = {
-				findings: allFindings,
-				blocked: allFindings.some((f) => f.severity === "block"),
-				summary: buildSummary(allFindings),
-				scannedFiles: paths.length,
-			};
+		// 3. Build ScanReport
+		const report: ScanReport = {
+			findings: allFindings,
+			blocked: allFindings.some((f) => f.severity === "block"),
+			summary: buildSummary(allFindings),
+			scannedFiles: paths.length,
+		};
 
-			return report;
-		},
-		catch: (error) =>
-			new SecurityError({
-				message: error instanceof Error ? error.message : String(error),
-				userMessage: "Bundle security scan failed",
-			}),
-	});
+		return report;
+	}).pipe(
+		Effect.catchAllDefect((defect) =>
+			Effect.fail(
+				new SecurityError({
+					message: defect instanceof Error ? defect.message : String(defect),
+					userMessage: "Bundle security scan failed",
+				}),
+			),
+		),
+	);
 }
