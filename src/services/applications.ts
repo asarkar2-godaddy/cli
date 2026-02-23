@@ -28,7 +28,7 @@ const ApplicationWithLatestReleaseQuery = graphql(`
       url
       proxyUrl
       authorizationScopes
-      releases(first: 1, orderBy: { createdAt: desc }) {
+      releases(first: 1, orderBy: { createdAt: DESC }) {
         edges {
           node {
             id

@@ -26,6 +26,7 @@ import {
 } from "./cli/agent/respond";
 import { Command, getCanonicalPath } from "./cli/command-model";
 import { createActionsCommand } from "./cli/commands/actions";
+import { createApiCommand } from "./cli/commands/api";
 import { createApplicationCommand } from "./cli/commands/application";
 import { createWebhookCommand } from "./cli/commands/webhook";
 import { envGet, validateEnvironment } from "./core/environment";
@@ -105,6 +106,10 @@ function buildOptionsParser(
 			? Options.text(option.longName)
 			: Options.boolean(option.longName);
 
+		if (option.takesValue && option.multiple) {
+			parser = Options.repeated(parser);
+		}
+
 		if (option.shortName) {
 			parser = Options.withAlias(parser, option.shortName);
 		}
@@ -113,7 +118,7 @@ function buildOptionsParser(
 			parser = Options.withDescription(parser, option.description);
 		}
 
-		if (option.takesValue && !option.required) {
+		if (option.takesValue && !option.required && !option.multiple) {
 			parser = Options.optional(parser);
 		}
 
@@ -215,6 +220,20 @@ function extractCommandOptions(
 
 		if (!option.takesValue) {
 			options[option.key] = Boolean(rawValue);
+			continue;
+		}
+
+		if (option.multiple) {
+			const optionalList = unwrapOptionalValue<readonly string[]>(rawValue);
+			const listSource = optionalList ?? rawValue;
+			const list = Array.isArray(listSource)
+				? listSource
+				: typeof listSource === "string"
+					? [listSource]
+					: [];
+			options[option.key] = option.parser
+				? list.map((value) => option.parser(value))
+				: list;
 			continue;
 		}
 
@@ -433,6 +452,7 @@ export function createCliProgram(): Command {
 
 	program.addCommand(createEnvCommand());
 	program.addCommand(createAuthCommand());
+	program.addCommand(createApiCommand());
 	program.addCommand(createActionsCommand());
 	program.addCommand(createApplicationCommand());
 	program.addCommand(createWebhookCommand());

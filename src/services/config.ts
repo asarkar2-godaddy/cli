@@ -192,6 +192,34 @@ const Config = type({
 });
 
 export type Config = typeof Config.infer;
+export type ConfigEnvironment = Environment | "dev" | "test";
+
+function resolveConfigEnvironment(
+	env?: ConfigEnvironment,
+): ConfigEnvironment | undefined {
+	if (!env) {
+		return undefined;
+	}
+
+	const apiOverrideCandidates = [
+		process.env.APPLICATIONS_GRAPHQL_URL,
+		process.env.GODADDY_API_BASE_URL,
+	].filter((value): value is string => Boolean(value?.trim()));
+
+	for (const candidate of apiOverrideCandidates) {
+		const normalizedCandidate = candidate.toLowerCase();
+
+		if (normalizedCandidate.includes("dev-godaddy")) {
+			return "dev";
+		}
+
+		if (normalizedCandidate.includes("test-godaddy")) {
+			return "test";
+		}
+	}
+
+	return env;
+}
 
 /**
  * Get the configuration file path based on environment
@@ -200,14 +228,17 @@ export type Config = typeof Config.infer;
  * @returns The resolved path to the config file
  */
 export function getConfigFilePath(
-	env?: Environment,
+	env?: ConfigEnvironment,
 	configPath?: string,
 ): string {
 	if (configPath) {
 		return join(process.cwd(), configPath);
 	}
 
-	const fileName = env ? `godaddy.${env}.toml` : "godaddy.toml";
+	const resolvedEnv = resolveConfigEnvironment(env);
+	const fileName = resolvedEnv
+		? `godaddy.${resolvedEnv}.toml`
+		: "godaddy.toml";
 	return join(process.cwd(), fileName);
 }
 
@@ -216,8 +247,10 @@ export function getConfigFile({
 	env,
 }: {
 	configPath?: string;
-	env?: Environment;
+	env?: ConfigEnvironment;
 } = {}): Config | ArkErrors {
+	const resolvedEnv = resolveConfigEnvironment(env);
+
 	// If a specific config path is provided, use that
 	if (configPath) {
 		const absolutePath = join(process.cwd(), configPath);
@@ -231,16 +264,16 @@ export function getConfigFile({
 	}
 
 	// If no specific path is provided, try environment-specific file first
-	if (env) {
-		const envFilePath = getConfigFilePath(env);
+	if (resolvedEnv) {
+		const envFilePath = getConfigFilePath(resolvedEnv);
 
 		if (fs.existsSync(envFilePath)) {
 			const content = fs.readFileSync(envFilePath, "utf-8");
 			return Config(TOML.parse(content));
 		}
 
-		// Fallback to the default file without logging to stdout/stderr.
-	}
+			// Fallback to the default file without logging to stdout/stderr.
+		}
 
 	// Fall back to default config file
 	const defaultPath = getConfigFilePath();
@@ -250,13 +283,13 @@ export function getConfigFile({
 	}
 
 	const envHint =
-		env && env !== "prod"
+		resolvedEnv && resolvedEnv !== "prod"
 			? ` Consider running 'godaddy application init' to create environment-specific configs.`
 			: "";
 	throw new Error(`Config file not found at ${defaultPath}.${envHint}`);
 }
 
-export async function createConfigFile(data: Config, env?: Environment) {
+export async function createConfigFile(data: Config, env?: ConfigEnvironment) {
 	const filePath = getConfigFilePath(env);
 	const file = filePath;
 
@@ -358,8 +391,10 @@ export async function updateVersionNumber(version: string | null) {
  */
 function getConfigFilePathForUpdate(
 	configPath?: string,
-	env?: Environment,
-): { path: string; env?: Environment } {
+	env?: ConfigEnvironment,
+): { path: string; env?: ConfigEnvironment } {
+	const resolvedEnv = resolveConfigEnvironment(env);
+
 	// If a specific config path is provided, use that
 	if (configPath) {
 		const absolutePath = join(process.cwd(), configPath);
@@ -370,10 +405,10 @@ function getConfigFilePathForUpdate(
 	}
 
 	// If env is provided, try environment-specific file first
-	if (env) {
-		const envFilePath = getConfigFilePath(env);
+	if (resolvedEnv) {
+		const envFilePath = getConfigFilePath(resolvedEnv);
 		if (fs.existsSync(envFilePath)) {
-			return { path: envFilePath, env };
+			return { path: envFilePath, env: resolvedEnv };
 		}
 	}
 
@@ -384,8 +419,8 @@ function getConfigFilePathForUpdate(
 	}
 
 	// If no file exists, create environment-specific file if env is provided
-	if (env) {
-		return { path: getConfigFilePath(env), env };
+	if (resolvedEnv) {
+		return { path: getConfigFilePath(resolvedEnv), env: resolvedEnv };
 	}
 
 	return { path: defaultPath };
@@ -453,9 +488,10 @@ export async function createEnvFile(
 		clientId: string;
 		clientSecret: string;
 	},
-	env?: Environment,
+	env?: ConfigEnvironment,
 ) {
-	const envFileName = env ? `.env.${env}` : ".env";
+	const resolvedEnv = resolveConfigEnvironment(env);
+	const envFileName = resolvedEnv ? `.env.${resolvedEnv}` : ".env";
 	const envPath = join(process.cwd(), envFileName);
 
 	let envContent = "";

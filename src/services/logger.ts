@@ -67,6 +67,8 @@ export const setVerbosityLevel = (level: number) => {
 	logger = createLogger();
 };
 
+export const getVerbosityLevel = (): number => verbosityLevel;
+
 export const getLogger = () => logger;
 
 // HTTP request logging utilities

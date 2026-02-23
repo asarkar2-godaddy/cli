@@ -7,7 +7,6 @@ import {
 	AuthenticationError,
 	type CmdResult,
 	ConfigurationError,
-	NetworkError,
 } from "../shared/types";
 import {
 	type Environment,
@@ -15,8 +14,8 @@ import {
 	getApiUrl,
 	getClientId,
 } from "./environment";
+import { deleteStoredToken, getStoredToken, saveToken } from "./token-store";
 
-const KEYCHAIN_SERVICE = "godaddy-cli";
 const PORT = 7443;
 const OAUTH_SCOPE = "apps.app-registry:read apps.app-registry:write";
 
@@ -34,14 +33,6 @@ export interface AuthStatus {
 }
 
 let server: http.Server | null = null;
-let keytarInstance: Promise<typeof import("keytar").default> | undefined;
-
-async function getKeytar(): Promise<typeof import("keytar").default> {
-	if (!keytarInstance) {
-		keytarInstance = import("keytar").then((module) => module.default);
-	}
-	return keytarInstance;
-}
 
 /**
  * Authenticate with GoDaddy OAuth
@@ -127,13 +118,7 @@ export async function authLogin(): Promise<CmdResult<AuthResult>> {
 						const expiresAt = new Date(
 							Date.now() + tokenData.expires_in * 1000,
 						);
-						await saveToKeychain(
-							"token",
-							JSON.stringify({
-								accessToken: tokenData.access_token,
-								expiresAt,
-							}),
-						);
+						await saveToken(tokenData.access_token, expiresAt);
 
 						res.writeHead(200, { "Content-Type": "text/html" });
 						res.end(
@@ -196,12 +181,14 @@ export async function authLogin(): Promise<CmdResult<AuthResult>> {
 
 		return { success: true, data: result };
 	} catch (error) {
+		const authError = new AuthenticationError(
+			`Authentication failed: ${error}`,
+		);
+		authError.userMessage =
+			"Authentication with GoDaddy failed. Please try again.";
 		return {
 			success: false,
-			error: new AuthenticationError(
-				`Authentication failed: ${error}`,
-				"Authentication with GoDaddy failed. Please try again.",
-			),
+			error: authError,
 		};
 	}
 }
@@ -211,8 +198,7 @@ export async function authLogin(): Promise<CmdResult<AuthResult>> {
  */
 export async function authLogout(): Promise<CmdResult<void>> {
 	try {
-		const keytar = await getKeytar();
-		await keytar.deletePassword(KEYCHAIN_SERVICE, "token");
+		await deleteStoredToken();
 		return { success: true };
 	} catch (error) {
 		return {
@@ -239,9 +225,8 @@ async function getEnvironment(): Promise<Environment> {
 export async function authStatus(): Promise<CmdResult<AuthStatus>> {
 	try {
 		const environment = await getEnvironment();
-		const tokenData = await getFromKeychain("token");
-
-		if (!tokenData) {
+		const tokenInfo = await getTokenInfo();
+		if (!tokenInfo) {
 			return {
 				success: true,
 				data: {
@@ -252,60 +237,15 @@ export async function authStatus(): Promise<CmdResult<AuthStatus>> {
 			};
 		}
 
-		// If we have a token, parse it to check expiry
-		try {
-			const keytar = await getKeytar();
-			const value = await keytar.getPassword(KEYCHAIN_SERVICE, "token");
-			if (!value) {
-				return {
-					success: true,
-					data: {
-						authenticated: false,
-						hasToken: false,
-						environment,
-					},
-				};
-			}
-
-			const { expiresAt } = JSON.parse(value);
-			const expiryDate = new Date(expiresAt);
-			const isExpired = expiryDate.getTime() < Date.now();
-
-			if (isExpired) {
-				// Clean up expired token
-				await keytar.deletePassword(KEYCHAIN_SERVICE, "token");
-				return {
-					success: true,
-					data: {
-						authenticated: false,
-						hasToken: false,
-						environment,
-					},
-				};
-			}
-
-			return {
-				success: true,
-				data: {
-					authenticated: true,
-					hasToken: true,
-					tokenExpiry: expiryDate,
-					environment,
-				},
-			};
-		} catch {
-			// Invalid token format, clean it up
-			const keytar = await getKeytar();
-			await keytar.deletePassword(KEYCHAIN_SERVICE, "token");
-			return {
-				success: true,
-				data: {
-					authenticated: false,
-					hasToken: false,
-					environment,
-				},
-			};
-		}
+		return {
+			success: true,
+			data: {
+				authenticated: true,
+				hasToken: true,
+				tokenExpiry: tokenInfo.expiresAt,
+				environment,
+			},
+		};
 	} catch (error) {
 		return {
 			success: false,
@@ -372,24 +312,38 @@ async function getOauthClientId(): Promise<string> {
 	return getClientId(env);
 }
 
-function saveToKeychain(key: string, value: string): Promise<void> {
-	return getKeytar().then((keytar) =>
-		keytar.setPassword(KEYCHAIN_SERVICE, key, value),
+export interface TokenInfo {
+	accessToken: string;
+	expiresAt: Date;
+	expiresInSeconds: number;
+}
+
+/**
+ * Get token info including expiry details
+ * Returns null if no token or token is expired
+ */
+export async function getTokenInfo(): Promise<TokenInfo | null> {
+	const storedToken = await getStoredToken();
+	if (!storedToken) return null;
+
+	const expiresInSeconds = Math.floor(
+		(storedToken.expiresAt.getTime() - Date.now()) / 1000,
 	);
+
+	return {
+		accessToken: storedToken.accessToken,
+		expiresAt: storedToken.expiresAt,
+		expiresInSeconds,
+	};
 }
 
 export async function getFromKeychain(key: string): Promise<string | null> {
-	const keytar = await getKeytar();
-	const value = await keytar.getPassword(KEYCHAIN_SERVICE, key);
-	if (!value) return null;
-
-	const { accessToken, expiresAt } = JSON.parse(value);
-	if (new Date(expiresAt).getTime() < Date.now()) {
-		await keytar.deletePassword(KEYCHAIN_SERVICE, key);
+	if (key !== "token") {
 		return null;
 	}
 
-	return accessToken;
+	const storedToken = await getStoredToken();
+	return storedToken?.accessToken ?? null;
 }
 
 // Legacy compatibility function - use authLogin() instead

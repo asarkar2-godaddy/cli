@@ -29,6 +29,17 @@ export interface EnvironmentInfo {
 const ENV_FILE = ".gdenv";
 const ENV_PATH = join(homedir(), ENV_FILE);
 const ALL_ENVIRONMENTS: Environment[] = ["ote", "prod"];
+let runtimeEnvironmentOverride: Environment | null = null;
+
+/**
+ * Set an in-memory environment override for the current process.
+ * This is used by global CLI flags (e.g. --env) without mutating persisted config.
+ */
+export function setRuntimeEnvironmentOverride(
+	env: Environment | null,
+): void {
+	runtimeEnvironmentOverride = env;
+}
 
 /**
  * Get all available environments
@@ -150,6 +161,10 @@ export async function envInfo(
  * Get the current active environment (internal helper)
  */
 async function getActiveEnvironmentInternal(): Promise<Environment> {
+	if (runtimeEnvironmentOverride) {
+		return runtimeEnvironmentOverride;
+	}
+
 	try {
 		if (fs.existsSync(ENV_PATH)) {
 			const file = fs.readFileSync(ENV_PATH, "utf-8");
