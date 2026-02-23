@@ -6,6 +6,7 @@
 import * as nodeFs from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { fileExists } from "../../effect/fs-utils";
 import {
 	type ExtensionType,
 	buildEsbuildOptions,
@@ -93,7 +94,7 @@ export function cleanupTempDirectoryEffect(
 ): Effect.Effect<void, ConfigurationError, FileSystem> {
 	return Effect.gen(function* () {
 		const fs = yield* FileSystem;
-		const exists = yield* fs.exists(tempDir).pipe(Effect.orElseSucceed(() => false));
+		const exists = yield* fileExists(tempDir);
 		if (exists) {
 			yield* fs.remove(tempDir, { recursive: true }).pipe(
 				Effect.mapError((error) =>
@@ -127,7 +128,13 @@ export function bundleExtensionFromDirEffect(
 				}),
 			),
 		);
-		const packageJson = JSON.parse(packageJsonContent) as Record<string, unknown>;
+		const packageJson = yield* Effect.try({
+			try: () => JSON.parse(packageJsonContent) as Record<string, unknown>,
+			catch: () => new ConfigurationError({
+				message: "Invalid JSON in package.json",
+				userMessage: "Failed to parse extension package.json",
+			}),
+		});
 
 		const name = packageJson.name as string;
 		const version = packageJson.version as string | undefined;

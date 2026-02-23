@@ -335,103 +335,64 @@ interface AppListResult {
 	}> | null;
 }
 
+/** Narrow a service Effect's success type via Effect.map. Preserves E and R channels. */
+function narrowResult<A, B, E, R>(
+	effect: Effect.Effect<A, E, R>,
+	f: (a: A) => B,
+): Effect.Effect<B, E, R> {
+	return Effect.map(effect, f);
+}
+
 function callCreateApp(
 	input: Parameters<typeof createAppServiceEffect>[0],
 	opts: Parameters<typeof createAppServiceEffect>[1],
-): Effect.Effect<CreateAppResult, CliError, FileSystem> {
-	return createAppServiceEffect(input, opts) as Effect.Effect<
-		CreateAppResult,
-		CliError,
-		FileSystem
-	>;
+) {
+	return narrowResult(createAppServiceEffect(input, opts), (r) => r as CreateAppResult);
 }
 
-function callGetApp(
-	name: string,
-	opts: { accessToken: string | null },
-): Effect.Effect<AppLookupResult, CliError, FileSystem> {
-	return getAppServiceEffect(name, opts) as Effect.Effect<
-		AppLookupResult,
-		CliError,
-		FileSystem
-	>;
+function callGetApp(name: string, opts: { accessToken: string | null }) {
+	return narrowResult(getAppServiceEffect(name, opts), (r) => r as AppLookupResult);
 }
 
-function callGetAppAndRelease(
-	name: string,
-	opts: { accessToken: string | null },
-): Effect.Effect<AppWithReleaseLookupResult, CliError, FileSystem> {
-	return getAppAndReleaseServiceEffect(name, opts) as Effect.Effect<
-		AppWithReleaseLookupResult,
-		CliError,
-		FileSystem
-	>;
+function callGetAppAndRelease(name: string, opts: { accessToken: string | null }) {
+	return narrowResult(getAppAndReleaseServiceEffect(name, opts), (r) => r as AppWithReleaseLookupResult);
 }
 
-function callListApps(opts: {
-	accessToken: string | null;
-}): Effect.Effect<AppListResult, CliError, FileSystem> {
-	return listAppsServiceEffect(opts) as Effect.Effect<
-		AppListResult,
-		CliError,
-		FileSystem
-	>;
+function callListApps(opts: { accessToken: string | null }) {
+	return narrowResult(listAppsServiceEffect(opts), (r) => r as AppListResult);
 }
 
 function callUpdateApp(
 	id: string,
 	input: Parameters<typeof updateAppServiceEffect>[1],
 	opts: Parameters<typeof updateAppServiceEffect>[2],
-): Effect.Effect<unknown, CliError, FileSystem> {
-	return updateAppServiceEffect(id, input, opts) as Effect.Effect<
-		unknown,
-		CliError,
-		FileSystem
-	>;
+) {
+	return updateAppServiceEffect(id, input, opts);
 }
 
-function callArchiveApp(
-	id: string,
-	opts: { accessToken: string | null },
-): Effect.Effect<unknown, CliError, FileSystem> {
-	return archiveAppServiceEffect(id, opts) as Effect.Effect<
-		unknown,
-		CliError,
-		FileSystem
-	>;
+function callArchiveApp(id: string, opts: { accessToken: string | null }) {
+	return archiveAppServiceEffect(id, opts);
 }
 
 function callEnableApp(
 	input: Parameters<typeof enableAppServiceEffect>[0],
 	opts: Parameters<typeof enableAppServiceEffect>[1],
-): Effect.Effect<unknown, CliError, FileSystem> {
-	return enableAppServiceEffect(input, opts) as Effect.Effect<
-		unknown,
-		CliError,
-		FileSystem
-	>;
+) {
+	return enableAppServiceEffect(input, opts);
 }
 
 function callDisableApp(
 	input: Parameters<typeof disableAppServiceEffect>[0],
 	opts: Parameters<typeof disableAppServiceEffect>[1],
-): Effect.Effect<unknown, CliError, FileSystem> {
-	return disableAppServiceEffect(input, opts) as Effect.Effect<
-		unknown,
-		CliError,
-		FileSystem
-	>;
+) {
+	return disableAppServiceEffect(input, opts);
 }
 
 function callCreateRelease(
 	input: Parameters<typeof createReleaseServiceEffect>[0],
 	opts: Parameters<typeof createReleaseServiceEffect>[1],
-): Effect.Effect<CreateReleaseResult, CliError, FileSystem> {
-	return createReleaseServiceEffect(input, opts) as Effect.Effect<
-		CreateReleaseResult,
-		CliError,
-		FileSystem
-	>;
+) {
+	return narrowResult(createReleaseServiceEffect(input, opts), (r) => r as CreateReleaseResult);
 }
 
 // ---------------------------------------------------------------------------
@@ -444,7 +405,7 @@ function callCreateRelease(
 export function applicationInitEffect(
 	input: CreateApplicationInput,
 	environment?: Environment,
-): Effect.Effect<CreatedApplicationInfo, CliError, FileSystem | Keychain> {
+): Effect.Effect<CreatedApplicationInfo, CliError, FileSystem | Keychain | Fetch> {
 	return Effect.gen(function* () {
 		// Validate input
 		const validationResult = createApplicationInputValidator(input);
@@ -530,7 +491,7 @@ export function applicationInitEffect(
  */
 export function applicationInfoEffect(
 	name?: string,
-): Effect.Effect<ApplicationInfo, CliError, FileSystem | Keychain> {
+): Effect.Effect<ApplicationInfo, CliError, FileSystem | Keychain | Fetch> {
 	return Effect.gen(function* () {
 		if (!name) {
 			return yield* Effect.fail(
@@ -576,7 +537,7 @@ export function applicationInfoEffect(
 export function applicationListEffect(): Effect.Effect<
 	Application[],
 	CliError,
-	FileSystem | Keychain
+	FileSystem | Keychain | Fetch
 > {
 	return Effect.gen(function* () {
 		const accessToken = yield* requireAccessToken();
@@ -607,7 +568,7 @@ export function applicationListEffect(): Effect.Effect<
  */
 export function applicationValidateEffect(
 	name?: string,
-): Effect.Effect<ValidationResult, CliError, FileSystem | Keychain> {
+): Effect.Effect<ValidationResult, CliError, FileSystem | Keychain | Fetch> {
 	return Effect.gen(function* () {
 		if (!name) {
 			return yield* Effect.fail(
@@ -660,7 +621,7 @@ export function applicationValidateEffect(
 export function applicationUpdateEffect(
 	name: string,
 	config: UpdateApplicationInput,
-): Effect.Effect<void, CliError, FileSystem | Keychain> {
+): Effect.Effect<void, CliError, FileSystem | Keychain | Fetch> {
 	return Effect.gen(function* () {
 		if (!name) {
 			return yield* Effect.fail(
@@ -706,7 +667,7 @@ export function applicationUpdateEffect(
 export function applicationEnableEffect(
 	name: string,
 	storeId?: string,
-): Effect.Effect<void, CliError, FileSystem | Keychain> {
+): Effect.Effect<void, CliError, FileSystem | Keychain | Fetch> {
 	return Effect.gen(function* () {
 		if (!name) {
 			return yield* Effect.fail(
@@ -738,7 +699,7 @@ export function applicationEnableEffect(
 export function applicationDisableEffect(
 	name: string,
 	storeId?: string,
-): Effect.Effect<void, CliError, FileSystem | Keychain> {
+): Effect.Effect<void, CliError, FileSystem | Keychain | Fetch> {
 	return Effect.gen(function* () {
 		if (!name) {
 			return yield* Effect.fail(
@@ -769,7 +730,7 @@ export function applicationDisableEffect(
  */
 export function applicationArchiveEffect(
 	name: string,
-): Effect.Effect<void, CliError, FileSystem | Keychain> {
+): Effect.Effect<void, CliError, FileSystem | Keychain | Fetch> {
 	return Effect.gen(function* () {
 		if (!name) {
 			return yield* Effect.fail(
@@ -803,7 +764,7 @@ export function applicationArchiveEffect(
  */
 export function applicationReleaseEffect(
 	input: CreateReleaseInput,
-): Effect.Effect<ReleaseInfo, CliError, FileSystem | Keychain> {
+): Effect.Effect<ReleaseInfo, CliError, FileSystem | Keychain | Fetch> {
 	return Effect.gen(function* () {
 		const accessToken = yield* requireAccessToken();
 

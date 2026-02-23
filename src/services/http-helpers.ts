@@ -4,13 +4,15 @@
 
 import * as Effect from "effect/Effect";
 import { v7 as uuid } from "uuid";
+import { GraphQLClient } from "graphql-request";
+import { Fetch } from "@effect/platform/FetchHttpClient";
 import { type Environment, envGetEffect, getApiUrl } from "../core/environment";
 import { ConfigurationError } from "../effect/errors";
 import type { FileSystem } from "@effect/platform/FileSystem";
 
 /**
  * Resolve the API base URL from environment variables or the active environment.
- * Pure function — no caching. The cost of envGetEffect + getApiUrl is negligible.
+ * Pure function — no caching.
  */
 export function initApiBaseUrlEffect(): Effect.Effect<
 	string,
@@ -36,6 +38,23 @@ export function initApiBaseUrlEffect(): Effect.Effect<
 			),
 		),
 	);
+}
+
+/**
+ * Create a GraphQLClient wired to the injectable Fetch service.
+ * This ensures all GraphQL requests go through the same fetch implementation
+ * that the rest of the codebase uses, making them interceptable in tests.
+ */
+export function makeGraphQLClientEffect(): Effect.Effect<
+	GraphQLClient,
+	ConfigurationError,
+	FileSystem | Fetch
+> {
+	return Effect.gen(function* () {
+		const baseUrl = yield* initApiBaseUrlEffect();
+		const fetch = yield* Fetch;
+		return new GraphQLClient(baseUrl, { fetch });
+	});
 }
 
 /**

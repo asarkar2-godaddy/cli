@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect";
 import { v7 as uuid } from "uuid";
+import { fileExists } from "../effect/fs-utils";
 import {
 	AuthenticationError,
 	type CliError,
@@ -122,7 +123,7 @@ export function readBodyFromFileEffect(
 	return Effect.gen(function* () {
 		const fs = yield* FileSystem;
 
-		const exists = yield* fs.exists(filePath).pipe(Effect.orElseSucceed(() => false));
+		const exists = yield* fileExists(filePath);
 		if (!exists) {
 			return yield* Effect.fail(
 				new ValidationError({

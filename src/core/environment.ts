@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { fileExists } from "../effect/fs-utils";
 import type { ArkErrors } from "arktype";
 import * as Effect from "effect/Effect";
 import { FileSystem } from "@effect/platform/FileSystem";
@@ -82,7 +83,7 @@ function getActiveEnvironmentInternalEffect(): Effect.Effect<
 		}
 
 		const fs = yield* FileSystem;
-		const exists = yield* fs.exists(ENV_PATH).pipe(Effect.orElseSucceed(() => false));
+		const exists = yield* fileExists(ENV_PATH);
 		if (exists) {
 			const file = yield* fs.readFileString(ENV_PATH).pipe(Effect.orElseSucceed(() => ""));
 			if (file.trim()) {

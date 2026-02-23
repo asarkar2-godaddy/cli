@@ -6,6 +6,7 @@ import { FileSystem } from "@effect/platform/FileSystem";
 import * as Effect from "effect/Effect";
 import type { Environment } from "../core/environment";
 import { ConfigurationError } from "../effect/errors";
+import { fileExists } from "../effect/fs-utils";
 
 function readProxyUrl(root: unknown): string | undefined {
 	if (typeof root !== "object" || root === null) {
@@ -232,7 +233,7 @@ export function getConfigFileEffect(
 		// If a specific config path is provided, use that
 		if (configPath) {
 			const absolutePath = join(process.cwd(), configPath);
-			const exists = yield* fs.exists(absolutePath).pipe(Effect.orElseSucceed(() => false));
+			const exists = yield* fileExists(absolutePath);
 			if (exists) {
 				const content = yield* fs.readFileString(absolutePath);
 				return Config(TOML.parse(content));
@@ -248,7 +249,7 @@ export function getConfigFileEffect(
 		// Try environment-specific file first
 		if (resolvedEnv) {
 			const envFilePath = getConfigFilePath(resolvedEnv);
-			const envExists = yield* fs.exists(envFilePath).pipe(Effect.orElseSucceed(() => false));
+			const envExists = yield* fileExists(envFilePath);
 			if (envExists) {
 				const content = yield* fs.readFileString(envFilePath);
 				return Config(TOML.parse(content));
@@ -257,7 +258,7 @@ export function getConfigFileEffect(
 
 		// Fall back to default config file
 		const defaultPath = getConfigFilePath();
-		const defaultExists = yield* fs.exists(defaultPath).pipe(Effect.orElseSucceed(() => false));
+		const defaultExists = yield* fileExists(defaultPath);
 		if (defaultExists) {
 			const content = yield* fs.readFileString(defaultPath);
 			return Config(TOML.parse(content));
@@ -420,12 +421,11 @@ function getConfigFilePathForUpdateEffect(
 	env?: ConfigEnvironment,
 ): Effect.Effect<{ path: string; env?: ConfigEnvironment }, ConfigurationError, FileSystem> {
 	return Effect.gen(function* () {
-		const fs = yield* FileSystem;
 		const resolvedEnv = resolveConfigEnvironment(env);
 
 		if (configPath) {
 			const absolutePath = join(process.cwd(), configPath);
-			const exists = yield* fs.exists(absolutePath).pipe(Effect.orElseSucceed(() => false));
+			const exists = yield* fileExists(absolutePath);
 			if (exists) {
 				return { path: absolutePath };
 			}
@@ -439,14 +439,14 @@ function getConfigFilePathForUpdateEffect(
 
 		if (resolvedEnv) {
 			const envFilePath = getConfigFilePath(resolvedEnv);
-			const exists = yield* fs.exists(envFilePath).pipe(Effect.orElseSucceed(() => false));
+			const exists = yield* fileExists(envFilePath);
 			if (exists) {
 				return { path: envFilePath, env: resolvedEnv };
 			}
 		}
 
 		const defaultPath = getConfigFilePath();
-		const exists = yield* fs.exists(defaultPath).pipe(Effect.orElseSucceed(() => false));
+		const exists = yield* fileExists(defaultPath);
 		if (exists) {
 			return { path: defaultPath };
 		}
@@ -472,8 +472,8 @@ function writeConfigToFileEffect(
 
 		// Try to read the existing file to preserve structure
 		let existingConfig = {};
-		const fileExists = yield* fs.exists(filePath).pipe(Effect.orElseSucceed(() => false));
-		if (fileExists) {
+		const configFileExists = yield* fileExists(filePath);
+		if (configFileExists) {
 			const existingContent = yield* fs.readFileString(filePath).pipe(
 				Effect.orElseSucceed(() => ""),
 			);
@@ -685,7 +685,7 @@ export function createEnvFileEffect(
 		const envPath = join(process.cwd(), envFileName);
 
 		let envContent = "";
-		const envExists = yield* fs.exists(envPath).pipe(Effect.orElseSucceed(() => false));
+		const envExists = yield* fileExists(envPath);
 
 		if (envExists) {
 			const existingEnvContent = yield* fs.readFileString(envPath).pipe(

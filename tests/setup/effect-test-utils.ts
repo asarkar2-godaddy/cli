@@ -12,17 +12,25 @@ import { NodeLiveLayer } from "../../src/effect/runtime";
 const TestLayer = Layer.merge(NodeContext.layer, NodeLiveLayer);
 
 /**
+ * Provide the test layer and erase the R channel.
+ * Tests pass `unknown` for R because the concrete service requirements vary.
+ * The cast is unavoidable: `provide(Layer<X>)` on `Effect<A,E,unknown>` yields
+ * `Effect<A,E,unknown>` — TypeScript can't prove that unknown minus X = never.
+ */
+function provideTestLayer<A, E>(
+	effect: Effect.Effect<A, E, unknown>,
+): Effect.Effect<A, E, never> {
+	return effect.pipe(Effect.provide(TestLayer)) as Effect.Effect<A, E, never>;
+}
+
+/**
  * Run an Effect with the full test layer.
  * On failure the **original tagged error** is thrown (not a FiberFailure wrapper).
  */
 export function runEffect<A>(
 	effect: Effect.Effect<A, unknown, unknown>,
 ): Promise<A> {
-	return Effect.runPromise(
-		effect.pipe(
-			Effect.provide(TestLayer),
-		) as Effect.Effect<A, never, never>,
-	);
+	return Effect.runPromise(provideTestLayer(effect));
 }
 
 /**
@@ -31,13 +39,7 @@ export function runEffect<A>(
 export function runEffectExit<A, E>(
 	effect: Effect.Effect<A, E, unknown>,
 ): Promise<Exit.Exit<A, E>> {
-	return Effect.runPromise(
-		Effect.exit(
-			effect.pipe(
-				Effect.provide(TestLayer),
-			) as Effect.Effect<A, E, never>,
-		),
-	);
+	return Effect.runPromise(Effect.exit(provideTestLayer(effect)));
 }
 
 /**

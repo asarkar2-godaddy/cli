@@ -1,9 +1,9 @@
 import { type } from "arktype";
 import * as Effect from "effect/Effect";
 import { graphql } from "gql.tada";
-import { ClientError, request } from "graphql-request";
+import { ClientError } from "graphql-request";
 import { AuthenticationError, NetworkError } from "../effect/errors";
-import { getRequestHeaders, initApiBaseUrlEffect } from "./http-helpers";
+import { getRequestHeaders, makeGraphQLClientEffect } from "./http-helpers";
 
 const ApplicationQuery = graphql(`
   query Application($name: String!) {
@@ -209,12 +209,11 @@ export function createApplicationEffect(
 			);
 		}
 
-		const baseUrl = yield* initApiBaseUrlEffect();
+		const client = yield* makeGraphQLClientEffect();
 
 		return yield* Effect.tryPromise({
 			try: () =>
-				request(
-					baseUrl,
+				client.request(
 					CreateApplicationMutation,
 					{ input: inputParseResult },
 					getRequestHeaders(accessToken),
@@ -243,12 +242,11 @@ export function updateApplicationEffect(
 			);
 		}
 
-		const baseUrl = yield* initApiBaseUrlEffect();
+		const client = yield* makeGraphQLClientEffect();
 
 		return yield* Effect.tryPromise({
 			try: () =>
-				request(
-					baseUrl,
+				client.request(
 					UpdateApplicationMutation,
 					{ id, input },
 					getRequestHeaders(accessToken),
@@ -276,12 +274,11 @@ export function getApplicationEffect(
 			);
 		}
 
-		const baseUrl = yield* initApiBaseUrlEffect();
+		const client = yield* makeGraphQLClientEffect();
 
 		return yield* Effect.tryPromise({
 			try: () =>
-				request(
-					baseUrl,
+				client.request(
 					ApplicationQuery,
 					{ name },
 					getRequestHeaders(accessToken),
@@ -309,12 +306,11 @@ export function getApplicationAndLatestReleaseEffect(
 			);
 		}
 
-		const baseUrl = yield* initApiBaseUrlEffect();
+		const client = yield* makeGraphQLClientEffect();
 
 		return yield* Effect.tryPromise({
 			try: () =>
-				request(
-					baseUrl,
+				client.request(
 					ApplicationWithLatestReleaseQuery,
 					{ name },
 					getRequestHeaders(accessToken),
@@ -358,12 +354,11 @@ export function createReleaseEffect(
 			actions: inputParseResult.actions ?? [],
 		};
 
-		const baseUrl = yield* initApiBaseUrlEffect();
+		const client = yield* makeGraphQLClientEffect();
 
 		return yield* Effect.tryPromise({
 			try: () =>
-				request(
-					baseUrl,
+				client.request(
 					CreateReleaseMutation,
 					{ input: releaseData },
 					getRequestHeaders(accessToken),
@@ -391,12 +386,11 @@ export function enableApplicationEffect(
 			);
 		}
 
-		const baseUrl = yield* initApiBaseUrlEffect();
+		const client = yield* makeGraphQLClientEffect();
 
 		return yield* Effect.tryPromise({
 			try: () =>
-				request(
-					baseUrl,
+				client.request(
 					EnableApplicationMutation,
 					{ input },
 					getRequestHeaders(accessToken),
@@ -424,12 +418,11 @@ export function disableApplicationEffect(
 			);
 		}
 
-		const baseUrl = yield* initApiBaseUrlEffect();
+		const client = yield* makeGraphQLClientEffect();
 
 		return yield* Effect.tryPromise({
 			try: () =>
-				request(
-					baseUrl,
+				client.request(
 					DisableApplicationMutation,
 					{ input },
 					getRequestHeaders(accessToken),
@@ -456,12 +449,11 @@ export function listApplicationsEffect({
 			);
 		}
 
-		const baseUrl = yield* initApiBaseUrlEffect();
+		const client = yield* makeGraphQLClientEffect();
 
 		return yield* Effect.tryPromise({
 			try: () =>
-				request(
-					baseUrl,
+				client.request(
 					ApplicationsListQuery,
 					{},
 					getRequestHeaders(accessToken),
@@ -489,12 +481,11 @@ export function archiveApplicationEffect(
 			);
 		}
 
-		const baseUrl = yield* initApiBaseUrlEffect();
+		const client = yield* makeGraphQLClientEffect();
 
 		return yield* Effect.tryPromise({
 			try: () =>
-				request(
-					baseUrl,
+				client.request(
 					ArchiveApplicationMutation,
 					{ id },
 					getRequestHeaders(accessToken),

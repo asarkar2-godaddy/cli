@@ -5,12 +5,12 @@
 
 import {
 	getRequestHeaders,
-	initApiBaseUrlEffect,
+	makeGraphQLClientEffect,
 } from "@/services/http-helpers";
 import { getLogger } from "@/services/logger";
 import * as Effect from "effect/Effect";
 import { graphql } from "gql.tada";
-import { request } from "graphql-request";
+import type { Fetch } from "@effect/platform/FetchHttpClient";
 import {
 	type ConfigurationError,
 	NetworkError,
@@ -66,7 +66,7 @@ export function getUploadTargetEffect(
 ): Effect.Effect<
 	UploadTarget,
 	NetworkError | ConfigurationError | ValidationError,
-	FileSystem
+	FileSystem | Fetch
 > {
 	return Effect.gen(function* () {
 		logger.debug(
@@ -78,12 +78,11 @@ export function getUploadTargetEffect(
 			"Requesting presigned upload URL",
 		);
 
-		const baseUrl = yield* initApiBaseUrlEffect();
+		const client = yield* makeGraphQLClientEffect();
 
 		const response = yield* Effect.tryPromise({
 			try: () =>
-				request(
-					baseUrl,
+				client.request(
 					GenerateReleaseUploadUrlMutation,
 					{
 						input: {

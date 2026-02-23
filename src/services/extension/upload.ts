@@ -41,7 +41,7 @@ export interface UploadOptions {
 }
 
 function sleep(ms: number): Effect.Effect<void, never, never> {
-	return Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+	return Effect.sleep(`${ms} millis`);
 }
 
 /**
