@@ -75,16 +75,12 @@ export const getLogger = () => logger;
 // HTTP request logging utilities
 export const logHttpRequest = (options: {
 	method: string;
-	headers?: Record<string, string>;
-	body?: unknown;
 }) => {
 	if (verbosityLevel >= 2) {
 		logger.debug(
 			{
 				type: "http_request",
 				method: options.method,
-				headers: options.headers,
-				body: options.body,
 			},
 			`→ ${options.method}`,
 		);
@@ -209,33 +205,18 @@ function isSensitiveEndpoint(url: string): boolean {
 	}
 }
 
-function normalizeRequestBodyForLogs(body: RequestInit["body"]): unknown {
-	if (body instanceof URLSearchParams) {
-		return Object.fromEntries(body.entries());
-	}
-	return body;
-}
-
 export const loggedFetch = async (
 	url: string,
 	init?: RequestInit,
 	options?: LoggedFetchOptions,
 ): Promise<Response> => {
 	const method = init?.method ?? "(unknown)";
-	const headers = init?.headers;
-	const body = init?.body;
 	const endpointSensitive = isSensitiveEndpoint(url);
-	const includeRequestBody =
-		(options?.includeRequestBody ?? true) && !endpointSensitive;
 	const includeResponseBody =
 		(options?.includeResponseBody ?? true) && !endpointSensitive;
 
 	logHttpRequest({
 		method,
-		headers: sanitizeHeadersForLogs(headers),
-		body: includeRequestBody
-			? redactSensitiveFields(normalizeRequestBodyForLogs(body))
-			: SENSITIVE_LOG_VALUE,
 	});
 
 	const startTime = Date.now();

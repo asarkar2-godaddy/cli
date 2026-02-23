@@ -34,7 +34,6 @@ export async function getWebhookEventsTypes({
 	// Log HTTP request
 	logHttpRequest({
 		method: "GET",
-		headers,
 	});
 
 	const response = await fetch(url, { headers });
