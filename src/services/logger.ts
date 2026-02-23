@@ -9,6 +9,7 @@ const SENSITIVE_KEY_PARTS = [
 	"secret",
 	"password",
 	"authorization",
+	"cookie",
 	"api_key",
 	"apikey",
 	"code_verifier",
@@ -153,6 +154,70 @@ const redactSensitiveFields = (obj: unknown): unknown => {
 	return result;
 };
 
+function isSensitiveKey(key: string): boolean {
+	const lowerKey = key.toLowerCase();
+	return SENSITIVE_KEY_PARTS.some((part) => lowerKey.includes(part));
+}
+
+function toHeaderRecord(
+	headers: HeadersInit | Record<string, string> | undefined,
+): Record<string, string> | undefined {
+	if (!headers) {
+		return undefined;
+	}
+
+	if (headers instanceof Headers) {
+		const record: Record<string, string> = {};
+		headers.forEach((value, key) => {
+			record[key] = value;
+		});
+		return record;
+	}
+
+	if (Array.isArray(headers)) {
+		const record: Record<string, string> = {};
+		for (const [key, value] of headers) {
+			record[key] = value;
+		}
+		return record;
+	}
+
+	return { ...headers };
+}
+
+function sanitizeHeadersForLogs(
+	headers: HeadersInit | Record<string, string> | undefined,
+): Record<string, string> | undefined {
+	const record = toHeaderRecord(headers);
+	if (!record) {
+		return undefined;
+	}
+
+	const sanitized: Record<string, string> = {};
+	for (const [key, value] of Object.entries(record)) {
+		sanitized[key] = isSensitiveKey(key) ? SENSITIVE_LOG_VALUE : value;
+	}
+	return sanitized;
+}
+
+function sanitizeUrlForLogs(url: string, sensitiveEndpoint: boolean): string {
+	if (sensitiveEndpoint) {
+		return SENSITIVE_LOG_VALUE;
+	}
+
+	try {
+		const parsed = new URL(url);
+		for (const key of Array.from(parsed.searchParams.keys())) {
+			if (isSensitiveKey(key)) {
+				parsed.searchParams.set(key, SENSITIVE_LOG_VALUE);
+			}
+		}
+		return parsed.toString();
+	} catch {
+		return url;
+	}
+}
+
 function isSensitiveEndpoint(url: string): boolean {
 	try {
 		const path = new URL(url).pathname.toLowerCase();
@@ -182,6 +247,7 @@ export const loggedFetch = async (
 	const headers = init?.headers;
 	const body = init?.body;
 	const endpointSensitive = isSensitiveEndpoint(url);
+	const safeUrl = sanitizeUrlForLogs(url, endpointSensitive);
 	const includeRequestBody =
 		(options?.includeRequestBody ?? true) && !endpointSensitive;
 	const includeResponseBody =
@@ -189,8 +255,8 @@ export const loggedFetch = async (
 
 	logHttpRequest({
 		method,
-		url,
-		headers: headers as Record<string, string>,
+		url: safeUrl,
+		headers: sanitizeHeadersForLogs(headers),
 		body: includeRequestBody
 			? redactSensitiveFields(normalizeRequestBodyForLogs(body))
 			: SENSITIVE_LOG_VALUE,
@@ -201,8 +267,10 @@ export const loggedFetch = async (
 	const duration = Date.now() - startTime;
 
 	let responseBody: unknown;
+	let responseHeadersForLogs: Record<string, string> | undefined;
 	if (verbosityLevel >= 2 && response.ok && includeResponseBody) {
 		const contentType = response.headers.get("content-type");
+		responseHeadersForLogs = sanitizeHeadersForLogs(response.headers);
 		if (contentType?.includes("application/json")) {
 			const clonedResponse = response.clone();
 			try {
@@ -214,13 +282,15 @@ export const loggedFetch = async (
 		}
 	} else if (!includeResponseBody) {
 		responseBody = SENSITIVE_LOG_VALUE;
+		responseHeadersForLogs = sanitizeHeadersForLogs(response.headers);
 	}
 
 	logHttpResponse({
 		method,
-		url,
+		url: safeUrl,
 		status: response.status,
 		statusText: response.statusText,
+		headers: responseHeadersForLogs,
 		body: responseBody,
 		duration,
 	});
