@@ -1,5 +1,4 @@
 import crypto from "node:crypto";
-import keytar from "keytar";
 import {
 	type Environment,
 	envGet,
@@ -12,6 +11,7 @@ const LEGACY_TOKEN_KEY = "token";
 const TOKEN_KEY_VERSION = "v3";
 const LEGACY_SCOPED_TOKEN_KEY_VERSION = "v2";
 const SCOPED_TOKEN_KEY_BYTES = 16;
+let keytarInstance: Promise<typeof import("keytar").default> | undefined;
 
 interface StoredTokenPayload {
 	accessToken: string;
@@ -21,6 +21,14 @@ interface StoredTokenPayload {
 export interface StoredToken {
 	accessToken: string;
 	expiresAt: Date;
+}
+
+async function getKeytar(): Promise<typeof import("keytar").default> {
+	if (!keytarInstance) {
+		keytarInstance = import("keytar").then((module) => module.default);
+	}
+
+	return keytarInstance;
 }
 
 function getEnvironmentTokenKey(environment: Environment): string {
@@ -79,6 +87,7 @@ async function findLegacyScopedToken(
 	environment: Environment,
 ): Promise<{ tokenKey: string; token: StoredToken } | null> {
 	try {
+		const keytar = await getKeytar();
 		const legacyPrefix = getLegacyScopedTokenKeyPrefix(environment);
 		const credentials = await keytar.findCredentials(KEYCHAIN_SERVICE);
 
@@ -104,6 +113,7 @@ async function findLegacyScopedToken(
 
 async function deleteLegacyScopedTokens(environment: Environment): Promise<void> {
 	try {
+		const keytar = await getKeytar();
 		const legacyPrefix = getLegacyScopedTokenKeyPrefix(environment);
 		const credentials = await keytar.findCredentials(KEYCHAIN_SERVICE);
 		const deletions = credentials
@@ -129,6 +139,8 @@ async function parseTokenValue(
 	value: string,
 	tokenKey: string,
 ): Promise<StoredToken | null> {
+	const keytar = await getKeytar();
+
 	try {
 		const parsed = JSON.parse(value) as Partial<StoredTokenPayload>;
 		const accessToken = parsed.accessToken;
@@ -162,6 +174,7 @@ export async function saveToken(
 	expiresAt: Date,
 	environment?: Environment,
 ): Promise<void> {
+	const keytar = await getKeytar();
 	const env = environment ?? (await getCurrentEnvironment());
 	const { scopedTokenKey } = getKeyContext(env);
 	const token = serializeToken({ accessToken, expiresAt });
@@ -171,6 +184,7 @@ export async function saveToken(
 export async function getStoredToken(
 	environment?: Environment,
 ): Promise<StoredToken | null> {
+	const keytar = await getKeytar();
 	const env = environment ?? (await getCurrentEnvironment());
 	const { scopedTokenKey, legacyEnvironmentTokenKey } = getKeyContext(env);
 
@@ -253,6 +267,7 @@ export async function getStoredToken(
 export async function deleteStoredToken(
 	environment?: Environment,
 ): Promise<void> {
+	const keytar = await getKeytar();
 	const env = environment ?? (await getCurrentEnvironment());
 	const { scopedTokenKey, legacyEnvironmentTokenKey } = getKeyContext(env);
 	await keytar.deletePassword(KEYCHAIN_SERVICE, scopedTokenKey);
