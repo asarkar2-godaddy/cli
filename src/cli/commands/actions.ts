@@ -1,17 +1,13 @@
-import { Command } from "../command-model";
 import { mapRuntimeError } from "../agent/errors";
+import { nextActionsFor } from "../agent/next-actions";
 import {
 	commandIds,
 	findRegistryNodeById,
 	registryNodeToResult,
 } from "../agent/registry";
-import { nextActionsFor } from "../agent/next-actions";
-import {
-	currentCommandString,
-	emitError,
-	emitSuccess,
-} from "../agent/respond";
+import { currentCommandString, emitError, emitSuccess } from "../agent/respond";
 import { protectPayload, truncateList } from "../agent/truncation";
+import { Command } from "../command-model";
 
 // Available actions list
 const AVAILABLE_ACTIONS = [
@@ -1865,7 +1861,7 @@ export function createActionsCommand(): Command {
 		.command("describe")
 		.description("Show detailed interface information for a specific action")
 		.argument("<action>", "Action name")
-		.action(async (actionName) => {
+		.action(async (actionName: string) => {
 			try {
 				if (!AVAILABLE_ACTIONS.includes(actionName)) {
 					throw new Error(`Action '${actionName}' not found`);

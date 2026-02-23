@@ -138,8 +138,7 @@ const actionsNode: CommandRegistryNode = {
 		{
 			id: commandIds.actionsDescribe,
 			command: "godaddy actions describe <action>",
-			description:
-				"Show detailed interface information for a specific action",
+			description: "Show detailed interface information for a specific action",
 			usage: "godaddy actions describe <action>",
 		},
 	],
@@ -169,11 +168,9 @@ const applicationAddExtensionNode: CommandRegistryNode = {
 		},
 		{
 			id: commandIds.applicationAddExtensionBlocks,
-			command:
-				"godaddy application add extension blocks --source <source>",
+			command: "godaddy application add extension blocks --source <source>",
 			description: "Set the blocks extension source",
-			usage:
-				"godaddy application add extension blocks --source <source>",
+			usage: "godaddy application add extension blocks --source <source>",
 		},
 	],
 };
@@ -238,19 +235,15 @@ const applicationNode: CommandRegistryNode = {
 		},
 		{
 			id: commandIds.applicationEnable,
-			command:
-				"godaddy application enable <name> --store-id <storeId>",
+			command: "godaddy application enable <name> --store-id <storeId>",
 			description: "Enable application on a store",
-			usage:
-				"godaddy application enable <name> --store-id <storeId>",
+			usage: "godaddy application enable <name> --store-id <storeId>",
 		},
 		{
 			id: commandIds.applicationDisable,
-			command:
-				"godaddy application disable <name> --store-id <storeId>",
+			command: "godaddy application disable <name> --store-id <storeId>",
 			description: "Disable application on a store",
-			usage:
-				"godaddy application disable <name> --store-id <storeId>",
+			usage: "godaddy application disable <name> --store-id <storeId>",
 		},
 		{
 			id: commandIds.applicationArchive,

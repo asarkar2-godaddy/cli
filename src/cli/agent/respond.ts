@@ -66,7 +66,10 @@ export function emitError(
 	return envelope;
 }
 
-export function unwrapResult<T>(result: CmdResult<T>, fallbackMessage: string): T {
+export function unwrapResult<T>(
+	result: CmdResult<T>,
+	fallbackMessage: string,
+): T {
 	if (!result.success) {
 		throw result.error ?? new Error(fallbackMessage);
 	}

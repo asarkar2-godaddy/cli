@@ -1,18 +1,18 @@
-import { Command } from "../command-model";
 import { envGet } from "../../core/environment";
 import { mapRuntimeError } from "../agent/errors";
+import { nextActionsFor } from "../agent/next-actions";
 import {
 	commandIds,
 	findRegistryNodeById,
 	registryNodeToResult,
 } from "../agent/registry";
-import { nextActionsFor } from "../agent/next-actions";
 import {
 	currentCommandString,
 	emitError,
 	emitSuccess,
 	unwrapResult,
 } from "../agent/respond";
+import { Command } from "../command-model";
 
 async function loadAuthModule() {
 	return import("../../core/auth");
@@ -29,7 +29,12 @@ export function createAuthCommand(): Command {
 			const mapped = mapRuntimeError(
 				new Error("Auth command registry metadata is missing"),
 			);
-			emitError(currentCommandString(), mapped, mapped.fix, nextActionsFor(commandIds.root));
+			emitError(
+				currentCommandString(),
+				mapped,
+				mapped.fix,
+				nextActionsFor(commandIds.root),
+			);
 			return;
 		}
 

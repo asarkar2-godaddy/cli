@@ -14,8 +14,13 @@ export interface AgentErrorDetails {
 	fix: string;
 }
 
+const ANSI_ESCAPE_PATTERN = new RegExp(
+	`${String.fromCharCode(27)}\\[[0-9;]*m`,
+	"g",
+);
+
 function stripAnsi(value: string): string {
-	return value.replace(/\u001b\[[0-9;]*m/g, "");
+	return value.replace(ANSI_ESCAPE_PATTERN, "");
 }
 
 function formatValidationMessage(error: EffectValidationError): string {
@@ -179,7 +184,11 @@ export function mapValidationError(
 export function mapLeftoverTokens(
 	leftover: ReadonlyArray<string>,
 ): AgentErrorDetails {
-	if (leftover.some((token) => token === "--output" || token.startsWith("--output="))) {
+	if (
+		leftover.some(
+			(token) => token === "--output" || token.startsWith("--output="),
+		)
+	) {
 		return {
 			message: `Unsupported option: ${leftover.join(" ")}`,
 			code: "UNSUPPORTED_OPTION",

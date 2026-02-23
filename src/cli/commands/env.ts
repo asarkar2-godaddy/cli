@@ -1,4 +1,3 @@
-import { Command } from "../command-model";
 import {
 	type Environment,
 	envGet,
@@ -8,18 +7,19 @@ import {
 	getEnvironmentDisplay,
 } from "../../core/environment";
 import { mapRuntimeError } from "../agent/errors";
+import { nextActionsFor } from "../agent/next-actions";
 import {
 	commandIds,
 	findRegistryNodeById,
 	registryNodeToResult,
 } from "../agent/registry";
-import { nextActionsFor } from "../agent/next-actions";
 import {
 	currentCommandString,
 	emitError,
 	emitSuccess,
 	unwrapResult,
 } from "../agent/respond";
+import { Command } from "../command-model";
 
 export function createEnvCommand(): Command {
 	const env = new Command("env").description(
@@ -157,14 +157,13 @@ export function createEnvCommand(): Command {
 						config_file: info.configFile,
 						config_summary: info.config
 							? {
-								name: info.config.name,
-								client_id: info.config.client_id,
-								version: info.config.version,
-								url: info.config.url,
-								proxy_url: info.config.proxy_url,
-								authorization_scopes:
-									info.config.authorization_scopes,
-							}
+									name: info.config.name,
+									client_id: info.config.client_id,
+									version: info.config.version,
+									url: info.config.url,
+									proxy_url: info.config.proxy_url,
+									authorization_scopes: info.config.authorization_scopes,
+								}
 							: null,
 					},
 					nextActionsFor(commandIds.envInfo, {

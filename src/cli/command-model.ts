@@ -17,7 +17,7 @@ export interface CommandOptionDefinition {
 	parser?: CommandValueParser;
 }
 
-export type CommandAction = (...args: Array<any>) => unknown | Promise<unknown>;
+export type CommandAction = (...args: unknown[]) => unknown | Promise<unknown>;
 
 function toCamelCase(value: string): string {
 	return value.replace(/-([a-z])/g, (_, char: string) => char.toUpperCase());
@@ -165,8 +165,11 @@ export class Command {
 		return this;
 	}
 
-	action(handler: CommandAction): this {
-		this.actionValue = handler;
+	action<TArgs extends unknown[], TResult>(
+		handler: (...args: TArgs) => TResult | Promise<TResult>,
+	): this {
+		this.actionValue = ((...args: unknown[]) =>
+			handler(...(args as TArgs))) as CommandAction;
 		return this;
 	}
 

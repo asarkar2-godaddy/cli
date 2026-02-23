@@ -1,4 +1,3 @@
-import { Command } from "../command-model";
 import { join, resolve } from "node:path";
 import type {
 	Application,
@@ -9,11 +8,11 @@ import type {
 	ValidationResult,
 } from "../../core/applications";
 import { type Environment, envGet } from "../../core/environment";
-import { ValidationError } from "../../shared/types";
 import {
 	type ActionConfig,
 	type BlocksExtensionConfig,
 	type CheckoutExtensionConfig,
+	type Config,
 	type EmbedExtensionConfig,
 	type SubscriptionConfig,
 	addActionToConfig,
@@ -22,13 +21,14 @@ import {
 	getConfigFile,
 	getConfigFilePath,
 } from "../../services/config";
+import { ValidationError } from "../../shared/types";
 import { mapRuntimeError } from "../agent/errors";
+import { nextActionsFor } from "../agent/next-actions";
 import {
 	commandIds,
 	findRegistryNodeById,
 	registryNodeToResult,
 } from "../agent/registry";
-import { nextActionsFor } from "../agent/next-actions";
 import {
 	currentCommandString,
 	emitError,
@@ -36,10 +36,21 @@ import {
 	unwrapResult,
 } from "../agent/respond";
 import { protectPayload, truncateList } from "../agent/truncation";
+import { Command } from "../command-model";
 
 interface AddBaseOptions {
 	config?: string;
 	environment?: string;
+}
+
+interface UpdateOptions {
+	label?: string;
+	description?: string;
+	status?: string;
+}
+
+interface StoreToggleOptions {
+	storeId: string;
 }
 
 interface AddActionOptions extends AddBaseOptions {
@@ -79,6 +90,8 @@ interface ReleaseOptions extends AddBaseOptions {
 
 interface DeployOptions extends AddBaseOptions {}
 
+type ConfigReadResult = ReturnType<typeof getConfigFile>;
+
 async function resolveEnvironment(environment?: string): Promise<Environment> {
 	if (environment) {
 		return unwrapResult(
@@ -87,7 +100,10 @@ async function resolveEnvironment(environment?: string): Promise<Environment> {
 		) as Environment;
 	}
 
-	return unwrapResult(await envGet(), "Failed to resolve environment") as Environment;
+	return unwrapResult(
+		await envGet(),
+		"Failed to resolve environment",
+	) as Environment;
 }
 
 function ensureSuccess(
@@ -101,7 +117,10 @@ function ensureSuccess(
 	}
 }
 
-function resolveConfigPath(configPath: string | undefined, env: Environment): string {
+function resolveConfigPath(
+	configPath: string | undefined,
+	env: Environment,
+): string {
 	if (configPath) {
 		return resolve(process.cwd(), configPath);
 	}
@@ -122,7 +141,16 @@ function parseCommaSeparated(value: string): string[] {
 		.filter((item) => item.length > 0);
 }
 
-function emitRuntimeError(commandId: keyof typeof commandIds, error: unknown): void {
+function isConfigValidationErrorResult(
+	value: ConfigReadResult,
+): value is Exclude<ConfigReadResult, Config> {
+	return typeof value === "object" && value !== null && "problems" in value;
+}
+
+function emitRuntimeError(
+	commandId: keyof typeof commandIds,
+	error: unknown,
+): void {
 	const mapped = mapRuntimeError(error);
 	emitError(
 		currentCommandString(),
@@ -279,7 +307,7 @@ export function createApplicationCommand(): Command {
 		.option("--label <label>", "Application label")
 		.option("--description <description>", "Application description")
 		.option("--status <status>", "Application status (ACTIVE|INACTIVE)")
-		.action(async (name: string, options) => {
+		.action(async (name: string, options: UpdateOptions) => {
 			try {
 				const { applicationUpdate } = await loadApplicationModule();
 				const config: {
@@ -295,7 +323,7 @@ export function createApplicationCommand(): Command {
 					config.description = options.description;
 				}
 				if (options.status) {
-					if (!["ACTIVE", "INACTIVE"].includes(options.status)) {
+					if (options.status !== "ACTIVE" && options.status !== "INACTIVE") {
 						throw new ValidationError(
 							"Status must be either ACTIVE or INACTIVE",
 							"Status must be either ACTIVE or INACTIVE",
@@ -337,7 +365,7 @@ export function createApplicationCommand(): Command {
 		.description("Enable application on a store")
 		.argument("<name>", "Application name")
 		.requiredOption("--store-id <storeId>", "Store ID")
-		.action(async (name: string, options) => {
+		.action(async (name: string, options: StoreToggleOptions) => {
 			try {
 				const { applicationEnable } = await loadApplicationModule();
 				ensureSuccess(
@@ -363,7 +391,7 @@ export function createApplicationCommand(): Command {
 		.description("Disable application on a store")
 		.argument("<name>", "Application name")
 		.requiredOption("--store-id <storeId>", "Store ID")
-		.action(async (name: string, options) => {
+		.action(async (name: string, options: StoreToggleOptions) => {
 			try {
 				const { applicationDisable } = await loadApplicationModule();
 				ensureSuccess(
@@ -391,7 +419,10 @@ export function createApplicationCommand(): Command {
 		.action(async (name: string) => {
 			try {
 				const { applicationArchive } = await loadApplicationModule();
-				ensureSuccess(await applicationArchive(name), "Failed to archive application");
+				ensureSuccess(
+					await applicationArchive(name),
+					"Failed to archive application",
+				);
 				emitSuccess(
 					currentCommandString(),
 					{ name, archived: true },
@@ -421,21 +452,20 @@ export function createApplicationCommand(): Command {
 		.action(async (options: InitOptions) => {
 			try {
 				const { applicationInit } = await loadApplicationModule();
-				let cfg: ReturnType<typeof getConfigFile> | undefined;
+				let cfg: Config | undefined;
 				if (options.config || options.environment) {
 					const candidate = getConfigFile({
 						configPath: options.config,
 						env: options.environment as Environment | undefined,
 					});
-					if (
-						typeof candidate === "object" &&
-						candidate !== null &&
-						"problems" in candidate
-					) {
+					if (isConfigValidationErrorResult(candidate)) {
 						const problems = Array.isArray(candidate.problems)
 							? candidate.problems
-								.map((problem) => problem.summary)
-								.join("; ")
+									.map(
+										(problem: { summary?: string }) =>
+											problem.summary ?? "Unknown validation problem",
+									)
+									.join("; ")
 							: "Config file validation failed";
 						throw new ValidationError(problems, problems);
 					}

@@ -2,8 +2,8 @@
 
 import { runCli } from "./cli-entry";
 import { mapRuntimeError } from "./cli/agent/errors";
-import { commandIds } from "./cli/agent/registry";
 import { nextActionsFor } from "./cli/agent/next-actions";
+import { commandIds } from "./cli/agent/registry";
 import {
 	currentCommandString,
 	emitError,

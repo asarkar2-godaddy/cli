@@ -6,28 +6,38 @@ import * as CommandDescriptor from "@effect/cli/CommandDescriptor";
 import * as HelpDoc from "@effect/cli/HelpDoc";
 import * as Options from "@effect/cli/Options";
 import * as NodeContext from "@effect/platform-node/NodeContext";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Option from "effect/Option";
 import packageJson from "../package.json";
 import { createAuthCommand, createEnvCommand } from "./cli";
-import { mapLeftoverTokens, mapRuntimeError, mapValidationError } from "./cli/agent/errors";
-import { commandIds, getRootCommandTree } from "./cli/agent/registry";
+import {
+	mapLeftoverTokens,
+	mapRuntimeError,
+	mapValidationError,
+} from "./cli/agent/errors";
 import { nextActionsFor } from "./cli/agent/next-actions";
+import { commandIds, getRootCommandTree } from "./cli/agent/registry";
 import {
 	currentCommandString,
 	emitError,
 	emitSuccess,
 } from "./cli/agent/respond";
+import { Command, getCanonicalPath } from "./cli/command-model";
 import { createActionsCommand } from "./cli/commands/actions";
 import { createApplicationCommand } from "./cli/commands/application";
-import { Command, getCanonicalPath } from "./cli/command-model";
 import { createWebhookCommand } from "./cli/commands/webhook";
 import { envGet, validateEnvironment } from "./core/environment";
 import { setDebugMode } from "./services/logger";
-import * as Cause from "effect/Cause";
-import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
-import * as Option from "effect/Option";
 
-type Descriptor = CommandDescriptor.Command<any>;
+type Descriptor = CommandDescriptor.Command<unknown>;
+
+interface ParsedCommandValue {
+	readonly options?: Record<string, unknown>;
+	readonly args?: unknown;
+	readonly subcommand?: Option.Option<readonly [string, ParsedCommandValue]>;
+}
 
 const EFFECT_CLI_CONFIG = CliConfig.make({
 	isCaseSensitive: true,
@@ -35,15 +45,17 @@ const EFFECT_CLI_CONFIG = CliConfig.make({
 	showBuiltIns: true,
 });
 
-function buildOptionsParser(options: ReadonlyArray<Command["options"][number]>) {
+function buildOptionsParser(
+	options: ReadonlyArray<Command["options"][number]>,
+): Options.Options<unknown> {
 	if (options.length === 0) {
 		return Options.none;
 	}
 
-	const optionMap: Record<string, Options.Options<any>> = {};
+	const optionMap: Record<string, Options.Options<unknown>> = {};
 
 	for (const option of options) {
-		let parser: Options.Options<any> = option.takesValue
+		let parser: Options.Options<unknown> = option.takesValue
 			? Options.text(option.longName)
 			: Options.boolean(option.longName);
 
@@ -72,7 +84,7 @@ function buildArgsParser(args: ReadonlyArray<Command["arguments"][number]>) {
 
 	if (args.length === 1) {
 		const definition = args[0];
-		let parser: Args.Args<any> = Args.text({ name: definition.name });
+		let parser: Args.Args<unknown> = Args.text({ name: definition.name });
 
 		if (!definition.required) {
 			parser = Args.optional(parser);
@@ -86,7 +98,7 @@ function buildArgsParser(args: ReadonlyArray<Command["arguments"][number]>) {
 	}
 
 	const parsers = args.map((definition) => {
-		let parser: Args.Args<any> = Args.text({ name: definition.name });
+		let parser: Args.Args<unknown> = Args.text({ name: definition.name });
 		if (!definition.required) {
 			parser = Args.optional(parser);
 		}
@@ -138,21 +150,16 @@ function buildDescriptor(command: Command, overrideName?: string): Descriptor {
 }
 
 function unwrapOptionalValue<T>(value: unknown): T | undefined {
-	if (
-		typeof value === "object" &&
-		value !== null &&
-		("_tag" in value || "_id" in value) &&
-		Option.isSome(value as Option.Option<T>)
-	) {
-		return (value as Option.Some<T>).value;
+	if (!Option.isOption(value) || Option.isNone(value)) {
+		return undefined;
 	}
 
-	return undefined;
+	return value.value as T;
 }
 
 function extractCommandOptions(
 	command: Command,
-	parsedValue: Record<string, any>,
+	parsedValue: ParsedCommandValue,
 ): Record<string, unknown> {
 	const parsedOptions = (parsedValue.options ?? {}) as Record<string, unknown>;
 	const options: Record<string, unknown> = {};
@@ -179,7 +186,10 @@ function extractCommandOptions(
 	return options;
 }
 
-function extractCommandArguments(command: Command, parsedValue: Record<string, any>) {
+function extractCommandArguments(
+	command: Command,
+	parsedValue: ParsedCommandValue,
+): unknown[] {
 	if (command.arguments.length === 0) {
 		return [];
 	}
@@ -204,8 +214,8 @@ function extractCommandArguments(command: Command, parsedValue: Record<string, a
 
 function resolveParsedCommand(
 	rootCommand: Command,
-	parsedRootValue: Record<string, any>,
-): { command: Command; parsedValue: Record<string, any> } {
+	parsedRootValue: ParsedCommandValue,
+): { command: Command; parsedValue: ParsedCommandValue } {
 	let currentCommand = rootCommand;
 	let currentValue = parsedRootValue;
 
@@ -220,10 +230,9 @@ function resolveParsedCommand(
 			break;
 		}
 
-		const [subcommandName, nextValue] = (subcommand as Option.Some<[
-			string,
-			Record<string, any>,
-		]>).value;
+		const [subcommandName, nextValue] = (
+			subcommand as Option.Some<readonly [string, ParsedCommandValue]>
+		).value;
 		const nextCommand = currentCommand.commands.find(
 			(command) => command.name === subcommandName,
 		);
@@ -241,12 +250,14 @@ function resolveParsedCommand(
 
 async function invokeCommandAction(
 	command: Command,
-	parsedValue: Record<string, any>,
+	parsedValue: ParsedCommandValue,
 ): Promise<void> {
 	const action = command.getAction();
 
 	if (!action) {
-		throw new Error(`No action configured for command '${getCanonicalPath(command)}'`);
+		throw new Error(
+			`No action configured for command '${getCanonicalPath(command)}'`,
+		);
 	}
 
 	const argumentsList = extractCommandArguments(command, parsedValue);
@@ -272,7 +283,7 @@ async function invokeCommandAction(
 
 function applyGlobalOptions(
 	rootCommand: Command,
-	parsedRootValue: Record<string, any>,
+	parsedRootValue: ParsedCommandValue,
 ): void {
 	const options = extractCommandOptions(rootCommand, parsedRootValue);
 
@@ -286,7 +297,11 @@ function applyGlobalOptions(
 	}
 }
 
-function emitRootError(details: { message: string; code: string; fix: string }): void {
+function emitRootError(details: {
+	message: string;
+	code: string;
+	fix: string;
+}): void {
 	emitError(
 		currentCommandString(),
 		{ message: details.message, code: details.code },
@@ -298,6 +313,14 @@ function emitRootError(details: { message: string; code: string; fix: string }):
 function writeHelp(helpDoc: HelpDoc.HelpDoc): void {
 	const text = HelpDoc.toAnsiText(helpDoc);
 	process.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
+}
+
+function toParsedCommandValue(value: unknown): ParsedCommandValue {
+	if (typeof value !== "object" || value === null) {
+		throw new Error("Invalid command parse output");
+	}
+
+	return value as ParsedCommandValue;
 }
 
 export function createCliProgram(): Command {
@@ -313,16 +336,13 @@ export function createCliProgram(): Command {
 		.action(async () => {
 			const envResult = await envGet();
 			const commandTree = getRootCommandTree();
-			let authSnapshot:
-				| { error: string }
-				| Record<string, unknown>
-				| undefined;
+			let authSnapshot: { error: string } | Record<string, unknown> | undefined;
 
 			try {
 				const authModule = await import("./core/auth");
 				const authResult = await authModule.authStatus();
 				authSnapshot = authResult.success
-					? (authResult.data as Record<string, unknown>)
+					? { ...(authResult.data ?? {}) }
 					: { error: authResult.error?.message ?? "unknown" };
 			} catch (error) {
 				authSnapshot = {
@@ -405,16 +425,18 @@ export async function runCli(argv: ReadonlyArray<string>): Promise<void> {
 		return;
 	}
 
+	const parsedRootValue = toParsedCommandValue(directive.value);
+
 	if (directive.leftover.length > 0) {
 		emitRootError(mapLeftoverTokens(directive.leftover));
 		return;
 	}
 
-	applyGlobalOptions(rootCommand, directive.value);
+	applyGlobalOptions(rootCommand, parsedRootValue);
 
 	const { command, parsedValue } = resolveParsedCommand(
 		rootCommand,
-		directive.value,
+		parsedRootValue,
 	);
 
 	await invokeCommandAction(command, parsedValue);

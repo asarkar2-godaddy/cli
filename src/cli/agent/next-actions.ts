@@ -1,4 +1,4 @@
-import { commandIds, type CommandId } from "./registry";
+import { type CommandId, commandIds } from "./registry";
 import type { NextAction } from "./types";
 
 export interface NextActionContext {
@@ -176,7 +176,10 @@ export function nextActionsFor(
 						url: { description: "Webhook endpoint", required: true },
 					},
 				},
-				{ command: "godaddy webhook events", description: "Refresh event list" },
+				{
+					command: "godaddy webhook events",
+					description: "Refresh event list",
+				},
 			];
 		case commandIds.actionsGroup:
 			return [
@@ -203,8 +206,7 @@ export function nextActionsFor(
 					},
 				},
 				{
-					command:
-						"godaddy application add action --name <name> --url <url>",
+					command: "godaddy application add action --name <name> --url <url>",
 					description: "Add action configuration",
 					params: {
 						name: { required: true },
@@ -216,8 +218,7 @@ export function nextActionsFor(
 			return [
 				{ command: "godaddy actions list", description: "List all actions" },
 				{
-					command:
-						"godaddy application add action --name <name> --url <url>",
+					command: "godaddy application add action --name <name> --url <url>",
 					description: "Add action configuration",
 					params: {
 						name: {
@@ -241,8 +242,7 @@ export function nextActionsFor(
 					description: "Initialize a new application",
 				},
 				{
-					command:
-						"godaddy application add action --name <name> --url <url>",
+					command: "godaddy application add action --name <name> --url <url>",
 					description: "Add action configuration",
 				},
 			];
@@ -347,8 +347,7 @@ export function nextActionsFor(
 		case commandIds.applicationEnable:
 			return [
 				{
-					command:
-						"godaddy application disable <name> --store-id <storeId>",
+					command: "godaddy application disable <name> --store-id <storeId>",
 					description: "Disable the application on the same store",
 					params: {
 						name: {
@@ -375,8 +374,7 @@ export function nextActionsFor(
 		case commandIds.applicationDisable:
 			return [
 				{
-					command:
-						"godaddy application enable <name> --store-id <storeId>",
+					command: "godaddy application enable <name> --store-id <storeId>",
 					description: "Re-enable the application on the same store",
 					params: {
 						name: {
@@ -420,8 +418,7 @@ export function nextActionsFor(
 		case commandIds.applicationInit:
 			return [
 				{
-					command:
-						"godaddy application add action --name <name> --url <url>",
+					command: "godaddy application add action --name <name> --url <url>",
 					description: "Add first action",
 				},
 				{
@@ -445,8 +442,7 @@ export function nextActionsFor(
 		case commandIds.applicationAddGroup:
 			return [
 				{
-					command:
-						"godaddy application add action --name <name> --url <url>",
+					command: "godaddy application add action --name <name> --url <url>",
 					description: "Add action configuration",
 				},
 				{
@@ -493,8 +489,7 @@ export function nextActionsFor(
 					description: "Add checkout extension",
 				},
 				{
-					command:
-						"godaddy application add extension blocks --source <source>",
+					command: "godaddy application add extension blocks --source <source>",
 					description: "Configure blocks extension",
 				},
 			];
@@ -524,8 +519,7 @@ export function nextActionsFor(
 		case commandIds.applicationDeploy:
 			return [
 				{
-					command:
-						"godaddy application enable <name> --store-id <storeId>",
+					command: "godaddy application enable <name> --store-id <storeId>",
 					description: "Enable the application on a store",
 					params: {
 						name: {

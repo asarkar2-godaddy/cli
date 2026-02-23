@@ -198,3 +198,5 @@ graphql-env.d.ts
 
 # Alternative package manager lockfiles
 bun.lock
+
+.pnpm-store

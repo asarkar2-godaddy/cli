@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { nextActionsFor } from "../../src/cli/agent/next-actions";
 import {
+	type CommandId,
 	flattenRegistry,
 	registryCoverage,
-	type CommandId,
 } from "../../src/cli/agent/registry";
 
 describe("CLI registry coverage", () => {

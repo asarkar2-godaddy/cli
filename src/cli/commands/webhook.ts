@@ -1,12 +1,11 @@
-import { Command } from "../command-model";
 import { webhookEvents } from "../../core/webhooks";
 import { mapRuntimeError } from "../agent/errors";
+import { nextActionsFor } from "../agent/next-actions";
 import {
 	commandIds,
 	findRegistryNodeById,
 	registryNodeToResult,
 } from "../agent/registry";
-import { nextActionsFor } from "../agent/next-actions";
 import {
 	currentCommandString,
 	emitError,
@@ -14,6 +13,7 @@ import {
 	unwrapResult,
 } from "../agent/respond";
 import { truncateList } from "../agent/truncation";
+import { Command } from "../command-model";
 
 export function createWebhookCommand(): Command {
 	const webhook = new Command("webhook").description(
