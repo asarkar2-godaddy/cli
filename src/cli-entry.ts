@@ -29,7 +29,7 @@ import { createActionsCommand } from "./cli/commands/actions";
 import { createApplicationCommand } from "./cli/commands/application";
 import { createWebhookCommand } from "./cli/commands/webhook";
 import { envGet, validateEnvironment } from "./core/environment";
-import { setDebugMode } from "./services/logger";
+import { setVerbosityLevel } from "./services/logger";
 
 type Descriptor = CommandDescriptor.Command<unknown>;
 
@@ -44,6 +44,52 @@ const EFFECT_CLI_CONFIG = CliConfig.make({
 	finalCheckBuiltIn: true,
 	showBuiltIns: true,
 });
+
+function isShortVerboseCluster(token: string): boolean {
+	return /^-v{2,}$/.test(token);
+}
+
+function normalizeVerbosityArgs(argv: ReadonlyArray<string>): string[] {
+	const retained: string[] = [];
+	let verbosity = 0;
+
+	for (const token of argv) {
+		if (token === "--debug") {
+			verbosity = Math.max(verbosity, 2);
+			continue;
+		}
+
+		if (token === "--info" || token === "--verbose") {
+			verbosity += 1;
+			continue;
+		}
+
+		if (token === "-v") {
+			verbosity += 1;
+			continue;
+		}
+
+		if (isShortVerboseCluster(token)) {
+			const level = token.length - 1;
+			verbosity += level;
+			continue;
+		}
+
+		retained.push(token);
+	}
+
+	const normalizedVerbosity = Math.min(verbosity, 2);
+
+	if (normalizedVerbosity >= 2) {
+		return ["--debug", ...retained];
+	}
+
+	if (normalizedVerbosity === 1) {
+		return ["--verbose", ...retained];
+	}
+
+	return retained;
+}
 
 function buildOptionsParser(
 	options: ReadonlyArray<Command["options"][number]>,
@@ -287,8 +333,21 @@ function applyGlobalOptions(
 ): void {
 	const options = extractCommandOptions(rootCommand, parsedRootValue);
 
+	let verbosity = 0;
+	if (options.verbose === true || options.info === true) {
+		verbosity = 1;
+	}
 	if (options.debug === true) {
-		setDebugMode(true);
+		verbosity = 2;
+	}
+
+	if (verbosity > 0) {
+		setVerbosityLevel(verbosity);
+		if (verbosity === 1) {
+			process.stderr.write("(verbose output enabled)\n");
+		} else {
+			process.stderr.write("(verbose output enabled: full details)\n");
+		}
 	}
 
 	const environment = typeof options.env === "string" ? options.env : undefined;
@@ -332,12 +391,16 @@ export function createCliProgram(): Command {
 			"-e, --env <environment>",
 			"Set the target environment for commands (ote, prod)",
 		)
-		.option("--debug", "Enable debug logging for HTTP requests and responses")
+		.option(
+			"-v, --verbose",
+			"Enable basic verbose output for HTTP requests and responses",
+		)
+		.option("--info", "Enable basic verbose output (same as -v)")
+		.option("--debug", "Enable full verbose output (same as -vv)")
 		.action(async () => {
 			const envResult = await envGet();
 			const commandTree = getRootCommandTree();
 			let authSnapshot: { error: string } | Record<string, unknown> | undefined;
-
 			try {
 				const authModule = await import("./core/auth");
 				const authResult = await authModule.authStatus();
@@ -380,10 +443,11 @@ export function createCliProgram(): Command {
 export async function runCli(argv: ReadonlyArray<string>): Promise<void> {
 	const rootCommand = createCliProgram();
 	const descriptor = buildDescriptor(rootCommand);
+	const normalizedArgv = normalizeVerbosityArgs(argv);
 
 	const parseEffect = CommandDescriptor.parse(
 		descriptor,
-		[rootCommand.name, ...argv],
+		[rootCommand.name, ...normalizedArgv],
 		EFFECT_CLI_CONFIG,
 	).pipe(Effect.provide(NodeContext.layer));
 
