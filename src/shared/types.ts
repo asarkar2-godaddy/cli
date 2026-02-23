@@ -19,55 +19,65 @@ export interface CmdResult<T = unknown> {
 // Error type hierarchy
 export abstract class CliError extends Error {
 	abstract code: string;
-	abstract userMessage: string;
+	userMessage: string;
+	readonly originalError?: unknown;
 
-	constructor(
-		message: string,
-		public originalError?: Error,
-	) {
+	constructor(message: string, userMessage?: string, originalError?: unknown) {
 		super(message);
 		this.name = this.constructor.name;
+		this.userMessage = userMessage || message;
+		this.originalError = originalError;
 	}
 }
 
 export class ValidationError extends CliError {
 	code = "VALIDATION_ERROR";
-	userMessage: string;
-
-	constructor(message: string, userMessage?: string) {
-		super(message);
-		this.userMessage = userMessage || message;
-	}
 }
 
 export class NetworkError extends CliError {
 	code = "NETWORK_ERROR";
+	userMessage: string;
 
-	constructor(message: string, originalError?: Error) {
-		super(message, originalError);
-		let detail = "";
+	constructor(message: string, detail?: unknown) {
+		let detailSuffix = "";
+		const detailMessage =
+			detail instanceof Error
+				? detail.message
+				: typeof detail === "string"
+					? detail
+					: undefined;
 		if (
-			originalError?.message &&
-			originalError.message !== message &&
-			!message.includes(originalError.message)
+			detailMessage &&
+			detailMessage !== message &&
+			!message.includes(detailMessage)
 		) {
-			detail = `: ${originalError.message}`;
+			detailSuffix = `: ${detailMessage}`;
 		}
-		this.userMessage = `Network error: ${message}${detail}`;
+		super(message, `Network error: ${message}${detailSuffix}`, detail);
+		this.userMessage = `Network error: ${message}${detailSuffix}`;
 	}
 }
 
 export class AuthenticationError extends CliError {
 	code = "AUTH_ERROR";
-	userMessage = "Authentication failed";
+
+	constructor(
+		message: string,
+		userMessage = "Authentication failed",
+		originalError?: unknown,
+	) {
+		super(message, userMessage, originalError);
+	}
 }
 
 export class ConfigurationError extends CliError {
 	code = "CONFIG_ERROR";
-	userMessage = "Configuration error";
 
-	constructor(message: string, userMessage?: string) {
-		super(message);
-		this.userMessage = userMessage || message;
+	constructor(
+		message: string,
+		userMessage = "Configuration error",
+		originalError?: unknown,
+	) {
+		super(message, userMessage, originalError);
 	}
 }

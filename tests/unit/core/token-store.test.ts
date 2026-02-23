@@ -65,7 +65,9 @@ describe("Token Store", () => {
 	});
 
 	test("migrates previous v2 scoped key to active scoped key", async () => {
-		mockKeytar.getPassword.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+		mockKeytar.getPassword
+			.mockResolvedValueOnce(null)
+			.mockResolvedValueOnce(null);
 		mockKeytar.findCredentials.mockResolvedValueOnce([
 			{
 				account: "token:v2:prod:legacy-scope",

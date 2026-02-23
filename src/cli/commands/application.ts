@@ -1,4 +1,5 @@
 import { join, resolve } from "node:path";
+import type { ArkErrors } from "arktype";
 import type {
 	Application,
 	ApplicationInfo,
@@ -143,8 +144,8 @@ function parseCommaSeparated(value: string): string[] {
 
 function isConfigValidationErrorResult(
 	value: ConfigReadResult,
-): value is Exclude<ConfigReadResult, Config> {
-	return typeof value === "object" && value !== null && "problems" in value;
+): value is ArkErrors {
+	return typeof value === "object" && value !== null && "summary" in value;
 }
 
 function emitRuntimeError(
@@ -459,14 +460,10 @@ export function createApplicationCommand(): Command {
 						env: options.environment as Environment | undefined,
 					});
 					if (isConfigValidationErrorResult(candidate)) {
-						const problems = Array.isArray(candidate.problems)
-							? candidate.problems
-									.map(
-										(problem: { summary?: string }) =>
-											problem.summary ?? "Unknown validation problem",
-									)
-									.join("; ")
-							: "Config file validation failed";
+						const problems =
+							typeof candidate.summary === "string"
+								? candidate.summary
+								: "Config file validation failed";
 						throw new ValidationError(problems, problems);
 					}
 					cfg = candidate;

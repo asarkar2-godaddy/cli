@@ -3,10 +3,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
+	type Config,
 	createConfigFile,
 	createEnvFile,
 	getConfigFilePath,
-	type Config,
 } from "../../../src/services/config";
 
 const TEST_CONFIG: Config = {
@@ -29,8 +29,8 @@ describe("Config Environment Routing", () => {
 	});
 
 	afterEach(() => {
-		delete process.env.GODADDY_API_BASE_URL;
-		delete process.env.APPLICATIONS_GRAPHQL_URL;
+		process.env.GODADDY_API_BASE_URL = undefined;
+		process.env.APPLICATIONS_GRAPHQL_URL = undefined;
 
 		process.chdir(originalCwd);
 		if (fs.existsSync(tempDir)) {

@@ -3,11 +3,25 @@ import { join } from "node:path";
 import * as TOML from "@iarna/toml";
 import { type ArkErrors, type } from "arktype";
 import type { Environment } from "../core/environment";
-import type { CmdResult } from "../shared/types";
+import { type CmdResult, ConfigurationError } from "../shared/types";
+
+function readProxyUrl(root: unknown): string | undefined {
+	if (typeof root !== "object" || root === null) {
+		return undefined;
+	}
+
+	const proxyUrl = (root as { proxy_url?: unknown }).proxy_url;
+	return typeof proxyUrl === "string" ? proxyUrl : undefined;
+}
 
 const Endpoint = type("string").narrow((endpoint: string, ctx) => {
+	const proxyUrl = readProxyUrl(ctx.root);
+	if (!proxyUrl) {
+		return ctx.mustBe("valid endpoint");
+	}
+
 	try {
-		new URL(ctx.root?.proxy_url.concat(endpoint));
+		new URL(endpoint, proxyUrl);
 	} catch (error) {
 		return ctx.mustBe("valid endpoint");
 	}
@@ -118,11 +132,11 @@ export function getExtensionsFromConfig(
 ): ConfigExtensionInfo[] {
 	const config = getConfigFile(options);
 
-	if (typeof config !== "object" || "problems" in config) {
+	if (isConfigValidationErrors(config)) {
 		return [];
 	}
 
-	const validConfig = config as Config;
+	const validConfig = config;
 	const extensions: ConfigExtensionInfo[] = [];
 
 	if (validConfig.extensions?.embed) {
@@ -194,6 +208,27 @@ const Config = type({
 export type Config = typeof Config.infer;
 export type ConfigEnvironment = Environment | "dev" | "test";
 
+function isConfigValidationErrors(
+	value: Config | ArkErrors,
+): value is ArkErrors {
+	return value instanceof type.errors;
+}
+
+function toConfigError(
+	error: unknown,
+	fallbackMessage: string,
+): ConfigurationError {
+	if (error instanceof ConfigurationError) {
+		return error;
+	}
+
+	if (error instanceof Error) {
+		return new ConfigurationError(error.message, fallbackMessage, error);
+	}
+
+	return new ConfigurationError(fallbackMessage, fallbackMessage);
+}
+
 function resolveConfigEnvironment(
 	env?: ConfigEnvironment,
 ): ConfigEnvironment | undefined {
@@ -236,9 +271,7 @@ export function getConfigFilePath(
 	}
 
 	const resolvedEnv = resolveConfigEnvironment(env);
-	const fileName = resolvedEnv
-		? `godaddy.${resolvedEnv}.toml`
-		: "godaddy.toml";
+	const fileName = resolvedEnv ? `godaddy.${resolvedEnv}.toml` : "godaddy.toml";
 	return join(process.cwd(), fileName);
 }
 
@@ -272,8 +305,8 @@ export function getConfigFile({
 			return Config(TOML.parse(content));
 		}
 
-			// Fallback to the default file without logging to stdout/stderr.
-		}
+		// Fallback to the default file without logging to stdout/stderr.
+	}
 
 	// Fall back to default config file
 	const defaultPath = getConfigFilePath();
@@ -381,6 +414,13 @@ export async function updateVersionNumber(version: string | null) {
 	if (!version) return;
 
 	const config = getConfigFile();
+	if (isConfigValidationErrors(config)) {
+		throw new ConfigurationError(
+			"Config file validation failed",
+			config.summary,
+			config,
+		);
+	}
 	const newConfig = { ...config, version };
 	await createConfigFile(newConfig);
 }
@@ -431,14 +471,18 @@ export async function addActionToConfig(
 	options: { configPath?: string; env?: Environment } = {},
 ): Promise<CmdResult<void>> {
 	try {
-		const config = getConfigFile(options);
-		if (typeof config === "object" && "problems" in config) {
-			throw new Error("Config file validation failed");
+		const configResult = getConfigFile(options);
+		if (isConfigValidationErrors(configResult)) {
+			throw new ConfigurationError(
+				"Config file validation failed",
+				configResult.summary,
+				configResult,
+			);
 		}
 
-		const updatedConfig = {
-			...config,
-			actions: [...(config.actions || []), action],
+		const updatedConfig: Config = {
+			...configResult,
+			actions: [...(configResult.actions || []), action],
 		};
 
 		const { env } = getConfigFilePathForUpdate(options.configPath, options.env);
@@ -446,7 +490,10 @@ export async function addActionToConfig(
 
 		return { success: true, data: undefined };
 	} catch (error) {
-		return { success: false, error: error as Error };
+		return {
+			success: false,
+			error: toConfigError(error, "Unable to update actions in config"),
+		};
 	}
 }
 
@@ -455,15 +502,19 @@ export async function addSubscriptionToConfig(
 	options: { configPath?: string; env?: Environment } = {},
 ): Promise<CmdResult<void>> {
 	try {
-		const config = getConfigFile(options);
-		if (typeof config === "object" && "problems" in config) {
-			throw new Error("Config file validation failed");
+		const configResult = getConfigFile(options);
+		if (isConfigValidationErrors(configResult)) {
+			throw new ConfigurationError(
+				"Config file validation failed",
+				configResult.summary,
+				configResult,
+			);
 		}
 
-		const updatedConfig = {
-			...config,
+		const updatedConfig: Config = {
+			...configResult,
 			subscriptions: {
-				webhook: [...(config.subscriptions?.webhook || []), subscription],
+				webhook: [...(configResult.subscriptions?.webhook || []), subscription],
 			},
 		};
 
@@ -472,7 +523,10 @@ export async function addSubscriptionToConfig(
 
 		return { success: true, data: undefined };
 	} catch (error) {
-		return { success: false, error: error as Error };
+		return {
+			success: false,
+			error: toConfigError(error, "Unable to update subscriptions in config"),
+		};
 	}
 }
 
@@ -551,12 +605,16 @@ export async function addExtensionToConfig(
 	options: { configPath?: string; env?: Environment } = {},
 ): Promise<CmdResult<void>> {
 	try {
-		const config = getConfigFile(options);
-		if (typeof config === "object" && "problems" in config) {
-			throw new Error("Config file validation failed");
+		const configResult = getConfigFile(options);
+		if (isConfigValidationErrors(configResult)) {
+			throw new ConfigurationError(
+				"Config file validation failed",
+				configResult.summary,
+				configResult,
+			);
 		}
 
-		const currentExtensions = config.extensions || {};
+		const currentExtensions = configResult.extensions || {};
 		let updatedExtensions: ExtensionsType;
 
 		if (extensionType === "blocks") {
@@ -575,15 +633,18 @@ export async function addExtensionToConfig(
 		}
 
 		const updatedConfig = {
-			...config,
+			...configResult,
 			extensions: updatedExtensions,
-		};
+		} satisfies Config;
 
 		const { env } = getConfigFilePathForUpdate(options.configPath, options.env);
 		await createConfigFile(updatedConfig, env);
 
 		return { success: true, data: undefined };
 	} catch (error) {
-		return { success: false, error: error as Error };
+		return {
+			success: false,
+			error: toConfigError(error, "Unable to update extensions in config"),
+		};
 	}
 }

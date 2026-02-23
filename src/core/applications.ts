@@ -1,6 +1,6 @@
 import { rm } from "node:fs/promises";
 import { resolve } from "node:path";
-import { type } from "arktype";
+import { type ArkErrors, type } from "arktype";
 import {
 	archiveApplication as archiveAppService,
 	createApplication,
@@ -13,7 +13,6 @@ import {
 } from "../services/applications";
 import {
 	type ActionConfig,
-	type ConfigExtensionInfo,
 	type SubscriptionConfig,
 	createConfigFile,
 	createEnvFile,
@@ -110,6 +109,12 @@ const createApplicationInputValidator = type({
 	proxyUrl: type.keywords.string.url.root,
 	authorizationScopes: type.string.array().moreThanLength(0),
 });
+
+function isConfigValidationErrorResult(
+	value: ReturnType<typeof getConfigFile>,
+): value is ArkErrors {
+	return typeof value === "object" && value !== null && "summary" in value;
+}
 
 /**
  * Initialize/create a new application
@@ -678,7 +683,7 @@ export async function applicationRelease(
 				env: input.env as Environment,
 			});
 
-			if (typeof config === "object" && !("problems" in config)) {
+			if (!isConfigValidationErrorResult(config)) {
 				actions = config.actions || [];
 				subscriptions = config.subscriptions?.webhook || [];
 			}
@@ -857,7 +862,6 @@ export async function applicationDeploy(
 		// Extensions live at extensions/{handle}/ and source is relative to that
 		for (const extension of extensions) {
 			const extensionDir = resolve(repoRoot, "extensions", extension.handle);
-			const sourcePath = resolve(extensionDir, extension.source);
 
 			const scanResult = await scanExtension(extensionDir);
 

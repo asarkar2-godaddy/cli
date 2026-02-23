@@ -1,8 +1,4 @@
-import { type } from "arktype";
-import {
-	type WebhookEventType,
-	getWebhookEventsTypes,
-} from "../services/webhook-events";
+import { getWebhookEventsTypes } from "../services/webhook-events";
 import {
 	AuthenticationError,
 	type CmdResult,

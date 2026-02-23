@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { ArkErrors } from "arktype";
 import {
 	type Config,
 	getConfigFile,
@@ -31,13 +32,17 @@ const ENV_PATH = join(homedir(), ENV_FILE);
 const ALL_ENVIRONMENTS: Environment[] = ["ote", "prod"];
 let runtimeEnvironmentOverride: Environment | null = null;
 
+function isConfigValidationErrorResult(
+	value: ReturnType<typeof getConfigFile>,
+): value is ArkErrors {
+	return typeof value === "object" && value !== null && "summary" in value;
+}
+
 /**
  * Set an in-memory environment override for the current process.
  * This is used by global CLI flags (e.g. --env) without mutating persisted config.
  */
-export function setRuntimeEnvironmentOverride(
-	env: Environment | null,
-): void {
+export function setRuntimeEnvironmentOverride(env: Environment | null): void {
 	runtimeEnvironmentOverride = env;
 }
 
@@ -129,7 +134,10 @@ export async function envInfo(
 
 		let config: Config | undefined;
 		try {
-			config = getConfigFile({ env });
+			const configResult = getConfigFile({ env });
+			if (!isConfigValidationErrorResult(configResult)) {
+				config = configResult;
+			}
 		} catch {
 			// Config file doesn't exist, which is fine
 		}

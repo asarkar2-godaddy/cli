@@ -2,7 +2,11 @@
  * Core actions functionality
  */
 
-import type { CmdResult } from "../shared/types";
+import {
+	type CmdResult,
+	ConfigurationError,
+	ValidationError,
+} from "../shared/types";
 
 // Available actions list
 const AVAILABLE_ACTIONS = [
@@ -47,9 +51,14 @@ export async function actionsList(): Promise<CmdResult<string[]>> {
 		return {
 			success: false,
 			error:
-				error instanceof Error
+				error instanceof ConfigurationError
 					? error
-					: new Error("Failed to get actions list"),
+					: new ConfigurationError(
+							error instanceof Error
+								? error.message
+								: "Failed to get actions list",
+							"Failed to get actions list",
+						),
 		};
 	}
 }
@@ -64,8 +73,9 @@ export async function actionsDescribe(
 		if (!AVAILABLE_ACTIONS.includes(actionName)) {
 			return {
 				success: false,
-				error: new Error(
+				error: new ValidationError(
 					`Action '${actionName}' not found. Available actions: ${AVAILABLE_ACTIONS.join(", ")}`,
+					`Action '${actionName}' not found. Run 'godaddy actions list' to discover valid actions.`,
 				),
 			};
 		}
@@ -75,8 +85,9 @@ export async function actionsDescribe(
 		if (!actionInterface) {
 			return {
 				success: false,
-				error: new Error(
+				error: new ValidationError(
 					`Interface definition not available for action '${actionName}'`,
+					`Action '${actionName}' does not have an interface definition.`,
 				),
 			};
 		}
@@ -89,7 +100,14 @@ export async function actionsDescribe(
 		return {
 			success: false,
 			error:
-				error instanceof Error ? error : new Error("Failed to describe action"),
+				error instanceof ConfigurationError
+					? error
+					: new ConfigurationError(
+							error instanceof Error
+								? error.message
+								: "Failed to describe action",
+							"Failed to describe action",
+						),
 		};
 	}
 }

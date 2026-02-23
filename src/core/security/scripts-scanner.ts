@@ -15,16 +15,6 @@ interface SuspiciousPattern {
 }
 
 /**
- * package.json structure with scripts field
- */
-interface PackageJson {
-	name?: string;
-	version?: string;
-	scripts?: Record<string, string>;
-	[key: string]: unknown;
-}
-
-/**
  * Lifecycle scripts that execute automatically during installation
  */
 const LIFECYCLE_SCRIPTS = ["install", "postinstall", "preinstall"] as const;

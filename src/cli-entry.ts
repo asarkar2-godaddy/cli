@@ -231,9 +231,11 @@ function extractCommandOptions(
 				: typeof listSource === "string"
 					? [listSource]
 					: [];
-			options[option.key] = option.parser
-				? list.map((value) => option.parser(value))
-				: list;
+			const parser = option.parser;
+			options[option.key] =
+				typeof parser === "function"
+					? list.map((value) => parser(value))
+					: list;
 			continue;
 		}
 
@@ -241,8 +243,9 @@ function extractCommandOptions(
 			? rawValue
 			: unwrapOptionalValue<string>(rawValue);
 
-		if (typeof normalizedValue === "string" && option.parser) {
-			normalizedValue = option.parser(normalizedValue);
+		const parser = option.parser;
+		if (typeof normalizedValue === "string" && typeof parser === "function") {
+			normalizedValue = parser(normalizedValue);
 		}
 
 		options[option.key] = normalizedValue;

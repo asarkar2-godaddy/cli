@@ -21,7 +21,9 @@ describe("API Core Functions", () => {
 
 	describe("apiRequest", () => {
 		test("returns auth error when secure credential storage is unavailable", async () => {
-			mockKeytar.getPassword.mockRejectedValueOnce(new Error("Keychain locked"));
+			mockKeytar.getPassword.mockRejectedValueOnce(
+				new Error("Keychain locked"),
+			);
 
 			const result = await apiRequest({ endpoint: "/v1/domains" });
 

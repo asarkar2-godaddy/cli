@@ -11,7 +11,23 @@ const LEGACY_TOKEN_KEY = "token";
 const TOKEN_KEY_VERSION = "v3";
 const LEGACY_SCOPED_TOKEN_KEY_VERSION = "v2";
 const SCOPED_TOKEN_KEY_BYTES = 16;
-let keytarInstance: Promise<typeof import("keytar").default> | undefined;
+let keytarInstance: Promise<KeytarApi> | undefined;
+
+interface KeytarCredential {
+	account: string;
+	password: string;
+}
+
+interface KeytarApi {
+	setPassword(
+		service: string,
+		account: string,
+		password: string,
+	): Promise<void>;
+	getPassword(service: string, account: string): Promise<string | null>;
+	deletePassword(service: string, account: string): Promise<boolean>;
+	findCredentials(service: string): Promise<KeytarCredential[]>;
+}
 
 interface StoredTokenPayload {
 	accessToken: string;
@@ -23,9 +39,42 @@ export interface StoredToken {
 	expiresAt: Date;
 }
 
-async function getKeytar(): Promise<typeof import("keytar").default> {
+function isKeytarApi(candidate: unknown): candidate is KeytarApi {
+	if (typeof candidate !== "object" || candidate === null) {
+		return false;
+	}
+
+	const target = candidate as Record<string, unknown>;
+	const hasFunction = (key: string): boolean => {
+		try {
+			return typeof target[key] === "function";
+		} catch {
+			return false;
+		}
+	};
+
+	return (
+		hasFunction("setPassword") &&
+		hasFunction("getPassword") &&
+		hasFunction("deletePassword") &&
+		hasFunction("findCredentials")
+	);
+}
+
+async function getKeytar(): Promise<KeytarApi> {
 	if (!keytarInstance) {
-		keytarInstance = import("keytar").then((module) => module.default);
+		keytarInstance = import("keytar").then((module) => {
+			const defaultExport = (module as { default?: unknown }).default;
+			if (isKeytarApi(defaultExport)) {
+				return defaultExport;
+			}
+
+			if (isKeytarApi(module)) {
+				return module;
+			}
+
+			throw new Error("Keytar module does not expose the expected API");
+		});
 	}
 
 	return keytarInstance;
@@ -89,14 +138,19 @@ async function findLegacyScopedToken(
 	try {
 		const keytar = await getKeytar();
 		const legacyPrefix = getLegacyScopedTokenKeyPrefix(environment);
-		const credentials = await keytar.findCredentials(KEYCHAIN_SERVICE);
+		const credentials = (await keytar.findCredentials(
+			KEYCHAIN_SERVICE,
+		)) as KeytarCredential[];
 
 		for (const credential of credentials) {
 			if (!credential.account.startsWith(legacyPrefix)) {
 				continue;
 			}
 
-			const token = await parseTokenValue(credential.password, credential.account);
+			const token = await parseTokenValue(
+				credential.password,
+				credential.account,
+			);
 			if (token) {
 				return {
 					tokenKey: credential.account,
@@ -111,13 +165,19 @@ async function findLegacyScopedToken(
 	return null;
 }
 
-async function deleteLegacyScopedTokens(environment: Environment): Promise<void> {
+async function deleteLegacyScopedTokens(
+	environment: Environment,
+): Promise<void> {
 	try {
 		const keytar = await getKeytar();
 		const legacyPrefix = getLegacyScopedTokenKeyPrefix(environment);
-		const credentials = await keytar.findCredentials(KEYCHAIN_SERVICE);
+		const credentials = (await keytar.findCredentials(
+			KEYCHAIN_SERVICE,
+		)) as KeytarCredential[];
 		const deletions = credentials
-			.filter((credential) => credential.account.startsWith(legacyPrefix))
+			.filter((credential: KeytarCredential) =>
+				credential.account.startsWith(legacyPrefix),
+			)
 			.map((credential) =>
 				keytar.deletePassword(KEYCHAIN_SERVICE, credential.account),
 			);
@@ -188,7 +248,10 @@ export async function getStoredToken(
 	const env = environment ?? (await getCurrentEnvironment());
 	const { scopedTokenKey, legacyEnvironmentTokenKey } = getKeyContext(env);
 
-	const scopedValue = await keytar.getPassword(KEYCHAIN_SERVICE, scopedTokenKey);
+	const scopedValue = await keytar.getPassword(
+		KEYCHAIN_SERVICE,
+		scopedTokenKey,
+	);
 	if (scopedValue) {
 		return parseTokenValue(scopedValue, scopedTokenKey);
 	}
@@ -210,7 +273,10 @@ export async function getStoredToken(
 					scopedTokenKey,
 					serializeToken(legacyEnvironmentToken),
 				);
-				await keytar.deletePassword(KEYCHAIN_SERVICE, legacyEnvironmentTokenKey);
+				await keytar.deletePassword(
+					KEYCHAIN_SERVICE,
+					legacyEnvironmentTokenKey,
+				);
 			} catch {
 				// Non-fatal: return token even if migration write fails.
 			}
