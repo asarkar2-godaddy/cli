@@ -11,6 +11,7 @@ export interface CommandOptionDefinition {
 	longName: string;
 	shortName?: string;
 	required: boolean;
+	multiple: boolean;
 	takesValue: boolean;
 	valueName?: string;
 	description?: string;
@@ -46,6 +47,7 @@ function parseOptionSegment(segment: string): {
 function parseOptionFlags(
 	flags: string,
 	required: boolean,
+	multiple: boolean,
 	description?: string,
 	parser?: CommandValueParser,
 ): CommandOptionDefinition {
@@ -70,6 +72,7 @@ function parseOptionFlags(
 		longName: long.name,
 		shortName: short?.name,
 		required,
+		multiple,
 		takesValue: long.takesValue,
 		valueName: long.valueName,
 		description,
@@ -151,8 +154,11 @@ export class Command {
 		flags: string,
 		description?: string,
 		parser?: CommandValueParser,
+		multiple = false,
 	): this {
-		this.options.push(parseOptionFlags(flags, false, description, parser));
+		this.options.push(
+			parseOptionFlags(flags, false, multiple, description, parser),
+		);
 		return this;
 	}
 
@@ -160,8 +166,11 @@ export class Command {
 		flags: string,
 		description?: string,
 		parser?: CommandValueParser,
+		multiple = false,
 	): this {
-		this.options.push(parseOptionFlags(flags, true, description, parser));
+		this.options.push(
+			parseOptionFlags(flags, true, multiple, description, parser),
+		);
 		return this;
 	}
 

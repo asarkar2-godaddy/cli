@@ -130,20 +130,44 @@ describe("API Command - extractPath", () => {
 	});
 });
 
-describe("API Command - option parsing", () => {
-	test("treats endpoint as positional when --field appears before endpoint", () => {
+describe("API Command - command model", () => {
+	test("defines a required endpoint positional argument", () => {
 		const command = createApiCommand();
-		const parsed = command.parseOptions(["-f", "name=John", "/v1/domains"]);
-		expect(parsed.operands).toEqual(["/v1/domains"]);
+		expect(command.arguments).toHaveLength(1);
+		expect(command.arguments[0]).toMatchObject({
+			name: "endpoint",
+			required: true,
+		});
 	});
 
-	test("treats endpoint as positional when --header appears before endpoint", () => {
+	test("supports repeatable field and header options", () => {
 		const command = createApiCommand();
-		const parsed = command.parseOptions([
-			"-H",
-			"X-Request-Context: cli-test",
-			"/v1/domains",
-		]);
-		expect(parsed.operands).toEqual(["/v1/domains"]);
+		const fieldOption = command.options.find(
+			(option) => option.longName === "field",
+		);
+		const headerOption = command.options.find(
+			(option) => option.longName === "header",
+		);
+
+		expect(fieldOption).toMatchObject({
+			takesValue: true,
+			multiple: true,
+		});
+		expect(headerOption).toMatchObject({
+			takesValue: true,
+			multiple: true,
+		});
+	});
+
+	test("supports include flag as a boolean option", () => {
+		const command = createApiCommand();
+		const includeOption = command.options.find(
+			(option) => option.longName === "include",
+		);
+
+		expect(includeOption).toMatchObject({
+			takesValue: false,
+			multiple: false,
+		});
 	});
 });

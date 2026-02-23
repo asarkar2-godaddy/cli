@@ -154,6 +154,21 @@ export function nextActionsFor(
 				},
 				{ command: "godaddy auth status", description: "Check auth status" },
 			];
+		case commandIds.apiRequest:
+			return [
+				{
+					command: "godaddy api <endpoint>",
+					description: "Call another API endpoint",
+					params: {
+						endpoint: {
+							description: "Relative API endpoint (for example /v1/domains)",
+							required: true,
+						},
+					},
+				},
+				{ command: "godaddy auth status", description: "Check auth status" },
+				{ command: "godaddy env get", description: "Check active environment" },
+			];
 		case commandIds.webhookGroup:
 			return [
 				{

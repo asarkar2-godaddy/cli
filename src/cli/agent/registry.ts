@@ -11,6 +11,7 @@ export const commandIds = {
 	envGet: "env.get",
 	envSet: "env.set",
 	envInfo: "env.info",
+	apiRequest: "api.request",
 	webhookGroup: "webhook.group",
 	webhookEvents: "webhook.events",
 	actionsGroup: "actions.group",
@@ -105,6 +106,14 @@ const envNode: CommandRegistryNode = {
 			usage: "godaddy env info [environment]",
 		},
 	],
+};
+
+const apiNode: CommandRegistryNode = {
+	id: commandIds.apiRequest,
+	command: "godaddy api <endpoint>",
+	description: "Make authenticated requests to GoDaddy APIs",
+	usage:
+		"godaddy api <endpoint> [--method <method>] [--field <key=value>] [--file <path>] [--header <header>] [--query <path>] [--include]",
 };
 
 const webhookNode: CommandRegistryNode = {
@@ -285,7 +294,14 @@ export const commandRegistry: CommandRegistryNode = {
 	description:
 		"GoDaddy Developer Platform CLI - Agent-first JSON command interface",
 	usage: "godaddy",
-	children: [authNode, envNode, webhookNode, actionsNode, applicationNode],
+	children: [
+		authNode,
+		envNode,
+		apiNode,
+		webhookNode,
+		actionsNode,
+		applicationNode,
+	],
 };
 
 function cloneNode(node: CommandRegistryNode): CommandRegistryNode {
@@ -358,6 +374,7 @@ export const registryCoverage: Record<CommandId, true> = {
 	[commandIds.envGet]: true,
 	[commandIds.envSet]: true,
 	[commandIds.envInfo]: true,
+	[commandIds.apiRequest]: true,
 	[commandIds.webhookGroup]: true,
 	[commandIds.webhookEvents]: true,
 	[commandIds.actionsGroup]: true,
