@@ -70,7 +70,7 @@ if (isDevBuild) {
 
 esbuild
 	.build({
-		entryPoints: ["src/index.tsx"],
+		entryPoints: ["src/index.ts"],
 		bundle: true,
 		format: "esm",
 		platform: "node",

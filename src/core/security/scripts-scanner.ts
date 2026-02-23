@@ -1,5 +1,4 @@
-import type { FileSystemService } from "../../effect/services/filesystem";
-import { readPackageJsonWithFs } from "../../services/extension/workspace";
+import * as nodeFs from "node:fs";
 import type { Finding } from "./types";
 
 /**
@@ -38,9 +37,9 @@ const LIFECYCLE_SCRIPTS = ["install", "postinstall", "preinstall"] as const;
  */
 export function scanPackageScripts(
 	pkgPath: string,
-	fs: FileSystemService,
 ): Finding[] {
-	const pkg = readPackageJsonWithFs(pkgPath, fs);
+	const content = nodeFs.readFileSync(pkgPath, "utf-8");
+	const pkg = JSON.parse(content) as Record<string, unknown>;
 	const findings: Finding[] = [];
 
 	// No scripts to scan

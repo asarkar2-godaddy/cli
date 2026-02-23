@@ -6,14 +6,11 @@ import * as Effect from "effect/Effect";
 import { v7 as uuid } from "uuid";
 import { type Environment, envGetEffect, getApiUrl } from "../core/environment";
 import { ConfigurationError } from "../effect/errors";
-import type { FileSystem } from "../effect/services/filesystem";
-
-// Cached API base URL
-let apiBaseUrl: string | null = null;
+import type { FileSystem } from "@effect/platform/FileSystem";
 
 /**
- * Get or initialize the API base URL based on the environment.
- * Uses envGetEffect to determine the active environment when no override is set.
+ * Resolve the API base URL from environment variables or the active environment.
+ * Pure function — no caching. The cost of envGetEffect + getApiUrl is negligible.
  */
 export function initApiBaseUrlEffect(): Effect.Effect<
 	string,
@@ -21,17 +18,12 @@ export function initApiBaseUrlEffect(): Effect.Effect<
 	FileSystem
 > {
 	return Effect.gen(function* () {
-		if (apiBaseUrl) return apiBaseUrl;
-
-		// Use environment variable if set, otherwise determine from active environment
 		if (process.env.APPLICATIONS_GRAPHQL_URL) {
-			apiBaseUrl = process.env.APPLICATIONS_GRAPHQL_URL;
-		} else {
-			const env: Environment = yield* envGetEffect();
-			apiBaseUrl = `${getApiUrl(env)}/v1/apps/app-registry-subgraph`;
+			return process.env.APPLICATIONS_GRAPHQL_URL;
 		}
 
-		return apiBaseUrl;
+		const env: Environment = yield* envGetEffect();
+		return `${getApiUrl(env)}/v1/apps/app-registry-subgraph`;
 	}).pipe(
 		Effect.catchAll((error) =>
 			Effect.fail(

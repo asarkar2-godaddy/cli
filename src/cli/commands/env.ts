@@ -1,4 +1,7 @@
+import * as Args from "@effect/cli/Args";
+import * as Command from "@effect/cli/Command";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import {
 	envGetEffect,
 	envInfoEffect,
@@ -6,151 +9,192 @@ import {
 	envSetEffect,
 	getEnvironmentDisplay,
 } from "../../core/environment";
-import { mapRuntimeError } from "../agent/errors";
-import { nextActionsFor } from "../agent/next-actions";
-import {
-	commandIds,
-	findRegistryNodeById,
-	registryNodeToResult,
-} from "../agent/registry";
-import { currentCommandString, emitError, emitSuccess } from "../agent/respond";
-import { Command } from "../command-model";
+import { EnvelopeWriter } from "../services/envelope-writer";
+import type { NextAction } from "../agent/types";
 
-function emitEnvError(error: unknown): void {
-	const mapped = mapRuntimeError(error);
-	emitError(
-		currentCommandString(),
-		{ message: mapped.message, code: mapped.code },
-		mapped.fix,
-		nextActionsFor(commandIds.envGroup),
-	);
+// ---------------------------------------------------------------------------
+// Colocated next_actions
+// ---------------------------------------------------------------------------
+
+const envGroupActions: NextAction[] = [
+	{ command: "godaddy env get", description: "Get active environment" },
+	{ command: "godaddy env list", description: "List environments" },
+	{
+		command: "godaddy env set <environment>",
+		description: "Set active environment",
+		params: {
+			environment: {
+				description: "Environment name",
+				enum: ["ote", "prod"],
+				default: "ote",
+				required: true,
+			},
+		},
+	},
+];
+
+const envGetActions: NextAction[] = [
+	{
+		command: "godaddy env set <environment>",
+		description: "Set active environment",
+		params: { environment: { enum: ["ote", "prod"], required: true } },
+	},
+	{
+		command: "godaddy env info [environment]",
+		description: "Show environment details",
+		params: { environment: { enum: ["ote", "prod"], default: "ote" } },
+	},
+];
+
+const envSetActions: NextAction[] = [
+	{ command: "godaddy env get", description: "Get active environment" },
+	{
+		command: "godaddy auth status",
+		description: "Check auth for active environment",
+	},
+];
+
+const envListActions: NextAction[] = [
+	{ command: "godaddy env get", description: "Get active environment" },
+	{
+		command: "godaddy env set <environment>",
+		description: "Set active environment",
+		params: { environment: { enum: ["ote", "prod"], default: "ote", required: true } },
+	},
+	{
+		command: "godaddy env info [environment]",
+		description: "Show environment details",
+		params: { environment: { enum: ["ote", "prod"], default: "ote" } },
+	},
+];
+
+function envInfoActions(environment?: string): NextAction[] {
+	return [
+		{
+			command: "godaddy env set <environment>",
+			description: "Set active environment",
+			params: {
+				environment: {
+					enum: ["ote", "prod"],
+					value: environment ?? "ote",
+					required: true,
+				},
+			},
+		},
+		{ command: "godaddy auth status", description: "Check auth status" },
+	];
 }
 
-export function createEnvCommand(): Command {
-	const env = new Command("env").description(
-		"Manage GoDaddy environments (ote, prod)",
-	);
+// ---------------------------------------------------------------------------
+// Subcommands
+// ---------------------------------------------------------------------------
 
-	env.action(() =>
-		Effect.sync(() => {
-			const node = findRegistryNodeById(commandIds.envGroup);
-			if (!node) {
-				const mapped = mapRuntimeError(
-					new Error("Environment command registry metadata is missing"),
-				);
-				emitError(
-					currentCommandString(),
-					{ message: mapped.message, code: mapped.code },
-					mapped.fix,
-					nextActionsFor(commandIds.root),
-				);
-				return;
-			}
+const envList = Command.make(
+	"list",
+	{},
+	() =>
+		Effect.gen(function* () {
+			const writer = yield* EnvelopeWriter;
+			const environments = yield* envListEffect();
+			const activeEnvironment = environments[0];
 
-			emitSuccess(
-				currentCommandString(),
-				registryNodeToResult(node),
-				nextActionsFor(commandIds.envGroup),
+			yield* writer.emitSuccess("godaddy env list", {
+				active_environment: activeEnvironment,
+				environments: environments.map((environment) => ({
+					environment,
+					display: getEnvironmentDisplay(environment),
+				})),
+			}, envListActions);
+		}),
+).pipe(Command.withDescription("List all available environments"));
+
+const envGet = Command.make(
+	"get",
+	{},
+	() =>
+		Effect.gen(function* () {
+			const writer = yield* EnvelopeWriter;
+			const environment = yield* envGetEffect();
+
+			yield* writer.emitSuccess(
+				"godaddy env get",
+				{ environment },
+				envGetActions,
 			);
 		}),
-	);
+).pipe(Command.withDescription("Get current active environment"));
 
-	env
-		.command("list")
-		.description("List all available environments")
-		.action(() =>
-			Effect.gen(function* () {
-				const environments = yield* envListEffect();
-				const activeEnvironment = environments[0];
+const envSet = Command.make(
+	"set",
+	{ environment: Args.text({ name: "environment" }).pipe(Args.withDescription("Environment to set (ote|prod)")) },
+	({ environment }) =>
+		Effect.gen(function* () {
+			const writer = yield* EnvelopeWriter;
+			const previousEnvironment = yield* envGetEffect();
+			yield* envSetEffect(environment);
 
-				emitSuccess(
-					currentCommandString(),
-					{
-						active_environment: activeEnvironment,
-						environments: environments.map((environment) => ({
-							environment,
-							display: getEnvironmentDisplay(environment),
-						})),
-					},
-					nextActionsFor(commandIds.envList),
-				);
-			}).pipe(
-				Effect.catchAll((error) => Effect.sync(() => emitEnvError(error))),
-			),
-		);
+			yield* writer.emitSuccess("godaddy env set", {
+				previous_environment: previousEnvironment,
+				environment,
+			}, envSetActions);
+		}),
+).pipe(Command.withDescription("Set active environment"));
 
-	env
-		.command("get")
-		.description("Get current active environment")
-		.action(() =>
-			Effect.gen(function* () {
-				const environment = yield* envGetEffect();
+const envInfo = Command.make(
+	"info",
+	{ environment: Args.text({ name: "environment" }).pipe(Args.optional) },
+	({ environment: environmentOpt }) =>
+		Effect.gen(function* () {
+			const writer = yield* EnvelopeWriter;
+			const environment = Option.getOrUndefined(environmentOpt);
+			const info = yield* envInfoEffect(environment);
 
-				emitSuccess(
-					currentCommandString(),
-					{ environment },
-					nextActionsFor(commandIds.envGet),
-				);
-			}).pipe(
-				Effect.catchAll((error) => Effect.sync(() => emitEnvError(error))),
-			),
-		);
+			yield* writer.emitSuccess(
+				"godaddy env info",
+				{
+					environment: info.environment,
+					display: info.display,
+					config_file: info.configFile,
+					config_summary: info.config
+						? {
+								name: info.config.name,
+								client_id: info.config.client_id,
+								version: info.config.version,
+								url: info.config.url,
+								proxy_url: info.config.proxy_url,
+								authorization_scopes: info.config.authorization_scopes,
+							}
+						: null,
+				},
+				envInfoActions(info.environment),
+			);
+		}),
+).pipe(Command.withDescription("Show detailed information about an environment"));
 
-	env
-		.command("set")
-		.description("Set active environment")
-		.argument("<environment>", "Environment to set (ote|prod)")
-		.action((environment: string) =>
-			Effect.gen(function* () {
-				const previousEnvironment = yield* envGetEffect();
-				yield* envSetEffect(environment);
+// ---------------------------------------------------------------------------
+// Parent command
+// ---------------------------------------------------------------------------
 
-				emitSuccess(
-					currentCommandString(),
-					{
-						previous_environment: previousEnvironment,
-						environment,
-					},
-					nextActionsFor(commandIds.envSet),
-				);
-			}).pipe(
-				Effect.catchAll((error) => Effect.sync(() => emitEnvError(error))),
-			),
-		);
+const envParent = Command.make(
+	"env",
+	{},
+	() =>
+		Effect.gen(function* () {
+			const writer = yield* EnvelopeWriter;
+			yield* writer.emitSuccess("godaddy env", {
+				command: "godaddy env",
+				description: "Manage GoDaddy environments (ote, prod)",
+				commands: [
+					{ command: "godaddy env list", description: "List all available environments", usage: "godaddy env list" },
+					{ command: "godaddy env get", description: "Get current active environment", usage: "godaddy env get" },
+					{ command: "godaddy env set <environment>", description: "Set active environment", usage: "godaddy env set <environment>" },
+					{ command: "godaddy env info [environment]", description: "Show detailed information about an environment", usage: "godaddy env info [environment]" },
+				],
+			}, envGroupActions);
+		}),
+).pipe(
+	Command.withDescription("Manage GoDaddy environments (ote, prod)"),
+	Command.withSubcommands([envList, envGet, envSet, envInfo]),
+);
 
-	env
-		.command("info")
-		.description("Show detailed information about an environment")
-		.argument("[environment]", "Environment to show info for")
-		.action((environment: string | undefined) =>
-			Effect.gen(function* () {
-				const info = yield* envInfoEffect(environment);
-
-				emitSuccess(
-					currentCommandString(),
-					{
-						environment: info.environment,
-						display: info.display,
-						config_file: info.configFile,
-						config_summary: info.config
-							? {
-									name: info.config.name,
-									client_id: info.config.client_id,
-									version: info.config.version,
-									url: info.config.url,
-									proxy_url: info.config.proxy_url,
-									authorization_scopes: info.config.authorization_scopes,
-								}
-							: null,
-					},
-					nextActionsFor(commandIds.envInfo, {
-						environment: info.environment,
-					}),
-				);
-			}).pipe(
-				Effect.catchAll((error) => Effect.sync(() => emitEnvError(error))),
-			),
-		);
-
-	return env;
-}
+export const envCommand = envParent;

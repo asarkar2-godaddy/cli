@@ -1,0 +1,285 @@
+{
+  "name": "commerce.price-adjustment.apply",
+  "description": "Apply price adjustments (discounts and fees) to line items",
+  "requestSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "commerce.price-adjustment.apply:request",
+    "type": "object",
+    "properties": {
+      "lines": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/calculationLineInput"
+        },
+        "minItems": 1
+      },
+      "discountCodes": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "lines"
+    ],
+    "definitions": {
+      "calculationLineInput": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The client-defined ID for the line. This could be a UUID of the SKU, or a shipping method/package name. The value will be passed back unmodified in the calculation response."
+          },
+          "quantity": {
+            "type": "number",
+            "description": "The number of units being purchased."
+          },
+          "subtotalPrice": {
+            "$ref": "#/definitions/moneyInput",
+            "description": "The money amount for the total quantity being purchased."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "SHIPPING",
+              "SKU"
+            ],
+            "description": "The type of the calculation line."
+          }
+        },
+        "required": [
+          "id",
+          "subtotalPrice",
+          "type",
+          "quantity"
+        ]
+      },
+      "moneyInput": {
+        "type": "object",
+        "properties": {
+          "currencyCode": {
+            "type": "string",
+            "description": "A three-character ISO-4217 currency code."
+          },
+          "value": {
+            "type": "number",
+            "description": "The value, which might be: An integer for currencies like JPY that are not typically fractional; or, a decimal fraction for currencies like TND that are subdivided into thousandths."
+          }
+        },
+        "required": [
+          "currencyCode",
+          "value"
+        ]
+      }
+    }
+  },
+  "responseSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "commerce.price-adjustment.apply:response",
+    "type": "object",
+    "properties": {
+      "lines": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/calculatedLine"
+        },
+        "minItems": 1
+      },
+      "adjustmentAmounts": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/calculatedAdjustment"
+        },
+        "description": "The individual adjustments that were applied to the purchase. A combined summary of all of the adjustments that applied across all of the lines."
+      },
+      "totalDiscountAmount": {
+        "$ref": "#/definitions/money",
+        "description": "The total money amount of discounts calculated for the purchase."
+      },
+      "totalFeeAmount": {
+        "$ref": "#/definitions/money",
+        "description": "The total money amount of fees calculated for the purchase."
+      }
+    },
+    "required": [
+      "lines",
+      "adjustments",
+      "totalDiscountAmount",
+      "totalDiscountAmount"
+    ],
+    "definitions": {
+      "calculatedLine": {
+        "type": "object",
+        "properties": {
+          "calculationLine": {
+            "$ref": "#/definitions/calculationLine",
+            "description": "An individual line item that was calculated."
+          },
+          "adjustments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/calculatedAdjustment"
+            },
+            "description": "The individual adjustments that applied to the line."
+          },
+          "totalDiscountAmount": {
+            "$ref": "#/definitions/money",
+            "description": "The total money amount of discounts calculated for the line."
+          },
+          "totalFeeAmount": {
+            "$ref": "#/definitions/money",
+            "description": "The total money amount of fees calculated for the line."
+          }
+        },
+        "required": [
+          "calculationLine",
+          "adjustments",
+          "totalDiscountAmount",
+          "totalFeeAmount"
+        ]
+      },
+      "calculationLine": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The client-defined ID for the line."
+          },
+          "type": {
+            "type": "string",
+            "description": "The line type"
+          },
+          "unitPrice": {
+            "$ref": "#/definitions/money"
+          },
+          "quantity": {
+            "type": "number",
+            "description": "The number of units being purchased"
+          },
+          "subTotalPrice": {
+            "$ref": "#/definitions/money"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "subTotalPrice"
+        ],
+        "description": "An individual line item that was used in the calculation, passed back unmodified from the request."
+      },
+      "calculatedAdjustment": {
+        "type": "object",
+        "properties": {
+          "adjustment": {
+            "$ref": "#/definitions/adjustment"
+          },
+          "totalAmount": {
+            "$ref": "#/definitions/money"
+          }
+        },
+        "required": [
+          "adjustment",
+          "totalAmount"
+        ],
+        "description": "An individual adjustment amount."
+      },
+      "adjustment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The globally-unique ID."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "DISCOUNT",
+              "FEE"
+            ],
+            "description": "The type of adjustment."
+          },
+          "label": {
+            "type": "string",
+            "description": "The label for display."
+          },
+          "name": {
+            "type": "string",
+            "description": "The unique human-friendly identifier."
+          },
+          "value": {
+            "$ref": "#/definitions/adjustmentValue",
+            "description": "The adjustment's value"
+          }
+        },
+        "required": [
+          "value",
+          "type"
+        ],
+        "description": "The adjustment that was used for the calculated amount."
+      },
+      "adjustmentValue": {
+        "oneOf": [
+          {
+            "$ref": "#/definitions/calculatedAdjustmentAmount"
+          },
+          {
+            "$ref": "#/definitions/calculatedAdjustmentPercentage"
+          }
+        ]
+      },
+      "calculatedAdjustmentAmount": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "$ref": "#/definitions/money"
+          },
+          "appliedAmount": {
+            "$ref": "#/definitions/money"
+          }
+        },
+        "required": [
+          "amount",
+          "appliedAmount"
+        ],
+        "description": "The adjustment value represented as a fixed money amount."
+      },
+      "calculatedAdjustmentPercentage": {
+        "type": "object",
+        "properties": {
+          "appliedPercentage": {
+            "type": "number",
+            "description": "The percentage applied by the adjustment, out of 100."
+          },
+          "percentage": {
+            "type": "number",
+            "description": "The percentage value of the adjustment, out of 100."
+          }
+        },
+        "required": [
+          "appliedPercentage",
+          "percentage"
+        ],
+        "description": "The adjustment value represented as a percentage."
+      },
+      "money": {
+        "type": "object",
+        "properties": {
+          "currencyCode": {
+            "type": "string",
+            "description": "A three-character ISO-4217 currency code."
+          },
+          "value": {
+            "type": "number",
+            "description": "The value, which might be: An integer for currencies like JPY that are not typically fractional; or, a decimal fraction for currencies like TND that are subdivided into thousandths."
+          }
+        },
+        "required": [
+          "currencyCode",
+          "value"
+        ],
+        "description": "A money represents the monetary value and currency for a financial transaction."
+      }
+    }
+  }
+}

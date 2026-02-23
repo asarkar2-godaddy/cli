@@ -2,11 +2,12 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ArkErrors } from "arktype";
 import * as Effect from "effect/Effect";
+import { FileSystem } from "@effect/platform/FileSystem";
 import { ConfigurationError, ValidationError } from "../effect/errors";
-import { FileSystem } from "../effect/services/filesystem";
+import { CliConfig } from "../cli/services/cli-config";
 import {
 	type Config,
-	getConfigFile,
+	getConfigFileEffect as getConfigFile,
 	getConfigFilePath,
 } from "../services/config";
 
@@ -27,24 +28,47 @@ export interface EnvironmentInfo {
 const ENV_FILE = ".gdenv";
 const ENV_PATH = join(homedir(), ENV_FILE);
 const ALL_ENVIRONMENTS: Environment[] = ["ote", "prod"];
-let runtimeEnvironmentOverride: Environment | null = null;
+
+/**
+ * Test-only escape hatch. Production code reads CliConfig.environmentOverride.
+ * @internal
+ */
+let _testEnvironmentOverride: Environment | null = null;
+
+/** @internal For tests only. Production code uses CliConfig.environmentOverride. */
+export function setRuntimeEnvironmentOverride(env: Environment | null): void {
+	_testEnvironmentOverride = env;
+}
 
 function isConfigValidationErrorResult(
-	value: ReturnType<typeof getConfigFile>,
+	value: Config | ArkErrors | null,
 ): value is ArkErrors {
 	return typeof value === "object" && value !== null && "summary" in value;
 }
 
 /**
- * Set an in-memory environment override for the current process.
- * This is used by global CLI flags (e.g. --env) without mutating persisted config.
+ * Read the environment override.
+ * Priority: CliConfig service > test escape hatch > null.
  */
-export function setRuntimeEnvironmentOverride(env: Environment | null): void {
-	runtimeEnvironmentOverride = env;
+function getEnvironmentOverride(): Effect.Effect<
+	Environment | null,
+	never,
+	never
+> {
+	return Effect.map(
+		Effect.serviceOption(CliConfig),
+		(option) => {
+			if (option._tag === "Some" && option.value.environmentOverride) {
+				return option.value.environmentOverride;
+			}
+			return _testEnvironmentOverride;
+		},
+	);
 }
 
 /**
- * Get the current active environment (internal helper)
+ * Get the current active environment (internal helper).
+ * Reads override from CliConfig service, then falls back to persisted file.
  */
 function getActiveEnvironmentInternalEffect(): Effect.Effect<
 	Environment,
@@ -52,18 +76,22 @@ function getActiveEnvironmentInternalEffect(): Effect.Effect<
 	FileSystem
 > {
 	return Effect.gen(function* () {
-		if (runtimeEnvironmentOverride) {
-			return runtimeEnvironmentOverride;
+		const override = yield* getEnvironmentOverride();
+		if (override) {
+			return override;
 		}
 
 		const fs = yield* FileSystem;
-		return yield* Effect.try(() => {
-			if (fs.existsSync(ENV_PATH)) {
-				const file = fs.readFileSync(ENV_PATH, "utf-8");
-				return validateEnvironment(file.trim());
+		const exists = yield* fs.exists(ENV_PATH).pipe(Effect.orElseSucceed(() => false));
+		if (exists) {
+			const file = yield* fs.readFileString(ENV_PATH).pipe(Effect.orElseSucceed(() => ""));
+			if (file.trim()) {
+				return yield* Effect.try(() => validateEnvironment(file.trim())).pipe(
+					Effect.orElseSucceed(() => "ote" as Environment),
+				);
 			}
-			return "ote" as Environment;
-		}).pipe(Effect.orElseSucceed(() => "ote" as Environment));
+		}
+		return "ote" as Environment;
 	});
 }
 
@@ -123,7 +151,12 @@ export function envSetEffect(
 	return Effect.gen(function* () {
 		const validEnv = yield* validateEnvironmentEffect(name);
 		const fs = yield* FileSystem;
-		fs.writeFileSync(ENV_PATH, validEnv);
+		yield* fs.writeFileString(ENV_PATH, validEnv).pipe(
+			Effect.mapError(() => new ConfigurationError({
+				message: `Failed to write environment file: ${ENV_PATH}`,
+				userMessage: "Could not save environment setting",
+			})),
+		);
 	}).pipe(
 		Effect.mapError((error): ConfigurationError | ValidationError => error),
 	);
@@ -147,13 +180,11 @@ export function envInfoEffect(
 		const configFilePath = getConfigFilePath(env);
 
 		let config: Config | undefined;
-		try {
-			const configResult = getConfigFile({ env });
-			if (!isConfigValidationErrorResult(configResult)) {
-				config = configResult;
-			}
-		} catch {
-			// Config file doesn't exist, which is fine
+		const configResult = yield* getConfigFile({ env }).pipe(
+			Effect.catchAll(() => Effect.succeed(null)),
+		);
+		if (configResult && !isConfigValidationErrorResult(configResult)) {
+			config = configResult;
 		}
 
 		return { environment: env, display, configFile: configFilePath, config };

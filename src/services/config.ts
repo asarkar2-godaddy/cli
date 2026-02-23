@@ -1,10 +1,11 @@
+import * as nodeFs from "node:fs";
 import { join } from "node:path";
 import * as TOML from "@iarna/toml";
 import { type ArkErrors, type } from "arktype";
+import { FileSystem } from "@effect/platform/FileSystem";
 import * as Effect from "effect/Effect";
 import type { Environment } from "../core/environment";
 import { ConfigurationError } from "../effect/errors";
-import { FileSystem, type FileSystemService } from "../effect/services/filesystem";
 
 function readProxyUrl(root: unknown): string | undefined {
 	if (typeof root !== "object" || root === null) {
@@ -121,78 +122,6 @@ export interface ConfigExtensionInfo {
 	targets?: ExtensionTarget[];
 }
 
-/**
- * Extract all extensions from config file as a flat array.
- * This is the source of truth for what extensions should be scanned, bundled, and deployed.
- *
- * @param options - Config file options (configPath, env)
- * @returns Array of extension info objects, or empty array if no extensions defined
- */
-export function getExtensionsFromConfig(
-	options: { configPath?: string; env?: Environment } = {},
-	fs?: FileSystemService,
-): ConfigExtensionInfo[] {
-	const config = getConfigFile(options, fs);
-
-	if (isConfigValidationErrors(config)) {
-		return [];
-	}
-
-	const validConfig = config;
-	const extensions: ConfigExtensionInfo[] = [];
-
-	if (validConfig.extensions?.embed) {
-		for (const ext of validConfig.extensions.embed) {
-			if (!ext.name || !ext.handle || !ext.source) {
-				throw new Error(
-					"Invalid embed extension config: missing required fields (name, handle, source)",
-				);
-			}
-			extensions.push({
-				type: "embed",
-				name: ext.name,
-				handle: ext.handle,
-				source: ext.source,
-				targets: ext.targets,
-			});
-		}
-	}
-
-	if (validConfig.extensions?.checkout) {
-		for (const ext of validConfig.extensions.checkout) {
-			if (!ext.name || !ext.handle || !ext.source) {
-				throw new Error(
-					"Invalid checkout extension config: missing required fields (name, handle, source)",
-				);
-			}
-			extensions.push({
-				type: "checkout",
-				name: ext.name,
-				handle: ext.handle,
-				source: ext.source,
-				targets: ext.targets,
-			});
-		}
-	}
-
-	if (validConfig.extensions?.blocks) {
-		const blocks = validConfig.extensions.blocks;
-		if (!blocks.source) {
-			throw new Error(
-				`Invalid blocks extension config: missing required 'source' field`,
-			);
-		}
-		extensions.push({
-			type: "blocks",
-			name: "Blocks",
-			handle: "blocks",
-			source: blocks.source,
-		});
-	}
-
-	return extensions;
-}
-
 const Config = type({
 	name: "/^[a-z0-9-]{3,255}$/",
 	client_id: type.keywords.string.uuid.v4,
@@ -266,9 +195,6 @@ function resolveConfigEnvironment(
 
 /**
  * Get the configuration file path based on environment
- * @param env Optional environment to get config for
- * @param configPath Optional specific config path
- * @returns The resolved path to the config file
  */
 export function getConfigFilePath(
 	env?: ConfigEnvironment,
@@ -283,6 +209,81 @@ export function getConfigFilePath(
 	return join(process.cwd(), fileName);
 }
 
+// ---------------------------------------------------------------------------
+// Effectful config file operations (platform FileSystem)
+// ---------------------------------------------------------------------------
+
+/**
+ * Read and parse a config file. Returns Config or ArkErrors.
+ */
+export function getConfigFileEffect(
+	{
+		configPath,
+		env,
+	}: {
+		configPath?: string;
+		env?: ConfigEnvironment;
+	} = {},
+): Effect.Effect<Config | ArkErrors, ConfigurationError, FileSystem> {
+	return Effect.gen(function* () {
+		const fs = yield* FileSystem;
+		const resolvedEnv = resolveConfigEnvironment(env);
+
+		// If a specific config path is provided, use that
+		if (configPath) {
+			const absolutePath = join(process.cwd(), configPath);
+			const exists = yield* fs.exists(absolutePath).pipe(Effect.orElseSucceed(() => false));
+			if (exists) {
+				const content = yield* fs.readFileString(absolutePath);
+				return Config(TOML.parse(content));
+			}
+			return yield* Effect.fail(
+				new ConfigurationError({
+					message: `Config file not found at ${absolutePath}`,
+					userMessage: `Config file not found at ${absolutePath}`,
+				}),
+			);
+		}
+
+		// Try environment-specific file first
+		if (resolvedEnv) {
+			const envFilePath = getConfigFilePath(resolvedEnv);
+			const envExists = yield* fs.exists(envFilePath).pipe(Effect.orElseSucceed(() => false));
+			if (envExists) {
+				const content = yield* fs.readFileString(envFilePath);
+				return Config(TOML.parse(content));
+			}
+		}
+
+		// Fall back to default config file
+		const defaultPath = getConfigFilePath();
+		const defaultExists = yield* fs.exists(defaultPath).pipe(Effect.orElseSucceed(() => false));
+		if (defaultExists) {
+			const content = yield* fs.readFileString(defaultPath);
+			return Config(TOML.parse(content));
+		}
+
+		const envHint =
+			resolvedEnv && resolvedEnv !== "prod"
+				? ` Consider running 'godaddy application init' to create environment-specific configs.`
+				: "";
+		return yield* Effect.fail(
+			new ConfigurationError({
+				message: `Config file not found at ${defaultPath}.${envHint}`,
+				userMessage: `Config file not found at ${defaultPath}.${envHint}`,
+			}),
+		);
+	}).pipe(
+		Effect.catchAll((error) =>
+			Effect.fail(toConfigError(error, "Failed to read config file")),
+		),
+	);
+}
+
+/**
+ * Backward-compatible sync version using node:fs directly.
+ * Only for non-Effect call sites (tests, etc.). Prefer getConfigFileEffect.
+ */
 export function getConfigFile(
 	{
 		configPath,
@@ -291,39 +292,29 @@ export function getConfigFile(
 		configPath?: string;
 		env?: ConfigEnvironment;
 	} = {},
-	fs?: FileSystemService,
 ): Config | ArkErrors {
 	const resolvedEnv = resolveConfigEnvironment(env);
-	const _fs = fs ?? requireNodeFs();
 
-	// If a specific config path is provided, use that
 	if (configPath) {
 		const absolutePath = join(process.cwd(), configPath);
-
-		if (_fs.existsSync(absolutePath)) {
-			const content = _fs.readFileSync(absolutePath, "utf-8");
+		if (nodeFs.existsSync(absolutePath)) {
+			const content = nodeFs.readFileSync(absolutePath, "utf-8");
 			return Config(TOML.parse(content));
 		}
-
 		throw new Error(`Config file not found at ${absolutePath}`);
 	}
 
-	// If no specific path is provided, try environment-specific file first
 	if (resolvedEnv) {
 		const envFilePath = getConfigFilePath(resolvedEnv);
-
-		if (_fs.existsSync(envFilePath)) {
-			const content = _fs.readFileSync(envFilePath, "utf-8");
+		if (nodeFs.existsSync(envFilePath)) {
+			const content = nodeFs.readFileSync(envFilePath, "utf-8");
 			return Config(TOML.parse(content));
 		}
-
-		// Fallback to the default file without logging to stdout/stderr.
 	}
 
-	// Fall back to default config file
 	const defaultPath = getConfigFilePath();
-	if (_fs.existsSync(defaultPath)) {
-		const content = _fs.readFileSync(defaultPath, "utf-8");
+	if (nodeFs.existsSync(defaultPath)) {
+		const content = nodeFs.readFileSync(defaultPath, "utf-8");
 		return Config(TOML.parse(content));
 	}
 
@@ -335,90 +326,241 @@ export function getConfigFile(
 }
 
 /**
- * Fallback: lazily load node:fs for call sites that don't pass a FileSystemService.
- * This is only used during the transition — callers should pass fs explicitly.
+ * Extract all extensions from config file as a flat array.
  */
-function requireNodeFs(): FileSystemService {
-	// biome-ignore lint/style/noNamespaceImport: fallback only
-	const nodeFs = require("node:fs") as typeof import("node:fs");
-	return {
-		readFileSync: (path: string, encoding: BufferEncoding) =>
-			nodeFs.readFileSync(path, encoding),
-		writeFileSync: (path: string, data: string | NodeJS.ArrayBufferView) =>
-			nodeFs.writeFileSync(path, data),
-		existsSync: (path: string) => nodeFs.existsSync(path),
-		mkdirSync: (path: string, options?: Parameters<typeof nodeFs.mkdirSync>[1]) =>
-			nodeFs.mkdirSync(path, options),
-		mkdtempSync: (prefix: string) => nodeFs.mkdtempSync(prefix),
-		readdirSync: ((path: string, options?: unknown) =>
-			options
-				? nodeFs.readdirSync(path, options as Parameters<typeof nodeFs.readdirSync>[1])
-				: nodeFs.readdirSync(path)) as FileSystemService["readdirSync"],
-		statSync: (path: string) => nodeFs.statSync(path),
-		rmSync: (path: string, options?: Parameters<typeof nodeFs.rmSync>[1]) =>
-			nodeFs.rmSync(path, options),
-	};
+export function getExtensionsFromConfigEffect(
+	options: { configPath?: string; env?: Environment } = {},
+): Effect.Effect<ConfigExtensionInfo[], ConfigurationError, FileSystem> {
+	return Effect.gen(function* () {
+		const config = yield* getConfigFileEffect(options).pipe(
+			Effect.catchAll(() => Effect.succeed(null)),
+		);
+
+		if (!config || isConfigValidationErrors(config)) {
+			return [];
+		}
+
+		return extractExtensionsFromConfig(config);
+	});
+}
+
+/**
+ * Backward-compatible sync version.
+ */
+export function getExtensionsFromConfig(
+	options: { configPath?: string; env?: Environment } = {},
+): ConfigExtensionInfo[] {
+	const config = getConfigFile(options);
+	if (isConfigValidationErrors(config)) {
+		return [];
+	}
+	return extractExtensionsFromConfig(config);
+}
+
+function extractExtensionsFromConfig(config: Config): ConfigExtensionInfo[] {
+	const extensions: ConfigExtensionInfo[] = [];
+
+	if (config.extensions?.embed) {
+		for (const ext of config.extensions.embed) {
+			if (!ext.name || !ext.handle || !ext.source) {
+				throw new Error(
+					"Invalid embed extension config: missing required fields (name, handle, source)",
+				);
+			}
+			extensions.push({
+				type: "embed",
+				name: ext.name,
+				handle: ext.handle,
+				source: ext.source,
+				targets: ext.targets,
+			});
+		}
+	}
+
+	if (config.extensions?.checkout) {
+		for (const ext of config.extensions.checkout) {
+			if (!ext.name || !ext.handle || !ext.source) {
+				throw new Error(
+					"Invalid checkout extension config: missing required fields (name, handle, source)",
+				);
+			}
+			extensions.push({
+				type: "checkout",
+				name: ext.name,
+				handle: ext.handle,
+				source: ext.source,
+				targets: ext.targets,
+			});
+		}
+	}
+
+	if (config.extensions?.blocks) {
+		const blocks = config.extensions.blocks;
+		if (!blocks.source) {
+			throw new Error(
+				"Invalid blocks extension config: missing required 'source' field",
+			);
+		}
+		extensions.push({
+			type: "blocks",
+			name: "Blocks",
+			handle: "blocks",
+			source: blocks.source,
+		});
+	}
+
+	return extensions;
 }
 
 /**
  * Determine which config file path to use for updates
- * Priority: explicit configPath > env-specific file > default file
  */
-function getConfigFilePathForUpdate(
+function getConfigFilePathForUpdateEffect(
 	configPath?: string,
 	env?: ConfigEnvironment,
-	fs?: FileSystemService,
-): { path: string; env?: ConfigEnvironment } {
-	const resolvedEnv = resolveConfigEnvironment(env);
-	const _fs = fs ?? requireNodeFs();
+): Effect.Effect<{ path: string; env?: ConfigEnvironment }, ConfigurationError, FileSystem> {
+	return Effect.gen(function* () {
+		const fs = yield* FileSystem;
+		const resolvedEnv = resolveConfigEnvironment(env);
 
-	// If a specific config path is provided, use that
-	if (configPath) {
-		const absolutePath = join(process.cwd(), configPath);
-		if (_fs.existsSync(absolutePath)) {
-			return { path: absolutePath };
+		if (configPath) {
+			const absolutePath = join(process.cwd(), configPath);
+			const exists = yield* fs.exists(absolutePath).pipe(Effect.orElseSucceed(() => false));
+			if (exists) {
+				return { path: absolutePath };
+			}
+			return yield* Effect.fail(
+				new ConfigurationError({
+					message: `Config file not found at ${absolutePath}`,
+					userMessage: `Config file not found at ${absolutePath}`,
+				}),
+			);
 		}
-		throw new Error(`Config file not found at ${absolutePath}`);
-	}
 
-	// If env is provided, try environment-specific file first
-	if (resolvedEnv) {
-		const envFilePath = getConfigFilePath(resolvedEnv);
-		if (_fs.existsSync(envFilePath)) {
-			return { path: envFilePath, env: resolvedEnv };
+		if (resolvedEnv) {
+			const envFilePath = getConfigFilePath(resolvedEnv);
+			const exists = yield* fs.exists(envFilePath).pipe(Effect.orElseSucceed(() => false));
+			if (exists) {
+				return { path: envFilePath, env: resolvedEnv };
+			}
 		}
-	}
 
-	// Fall back to default config file
-	const defaultPath = getConfigFilePath();
-	if (_fs.existsSync(defaultPath)) {
+		const defaultPath = getConfigFilePath();
+		const exists = yield* fs.exists(defaultPath).pipe(Effect.orElseSucceed(() => false));
+		if (exists) {
+			return { path: defaultPath };
+		}
+
+		if (resolvedEnv) {
+			return { path: getConfigFilePath(resolvedEnv), env: resolvedEnv };
+		}
+
 		return { path: defaultPath };
-	}
-
-	// If no file exists, create environment-specific file if env is provided
-	if (resolvedEnv) {
-		return { path: getConfigFilePath(resolvedEnv), env: resolvedEnv };
-	}
-
-	return { path: defaultPath };
+	});
 }
 
 /**
- * Write the config data to the appropriate TOML file.
- * Preserves existing config structure where possible.
+ * Write a full Config object to the TOML file.
  */
-export function createConfigFileEffect(
+function writeConfigToFileEffect(
 	data: Config,
 	env?: ConfigEnvironment,
 ): Effect.Effect<void, ConfigurationError, FileSystem> {
 	return Effect.gen(function* () {
 		const fs = yield* FileSystem;
-		writeConfigToFile(data, env, fs);
+		const filePath = getConfigFilePath(env);
+
+		// Try to read the existing file to preserve structure
+		let existingConfig = {};
+		const fileExists = yield* fs.exists(filePath).pipe(Effect.orElseSucceed(() => false));
+		if (fileExists) {
+			const existingContent = yield* fs.readFileString(filePath).pipe(
+				Effect.orElseSucceed(() => ""),
+			);
+			if (existingContent) {
+				try {
+					existingConfig = TOML.parse(existingContent);
+				} catch {
+					// Can't parse, use empty object
+				}
+			}
+		}
+
+		const formattedActions = data.actions?.map((action) => {
+			if (typeof action === "string") {
+				return { name: action, url: "" };
+			}
+			return action;
+		});
+
+		const tomlData: Record<string, unknown> = {
+			...Object.fromEntries(
+				Object.entries(existingConfig as Record<string, unknown>).filter(
+					([key]) =>
+						![
+							"name",
+							"client_id",
+							"description",
+							"version",
+							"url",
+							"proxy_url",
+							"authorization_scopes",
+							"actions",
+							"subscriptions",
+							"default",
+						].includes(key),
+				),
+			),
+			name: data.name,
+			client_id: data.client_id,
+			description: data.description || "",
+			version: data.version,
+			url: data.url,
+			proxy_url: data.proxy_url,
+			authorization_scopes: data.authorization_scopes || [],
+			actions: formattedActions,
+			subscriptions: data.subscriptions,
+		};
+
+		if ("default" in existingConfig) {
+			tomlData.default = (existingConfig as Record<string, unknown>).default;
+		}
+
+		if (data.dependencies) {
+			tomlData.dependencies = data.dependencies;
+		}
+
+		if (data.extensions) {
+			tomlData.extensions = data.extensions;
+		}
+
+		const cleanedTomlData = Object.entries(tomlData).reduce(
+			(acc, [key, value]) => {
+				if (value !== undefined) {
+					acc[key] = value as TOML.AnyJson;
+				}
+				return acc;
+			},
+			{} as TOML.JsonMap,
+		);
+
+		const tomlString = TOML.stringify(cleanedTomlData);
+		yield* fs.writeFileString(filePath, tomlString);
 	}).pipe(
 		Effect.catchAll((error) =>
-			Effect.fail(toConfigError(error, "Failed to create config file")),
+			Effect.fail(toConfigError(error, "Failed to write config file")),
 		),
 	);
+}
+
+/**
+ * Write the config data to the appropriate TOML file.
+ */
+export function createConfigFileEffect(
+	data: Config,
+	env?: ConfigEnvironment,
+): Effect.Effect<void, ConfigurationError, FileSystem> {
+	return writeConfigToFileEffect(data, env);
 }
 
 /**
@@ -430,8 +572,7 @@ export function updateVersionNumberEffect(
 	return Effect.gen(function* () {
 		if (!version) return;
 
-		const fs = yield* FileSystem;
-		const config = getConfigFile({}, fs);
+		const config = yield* getConfigFileEffect({});
 		if (isConfigValidationErrors(config)) {
 			return yield* Effect.fail(
 				new ConfigurationError({
@@ -441,7 +582,7 @@ export function updateVersionNumberEffect(
 			);
 		}
 		const newConfig = { ...config, version };
-		yield* createConfigFileEffect(newConfig);
+		yield* writeConfigToFileEffect(newConfig);
 	});
 }
 
@@ -453,8 +594,7 @@ export function addActionToConfigEffect(
 	options: { configPath?: string; env?: Environment } = {},
 ): Effect.Effect<void, ConfigurationError, FileSystem> {
 	return Effect.gen(function* () {
-		const fs = yield* FileSystem;
-		const configResult = getConfigFile(options, fs);
+		const configResult = yield* getConfigFileEffect(options);
 		if (isConfigValidationErrors(configResult)) {
 			return yield* Effect.fail(
 				new ConfigurationError({
@@ -469,12 +609,11 @@ export function addActionToConfigEffect(
 			actions: [...(configResult.actions || []), action],
 		};
 
-		const { env } = getConfigFilePathForUpdate(
+		const { env } = yield* getConfigFilePathForUpdateEffect(
 			options.configPath,
 			options.env,
-			fs,
 		);
-		writeConfigToFile(updatedConfig, env, fs);
+		yield* writeConfigToFileEffect(updatedConfig, env);
 	}).pipe(
 		Effect.catchAll((error) =>
 			Effect.fail(toConfigError(error, "Unable to update actions in config")),
@@ -490,8 +629,7 @@ export function addSubscriptionToConfigEffect(
 	options: { configPath?: string; env?: Environment } = {},
 ): Effect.Effect<void, ConfigurationError, FileSystem> {
 	return Effect.gen(function* () {
-		const fs = yield* FileSystem;
-		const configResult = getConfigFile(options, fs);
+		const configResult = yield* getConfigFileEffect(options);
 		if (isConfigValidationErrors(configResult)) {
 			return yield* Effect.fail(
 				new ConfigurationError({
@@ -511,12 +649,11 @@ export function addSubscriptionToConfigEffect(
 			},
 		};
 
-		const { env } = getConfigFilePathForUpdate(
+		const { env } = yield* getConfigFilePathForUpdateEffect(
 			options.configPath,
 			options.env,
-			fs,
 		);
-		writeConfigToFile(updatedConfig, env, fs);
+		yield* writeConfigToFileEffect(updatedConfig, env);
 	}).pipe(
 		Effect.catchAll((error) =>
 			Effect.fail(toConfigError(error, "Unable to update subscriptions in config")),
@@ -548,15 +685,17 @@ export function createEnvFileEffect(
 		const envPath = join(process.cwd(), envFileName);
 
 		let envContent = "";
-		try {
-			if (fs.existsSync(envPath)) {
-				const existingEnvContent = fs.readFileSync(envPath, "utf-8");
+		const envExists = yield* fs.exists(envPath).pipe(Effect.orElseSucceed(() => false));
 
-				// Parse existing .env file
+		if (envExists) {
+			const existingEnvContent = yield* fs.readFileString(envPath).pipe(
+				Effect.orElseSucceed(() => ""),
+			);
+
+			if (existingEnvContent) {
 				const envLines = existingEnvContent.split("\n");
 				const envVars: Record<string, string> = {};
 
-				// Extract existing environment variables
 				for (const line of envLines) {
 					if (line.trim() && !line.startsWith("#")) {
 						const [key, ...valueParts] = line.split("=");
@@ -566,33 +705,28 @@ export function createEnvFileEffect(
 					}
 				}
 
-				// Update with new values
 				envVars.GODADDY_WEBHOOK_SECRET = secret;
 				envVars.GODADDY_PUBLIC_KEY = publicKey;
 				envVars.GODADDY_CLIENT_ID = clientId;
 				envVars.GODADDY_CLIENT_SECRET = clientSecret;
 
-				// Convert back to .env format
 				envContent = Object.entries(envVars)
 					.map(([key, value]) => `${key}=${value}`)
 					.join("\n");
 
-				// Preserve any comments or formatting by appending them if they're not associated with our keys
 				for (const line of envLines) {
 					if (line.trim() && (line.startsWith("#") || !line.includes("="))) {
 						envContent += `\n${line}`;
 					}
 				}
 			} else {
-				// File doesn't exist, create new .env content
 				envContent = `GODADDY_WEBHOOK_SECRET=${secret}\nGODADDY_PUBLIC_KEY=${publicKey}\nGODADDY_CLIENT_ID=${clientId}\nGODADDY_CLIENT_SECRET=${clientSecret}`;
 			}
-		} catch {
-			// Error reading file, create new .env content
+		} else {
 			envContent = `GODADDY_WEBHOOK_SECRET=${secret}\nGODADDY_PUBLIC_KEY=${publicKey}\nGODADDY_CLIENT_ID=${clientId}\nGODADDY_CLIENT_SECRET=${clientSecret}`;
 		}
 
-		fs.writeFileSync(envPath, envContent);
+		yield* fs.writeFileString(envPath, envContent);
 	}).pipe(
 		Effect.catchAll((error) =>
 			Effect.fail(toConfigError(error, "Failed to create .env file")),
@@ -612,8 +746,7 @@ export function addExtensionToConfigEffect(
 	options: { configPath?: string; env?: Environment } = {},
 ): Effect.Effect<void, ConfigurationError, FileSystem> {
 	return Effect.gen(function* () {
-		const fs = yield* FileSystem;
-		const configResult = getConfigFile(options, fs);
+		const configResult = yield* getConfigFileEffect(options);
 		if (isConfigValidationErrors(configResult)) {
 			return yield* Effect.fail(
 				new ConfigurationError({
@@ -646,100 +779,14 @@ export function addExtensionToConfigEffect(
 			extensions: updatedExtensions,
 		} satisfies Config;
 
-		const { env } = getConfigFilePathForUpdate(
+		const { env } = yield* getConfigFilePathForUpdateEffect(
 			options.configPath,
 			options.env,
-			fs,
 		);
-		writeConfigToFile(updatedConfig, env, fs);
+		yield* writeConfigToFileEffect(updatedConfig, env);
 	}).pipe(
 		Effect.catchAll((error) =>
 			Effect.fail(toConfigError(error, "Unable to update extensions in config")),
 		),
 	);
-}
-
-/**
- * Internal helper to write a full Config object to the TOML file.
- */
-function writeConfigToFile(
-	data: Config,
-	env?: ConfigEnvironment,
-	fs?: FileSystemService,
-): void {
-	const _fs = fs ?? requireNodeFs();
-	const filePath = getConfigFilePath(env);
-
-	// Try to read the existing file to preserve structure
-	let existingConfig = {};
-	try {
-		if (_fs.existsSync(filePath)) {
-			const existingContent = _fs.readFileSync(filePath, "utf-8");
-			existingConfig = TOML.parse(existingContent);
-		}
-	} catch {
-		// File doesn't exist or can't be parsed, use empty object
-	}
-
-	// Convert actions to the proper format
-	const formattedActions = data.actions?.map((action) => {
-		if (typeof action === "string") {
-			return { name: action, url: "" };
-		}
-		return action;
-	});
-
-	const tomlData: Record<string, unknown> = {
-		...Object.fromEntries(
-			Object.entries(existingConfig as Record<string, unknown>).filter(
-				([key]) =>
-					![
-						"name",
-						"client_id",
-						"description",
-						"version",
-						"url",
-						"proxy_url",
-						"authorization_scopes",
-						"actions",
-						"subscriptions",
-						"default",
-					].includes(key),
-			),
-		),
-		name: data.name,
-		client_id: data.client_id,
-		description: data.description || "",
-		version: data.version,
-		url: data.url,
-		proxy_url: data.proxy_url,
-		authorization_scopes: data.authorization_scopes || [],
-		actions: formattedActions,
-		subscriptions: data.subscriptions,
-	};
-
-	if ("default" in existingConfig) {
-		tomlData.default = (existingConfig as Record<string, unknown>).default;
-	}
-
-	if (data.dependencies) {
-		tomlData.dependencies = data.dependencies;
-	}
-
-	if (data.extensions) {
-		tomlData.extensions = data.extensions;
-	}
-
-	const cleanedTomlData = Object.entries(tomlData).reduce(
-		(acc, [key, value]) => {
-			if (value !== undefined) {
-				acc[key] = value as TOML.AnyJson;
-			}
-			return acc;
-		},
-		{} as TOML.JsonMap,
-	);
-
-	const tomlString = TOML.stringify(cleanedTomlData);
-	_fs.writeFileSync(filePath, tomlString);
 }

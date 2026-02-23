@@ -1,7 +1,7 @@
+import * as nodeFs from "node:fs";
 import { join } from "node:path";
 import * as Effect from "effect/Effect";
 import { ConfigurationError } from "../../effect/errors";
-import { FileSystem, type FileSystemService } from "../../effect/services/filesystem";
 
 /**
  * Package manager types supported by the CLI
@@ -36,29 +36,19 @@ export interface DetectExtensionsOptions {
 
 /**
  * Gets all extension packages in the workspace by scanning the extensions directory.
- *
- * This function scans the configured extensions directory (default: ./extensions) and
- * identifies all subdirectories containing a valid package.json file as extension packages.
- *
- * @param options - Configuration options for extension detection
- * @returns Effect resolving to an array of detected extension packages
  */
 export function getExtensionsEffect(
 	options?: DetectExtensionsOptions,
-): Effect.Effect<ExtensionPackage[], ConfigurationError, FileSystem> {
+): Effect.Effect<ExtensionPackage[], ConfigurationError> {
 	return Effect.gen(function* () {
-		const fs = yield* FileSystem;
 		const repoRoot = options?.repoRoot ?? process.cwd();
 		const extensionsDir = options?.extensionsDir ?? "extensions";
 		const extensionsPath = join(repoRoot, extensionsDir);
 
-		// Detect package manager once for all extensions
-		const packageManager = detectPackageManagerWithFs(repoRoot, fs);
+		const packageManager = detectPackageManager(repoRoot);
 
-		// Try extensions directory first
-		if (fs.existsSync(extensionsPath)) {
-			// Check if it's a directory
-			const stats = fs.statSync(extensionsPath);
+		if (nodeFs.existsSync(extensionsPath)) {
+			const stats = nodeFs.statSync(extensionsPath);
 			if (!stats.isDirectory()) {
 				return yield* Effect.fail(
 					new ConfigurationError({
@@ -68,14 +58,12 @@ export function getExtensionsEffect(
 				);
 			}
 
-			// Read all subdirectories in the extensions directory
-			const entries = fs.readdirSync(extensionsPath, {
+			const entries = nodeFs.readdirSync(extensionsPath, {
 				withFileTypes: true,
 			});
 			const extensions: ExtensionPackage[] = [];
 
 			for (const entry of entries) {
-				// Skip files, only process directories
 				if (!entry.isDirectory()) {
 					continue;
 				}
@@ -83,13 +71,11 @@ export function getExtensionsEffect(
 				const extensionDir = join(extensionsPath, entry.name);
 				const packageJsonPath = join(extensionDir, "package.json");
 
-				// Check if package.json exists
-				if (!fs.existsSync(packageJsonPath)) {
+				if (!nodeFs.existsSync(packageJsonPath)) {
 					continue;
 				}
 
-				// Read and parse package.json
-				const packageJson = readPackageJsonWithFs(packageJsonPath, fs);
+				const packageJson = readPackageJson(packageJsonPath);
 
 				const name = packageJson.name as string | undefined;
 				const version = packageJson.version as string | undefined;
@@ -117,7 +103,7 @@ export function getExtensionsEffect(
 
 		// Fallback to workspaces
 		const rootPackageJsonPath = join(repoRoot, "package.json");
-		if (!fs.existsSync(rootPackageJsonPath)) {
+		if (!nodeFs.existsSync(rootPackageJsonPath)) {
 			return yield* Effect.fail(
 				new ConfigurationError({
 					message: `No extensions directory found at ${extensionsPath} and no package.json found at repository root`,
@@ -126,7 +112,7 @@ export function getExtensionsEffect(
 			);
 		}
 
-		const rootPackageJson = readPackageJsonWithFs(rootPackageJsonPath, fs);
+		const rootPackageJson = readPackageJson(rootPackageJsonPath);
 		const workspaces = rootPackageJson.workspaces as string[] | undefined;
 
 		if (
@@ -142,20 +128,17 @@ export function getExtensionsEffect(
 			);
 		}
 
-		// Process workspaces
 		const extensions: ExtensionPackage[] = [];
 
 		for (const workspace of workspaces) {
-			// Resolve glob patterns (simple support for */pattern)
 			const workspacePaths: string[] = [];
 
 			if (workspace.includes("*")) {
-				// Simple glob support: packages/* or apps/*
 				const baseDir = workspace.replace("/*", "");
 				const basePath = join(repoRoot, baseDir);
 
-				if (fs.existsSync(basePath) && fs.statSync(basePath).isDirectory()) {
-					const entries = fs.readdirSync(basePath, {
+				if (nodeFs.existsSync(basePath) && nodeFs.statSync(basePath).isDirectory()) {
+					const entries = nodeFs.readdirSync(basePath, {
 						withFileTypes: true,
 					});
 					for (const entry of entries) {
@@ -165,26 +148,23 @@ export function getExtensionsEffect(
 					}
 				}
 			} else {
-				// Direct path
 				workspacePaths.push(join(repoRoot, workspace));
 			}
 
-			// Check each workspace path
 			for (const workspacePath of workspacePaths) {
 				const packageJsonPath = join(workspacePath, "package.json");
 
-				if (!fs.existsSync(packageJsonPath)) {
+				if (!nodeFs.existsSync(packageJsonPath)) {
 					continue;
 				}
 
 				let packageJson: Record<string, unknown>;
 				try {
-					packageJson = readPackageJsonWithFs(packageJsonPath, fs);
+					packageJson = readPackageJson(packageJsonPath);
 				} catch {
-					continue; // Skip invalid package.json in workspaces
+					continue;
 				}
 
-				// Check if this workspace is marked as an extension
 				const godaddy = packageJson.godaddy as
 					| Record<string, unknown>
 					| boolean
@@ -203,7 +183,7 @@ export function getExtensionsEffect(
 				const version = packageJson.version as string | undefined;
 
 				if (!name) {
-					continue; // Skip packages without name
+					continue;
 				}
 
 				extensions.push({
@@ -233,31 +213,15 @@ export function getExtensionsEffect(
 
 /**
  * Detects the package manager being used in the workspace.
- * Uses the FileSystem service for all I/O.
- *
- * Detection priority:
- * 1. package.json "packageManager" field -> parse manager type
- * 2. pnpm-lock.yaml -> pnpm
- * 3. yarn.lock -> yarn
- * 4. package-lock.json -> npm
- * 5. none found -> unknown
- *
- * @param repoRoot - Root directory of the repository to check
- * @param fs - FileSystem service instance
- * @returns The detected package manager type
+ * Uses node:fs directly since this is a sync utility.
  */
-export function detectPackageManagerWithFs(
-	repoRoot: string,
-	fs: FileSystemService,
-): PackageManager {
-	// First, check package.json's packageManager field
+export function detectPackageManager(repoRoot: string): PackageManager {
 	const rootPackageJsonPath = join(repoRoot, "package.json");
-	if (fs.existsSync(rootPackageJsonPath)) {
+	if (nodeFs.existsSync(rootPackageJsonPath)) {
 		try {
-			const pkg = readPackageJsonWithFs(rootPackageJsonPath, fs);
+			const pkg = readPackageJson(rootPackageJsonPath);
 			const packageManager = pkg.packageManager as string | undefined;
 			if (packageManager) {
-				// packageManager format is like "pnpm@8.0.0" or "yarn@3.0.0"
 				if (packageManager.startsWith("pnpm")) return "pnpm";
 				if (packageManager.startsWith("yarn")) return "yarn";
 				if (packageManager.startsWith("npm")) return "npm";
@@ -267,30 +231,23 @@ export function detectPackageManagerWithFs(
 		}
 	}
 
-	// Fallback to lockfile detection
-	if (fs.existsSync(join(repoRoot, "pnpm-lock.yaml"))) return "pnpm";
-	if (fs.existsSync(join(repoRoot, "yarn.lock"))) return "yarn";
-	if (fs.existsSync(join(repoRoot, "package-lock.json"))) return "npm";
+	if (nodeFs.existsSync(join(repoRoot, "pnpm-lock.yaml"))) return "pnpm";
+	if (nodeFs.existsSync(join(repoRoot, "yarn.lock"))) return "yarn";
+	if (nodeFs.existsSync(join(repoRoot, "package-lock.json"))) return "npm";
 
 	return "unknown";
 }
 
 /**
- * Reads and parses a package.json file using the FileSystem service.
- * Throws on failure (callers should catch or use Effect.try).
- *
- * @param packageJsonPath - Absolute path to the package.json file
- * @param fs - FileSystem service instance
- * @returns Parsed package.json object
+ * Reads and parses a package.json file using node:fs.
  */
-export function readPackageJsonWithFs(
+export function readPackageJson(
 	packageJsonPath: string,
-	fs: FileSystemService,
 ): Record<string, unknown> {
-	if (!fs.existsSync(packageJsonPath)) {
+	if (!nodeFs.existsSync(packageJsonPath)) {
 		throw new Error(`package.json not found at ${packageJsonPath}`);
 	}
 
-	const content = fs.readFileSync(packageJsonPath, "utf-8");
+	const content = nodeFs.readFileSync(packageJsonPath, "utf-8");
 	return JSON.parse(content) as Record<string, unknown>;
 }

@@ -1,0 +1,336 @@
+{
+  "name": "commerce.taxes.calculate",
+  "description": "Calculate taxes for a purchase with multiple line items",
+  "requestSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "commerce.taxes.calculate:request",
+    "type": "object",
+    "properties": {
+      "destination": {
+        "$ref": "#/definitions/calculationLocationInput"
+      },
+      "lines": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/calculationLineInput"
+        },
+        "minItems": 1
+      },
+      "origin": {
+        "$ref": "#/definitions/calculationLocationInput"
+      }
+    },
+    "required": [
+      "lines"
+    ],
+    "definitions": {
+      "calculationLocationInput": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "$ref": "#/definitions/calculationAddressInput"
+          }
+        }
+      },
+      "calculationAddressInput": {
+        "type": "object",
+        "properties": {
+          "addressLine1": {
+            "type": "string",
+            "description": "The first line of the address. For example, number and street name."
+          },
+          "addressLine2": {
+            "type": "string",
+            "description": "The second line of the address. For example, office suite or apartment number."
+          },
+          "addressLine3": {
+            "type": "string",
+            "description": "The third line of the address, if needed."
+          },
+          "adminArea1": {
+            "type": "string",
+            "description": "The highest level sub-division in a country, which is usually a province, state, or ISO-3166-2 subdivision; formatted for postal delivery."
+          },
+          "adminArea2": {
+            "type": "string",
+            "description": "The city, town, or village. Smaller than `adminArea1`."
+          },
+          "adminArea3": {
+            "type": "string",
+            "description": "The sub-locality, suburb, neighborhood, or district. Smaller than `adminArea2`."
+          },
+          "adminArea4": {
+            "type": "string",
+            "description": "The neighborhood, ward, or district. Smaller than `adminArea3` or `subLocality`."
+          },
+          "countryCode": {
+            "type": "string",
+            "description": "The [two-character ISO 3166-1 code](https://en.wikipedia.org/wiki/ISO_3166-1) that identifies the country or region."
+          },
+          "postalCode": {
+            "type": "string",
+            "description": "The postal code, which is the zip code or equivalent."
+          }
+        }
+      },
+      "calculationLineInput": {
+        "type": "object",
+        "properties": {
+          "classification": {
+            "type": "string",
+            "description": "The ID or code for the item's classification."
+          },
+          "destination": {
+            "$ref": "#/definitions/calculationLocationInput",
+            "description": "The location to which the item is being sent. e.g. the customer's address. Overrides the top-level value if provided."
+          },
+          "id": {
+            "type": "string",
+            "description": "The client-defined ID for the line. This could be a UUID of the SKU, or a shipping method/package name."
+          },
+          "origin": {
+            "$ref": "#/definitions/calculationLocationInput",
+            "description": "The location from which the item is originating. Overrides the top-level value if provided."
+          },
+          "quantity": {
+            "type": "number",
+            "description": "The number of units being purchased."
+          },
+          "subtotalPrice": {
+            "$ref": "#/definitions/moneyInput",
+            "description": "The money amount for the total quantity being purchased."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "FEE",
+              "SHIPPING",
+              "SKU"
+            ],
+            "description": "The type of the calculation line."
+          },
+          "unitPrice": {
+            "$ref": "#/definitions/moneyInput",
+            "description": "The money amount for a single unit of the item being purchased."
+          }
+        },
+        "required": [
+          "id",
+          "subtotalPrice",
+          "type"
+        ]
+      },
+      "moneyInput": {
+        "type": "object",
+        "properties": {
+          "currencyCode": {
+            "type": "string",
+            "description": "A three-character ISO-4217 currency code."
+          },
+          "value": {
+            "type": "number",
+            "description": "The value, which might be: An integer for currencies like JPY that are not typically fractional; or, a decimal fraction for currencies like TND that are subdivided into thousandths."
+          }
+        },
+        "required": [
+          "currencyCode",
+          "value"
+        ]
+      }
+    }
+  },
+  "responseSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "commerce.taxes.calculate:response",
+    "type": "object",
+    "properties": {
+      "lines": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/calculatedLine"
+        },
+        "minItems": 1
+      },
+      "taxAmounts": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/taxAmount"
+        },
+        "description": "The individual tax amounts for the rates that were applied to the purchase. A combined summary of all of the rates that applied across all of the lines."
+      },
+      "totalTaxAmount": {
+        "$ref": "#/definitions/totalTaxAmount",
+        "description": "The total money amount of tax calculated for the purchase. A sum of each individual line tax amount."
+      }
+    },
+    "required": [
+      "lines",
+      "taxAmounts",
+      "totalTaxAmount"
+    ],
+    "definitions": {
+      "calculatedLine": {
+        "type": "object",
+        "properties": {
+          "calculationLine": {
+            "$ref": "#/definitions/calculationLine",
+            "description": "An individual line item that was calculated."
+          },
+          "taxAmounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/taxAmount"
+            },
+            "description": "The individual tax amounts for the rates that were applied to the line."
+          },
+          "totalTaxAmount": {
+            "$ref": "#/definitions/totalTaxAmount",
+            "description": "The total money amount of tax calculated for the line."
+          }
+        },
+        "required": [
+          "calculationLine",
+          "taxAmounts",
+          "totalTaxAmount"
+        ]
+      },
+      "calculationLine": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The client-defined ID for the line."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "description": "An individual line item that was used in the calculation, passed back unmodified from the request."
+      },
+      "taxAmount": {
+        "type": "object",
+        "properties": {
+          "rate": {
+            "$ref": "#/definitions/calculatedRate"
+          },
+          "totalTaxAmount": {
+            "$ref": "#/definitions/totalTaxAmount"
+          }
+        },
+        "required": [
+          "rate",
+          "totalTaxAmount"
+        ],
+        "description": "An individual tax amount calculated."
+      },
+      "calculatedRate": {
+        "type": "object",
+        "properties": {
+          "calculationMethod": {
+            "type": "string",
+            "enum": [
+              "ADDITIVE",
+              "INCLUSIVE"
+            ],
+            "description": "The method that was used to apply the rate to a purchase amount."
+          },
+          "id": {
+            "type": "string",
+            "description": "The globally-unique ID."
+          },
+          "label": {
+            "type": "string",
+            "description": "The label for display."
+          },
+          "name": {
+            "type": "string",
+            "description": "The unique human-friendly identifier."
+          },
+          "value": {
+            "$ref": "#/definitions/calculatedRateValue",
+            "description": "The rate's value"
+          }
+        },
+        "required": [
+          "calculationMethod",
+          "value"
+        ],
+        "description": "The rate that was used for the calculated amount."
+      },
+      "calculatedRateValue": {
+        "oneOf": [
+          {
+            "$ref": "#/definitions/calculatedRateAmount"
+          },
+          {
+            "$ref": "#/definitions/calculatedRatePercentage"
+          }
+        ]
+      },
+      "calculatedRateAmount": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "$ref": "#/definitions/money"
+          },
+          "appliedAmount": {
+            "$ref": "#/definitions/money"
+          }
+        },
+        "description": "The rate value represented as a fixed money amount."
+      },
+      "calculatedRatePercentage": {
+        "type": "object",
+        "properties": {
+          "appliedPercentage": {
+            "type": "number",
+            "description": "The percentage applied by the rate, out of 100."
+          },
+          "percentage": {
+            "type": "number",
+            "description": "The percentage value of the rate, out of 100."
+          }
+        },
+        "required": [
+          "appliedPercentage",
+          "percentage"
+        ],
+        "description": "The rate value represented as a percentage."
+      },
+      "totalTaxAmount": {
+        "type": "object",
+        "properties": {
+          "currencyCode": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "currencyCode",
+          "value"
+        ],
+        "description": "The total tax amount calculated."
+      },
+      "money": {
+        "type": "object",
+        "properties": {
+          "currencyCode": {
+            "type": "string",
+            "description": "A three-character ISO-4217 currency code."
+          },
+          "value": {
+            "type": "number",
+            "description": "The value, which might be: An integer for currencies like JPY that are not typically fractional; or, a decimal fraction for currencies like TND that are subdivided into thousandths."
+          }
+        },
+        "required": [
+          "currencyCode",
+          "value"
+        ],
+        "description": "A money represents the monetary value and currency for a financial transaction."
+      }
+    }
+  }
+}

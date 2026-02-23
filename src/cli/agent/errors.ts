@@ -189,33 +189,4 @@ export function mapValidationError(
 	}
 }
 
-export function mapLeftoverTokens(
-	leftover: ReadonlyArray<string>,
-): AgentErrorDetails {
-	if (
-		leftover.some(
-			(token) => token === "--output" || token.startsWith("--output="),
-		)
-	) {
-		return {
-			message: `Unsupported option: ${leftover.join(" ")}`,
-			code: "UNSUPPORTED_OPTION",
-			fix: "Remove --output; all commands now emit JSON envelopes.",
-		};
-	}
 
-	const optionToken = leftover.find((token) => token.startsWith("-"));
-	if (optionToken) {
-		return {
-			message: `Unsupported option: ${optionToken}`,
-			code: "VALIDATION_ERROR",
-			fix: "Remove unsupported options and rerun the command.",
-		};
-	}
-
-	return {
-		message: `Unexpected trailing arguments: ${leftover.join(" ")}`,
-		code: "COMMAND_NOT_FOUND",
-		fix: "Run: godaddy",
-	};
-}

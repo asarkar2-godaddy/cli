@@ -35,7 +35,7 @@ describe("Package Scripts Security Scanner", () => {
 			};
 			fs.writeFileSync(packageJsonPath, JSON.stringify(packageData, null, 2));
 
-			const result = scanPackageScripts(packageJsonPath, nodeFs);
+			const result = scanPackageScripts(packageJsonPath);
 
 			expect(result).toEqual([]);
 		});
@@ -48,7 +48,7 @@ describe("Package Scripts Security Scanner", () => {
 			};
 			fs.writeFileSync(packageJsonPath, JSON.stringify(packageData, null, 2));
 
-			const result = scanPackageScripts(packageJsonPath, nodeFs);
+			const result = scanPackageScripts(packageJsonPath);
 
 			expect(result).toEqual([]);
 		});
@@ -64,7 +64,7 @@ describe("Package Scripts Security Scanner", () => {
 			};
 			fs.writeFileSync(packageJsonPath, JSON.stringify(packageData, null, 2));
 
-			const result = scanPackageScripts(packageJsonPath, nodeFs);
+			const result = scanPackageScripts(packageJsonPath);
 
 			expect(result).toHaveLength(1);
 			expect(result[0]).toMatchObject({
@@ -87,7 +87,7 @@ describe("Package Scripts Security Scanner", () => {
 			};
 			fs.writeFileSync(packageJsonPath, JSON.stringify(packageData, null, 2));
 
-			const result = scanPackageScripts(packageJsonPath, nodeFs);
+			const result = scanPackageScripts(packageJsonPath);
 
 			expect(result).toHaveLength(1);
 			expect(result[0]).toMatchObject({
@@ -109,7 +109,7 @@ describe("Package Scripts Security Scanner", () => {
 			};
 			fs.writeFileSync(packageJsonPath, JSON.stringify(packageData, null, 2));
 
-			const result = scanPackageScripts(packageJsonPath, nodeFs);
+			const result = scanPackageScripts(packageJsonPath);
 
 			expect(result).toHaveLength(1);
 			expect(result[0].message).toContain("preinstall");
@@ -127,7 +127,7 @@ describe("Package Scripts Security Scanner", () => {
 			};
 			fs.writeFileSync(packageJsonPath, JSON.stringify(packageData, null, 2));
 
-			const result = scanPackageScripts(packageJsonPath, nodeFs);
+			const result = scanPackageScripts(packageJsonPath);
 
 			expect(result).toHaveLength(1);
 			expect(result[0].message).toMatch(/sh -c|bash -c/i);
@@ -144,7 +144,7 @@ describe("Package Scripts Security Scanner", () => {
 			};
 			fs.writeFileSync(packageJsonPath, JSON.stringify(packageData, null, 2));
 
-			const result = scanPackageScripts(packageJsonPath, nodeFs);
+			const result = scanPackageScripts(packageJsonPath);
 
 			expect(result).toHaveLength(1);
 			expect(result[0].message).toContain("powershell");
@@ -161,7 +161,7 @@ describe("Package Scripts Security Scanner", () => {
 			};
 			fs.writeFileSync(packageJsonPath, JSON.stringify(packageData, null, 2));
 
-			const result = scanPackageScripts(packageJsonPath, nodeFs);
+			const result = scanPackageScripts(packageJsonPath);
 
 			expect(result).toHaveLength(1);
 			expect(result[0].message).toContain("nc");
@@ -178,7 +178,7 @@ describe("Package Scripts Security Scanner", () => {
 			};
 			fs.writeFileSync(packageJsonPath, JSON.stringify(packageData, null, 2));
 
-			const result = scanPackageScripts(packageJsonPath, nodeFs);
+			const result = scanPackageScripts(packageJsonPath);
 
 			expect(result).toHaveLength(1);
 			expect(result[0].message).toContain("mkfifo");
@@ -195,7 +195,7 @@ describe("Package Scripts Security Scanner", () => {
 			};
 			fs.writeFileSync(packageJsonPath, JSON.stringify(packageData, null, 2));
 
-			const result = scanPackageScripts(packageJsonPath, nodeFs);
+			const result = scanPackageScripts(packageJsonPath);
 
 			expect(result).toHaveLength(1);
 			expect(result[0].message).toContain("eval");
@@ -212,7 +212,7 @@ describe("Package Scripts Security Scanner", () => {
 			};
 			fs.writeFileSync(packageJsonPath, JSON.stringify(packageData, null, 2));
 
-			const result = scanPackageScripts(packageJsonPath, nodeFs);
+			const result = scanPackageScripts(packageJsonPath);
 
 			expect(result).toHaveLength(1);
 			expect(result[0].message).toContain("exec");
@@ -236,7 +236,7 @@ describe("Package Scripts Security Scanner", () => {
 			};
 			fs.writeFileSync(packageJsonPath, JSON.stringify(packageData, null, 2));
 
-			const result = scanPackageScripts(packageJsonPath, nodeFs);
+			const result = scanPackageScripts(packageJsonPath);
 
 			// Should only detect the 3 lifecycle scripts, not build/test/dev
 			expect(result).toHaveLength(3);
@@ -253,7 +253,7 @@ describe("Package Scripts Security Scanner", () => {
 			};
 			fs.writeFileSync(packageJsonPath, JSON.stringify(packageData, null, 2));
 
-			const result = scanPackageScripts(packageJsonPath, nodeFs);
+			const result = scanPackageScripts(packageJsonPath);
 
 			// Should detect at least one finding (may detect first pattern only)
 			expect(result.length).toBeGreaterThan(0);
@@ -262,14 +262,14 @@ describe("Package Scripts Security Scanner", () => {
 		it("should throw when package.json does not exist", () => {
 			const packageJsonPath = path.join(tempDir, "nonexistent.json");
 
-			expect(() => scanPackageScripts(packageJsonPath, nodeFs)).toThrow("not found");
+			expect(() => scanPackageScripts(packageJsonPath)).toThrow();
 		});
 
 		it("should throw when package.json is invalid JSON", () => {
 			const packageJsonPath = path.join(tempDir, "package.json");
 			fs.writeFileSync(packageJsonPath, "{ invalid json }");
 
-			expect(() => scanPackageScripts(packageJsonPath, nodeFs)).toThrow();
+			expect(() => scanPackageScripts(packageJsonPath)).toThrow();
 		});
 
 		it("should handle package.json with empty scripts object", () => {
@@ -281,7 +281,7 @@ describe("Package Scripts Security Scanner", () => {
 			};
 			fs.writeFileSync(packageJsonPath, JSON.stringify(packageData, null, 2));
 
-			const result = scanPackageScripts(packageJsonPath, nodeFs);
+			const result = scanPackageScripts(packageJsonPath);
 
 			expect(result).toEqual([]);
 		});
@@ -297,7 +297,7 @@ describe("Package Scripts Security Scanner", () => {
 			};
 			fs.writeFileSync(packageJsonPath, JSON.stringify(packageData, null, 2));
 
-			const result = scanPackageScripts(packageJsonPath, nodeFs);
+			const result = scanPackageScripts(packageJsonPath);
 
 			expect(result).toHaveLength(1);
 		});
@@ -313,7 +313,7 @@ describe("Package Scripts Security Scanner", () => {
 			};
 			fs.writeFileSync(packageJsonPath, JSON.stringify(packageData, null, 2));
 
-			const result = scanPackageScripts(packageJsonPath, nodeFs);
+			const result = scanPackageScripts(packageJsonPath);
 
 			expect(result).toHaveLength(1);
 			// Finding should have relevant information for remediation

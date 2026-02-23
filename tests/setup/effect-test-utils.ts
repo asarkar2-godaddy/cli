@@ -1,29 +1,32 @@
+import * as NodeContext from "@effect/platform-node/NodeContext";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { NodeLiveLayer } from "../../src/effect/runtime";
 
 /**
- * Run an Effect with the NodeLiveLayer (which uses globally-mocked keytar, fs, etc.).
- * Use this in tests that call Effect-based APIs from core modules.
- *
- * On failure the **original tagged error** is thrown (not a FiberFailure wrapper),
- * so tests can assert on `error._tag`, `error.userMessage`, etc. directly.
+ * Full test layer: platform services (FileSystem, Path, Terminal) + custom services (Keychain, Browser, Fetch).
+ */
+const TestLayer = Layer.merge(NodeContext.layer, NodeLiveLayer);
+
+/**
+ * Run an Effect with the full test layer.
+ * On failure the **original tagged error** is thrown (not a FiberFailure wrapper).
  */
 export function runEffect<A>(
 	effect: Effect.Effect<A, unknown, unknown>,
 ): Promise<A> {
 	return Effect.runPromise(
 		effect.pipe(
-			Effect.provide(NodeLiveLayer),
+			Effect.provide(TestLayer),
 		) as Effect.Effect<A, never, never>,
 	);
 }
 
 /**
- * Run an Effect and return an Exit so tests can pattern-match success/failure
- * without dealing with FiberFailure wrappers.
+ * Run an Effect and return an Exit so tests can pattern-match success/failure.
  */
 export function runEffectExit<A, E>(
 	effect: Effect.Effect<A, E, unknown>,
@@ -31,7 +34,7 @@ export function runEffectExit<A, E>(
 	return Effect.runPromise(
 		Effect.exit(
 			effect.pipe(
-				Effect.provide(NodeLiveLayer),
+				Effect.provide(TestLayer),
 			) as Effect.Effect<A, E, never>,
 		),
 	);

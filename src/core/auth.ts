@@ -4,9 +4,13 @@ import { URL } from "node:url";
 import * as Effect from "effect/Effect";
 import { AuthenticationError, ConfigurationError } from "../effect/errors";
 import { Browser } from "../effect/services/browser";
-import type { FileSystem } from "../effect/services/filesystem";
-import type { HttpClient } from "../effect/services/http";
+import type { FileSystem } from "@effect/platform/FileSystem";
+
 import type { Keychain } from "../effect/services/keychain";
+// loggedFetch calls globalThis.fetch directly — not through the Fetch service tag.
+// This is acceptable here because the OAuth callback runs inside a raw http.Server
+// handler (Promise context), outside the Effect runtime. The Fetch tag is for
+// code within Effect.gen contexts.
 import { loggedFetch } from "../services/logger";
 import {
 	type Environment,
@@ -100,7 +104,7 @@ function getOauthClientIdEffect(): Effect.Effect<string, never, FileSystem> {
 export function authLoginEffect(): Effect.Effect<
 	AuthResult,
 	AuthenticationError,
-	FileSystem | Keychain | Browser | HttpClient
+	FileSystem | Keychain | Browser
 > {
 	return Effect.gen(function* () {
 		const browser = yield* Browser;

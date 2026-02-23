@@ -3,6 +3,7 @@
  * Orchestrates esbuild bundling with temp directory management and error handling.
  */
 
+import * as nodeFs from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import {
@@ -17,8 +18,8 @@ import {
 } from "@core/extension/naming";
 import * as Effect from "effect/Effect";
 import * as esbuild from "esbuild";
+import { FileSystem } from "@effect/platform/FileSystem";
 import { ConfigurationError } from "../../effect/errors";
-import { FileSystem, type FileSystemService } from "../../effect/services/filesystem";
 import { getLogger } from "../logger";
 
 /**
@@ -54,24 +55,19 @@ export interface ExtensionPackage {
 
 /**
  * Resolves TypeScript configuration file path.
- * Checks extension directory first, then repo root, then returns undefined.
- *
- * @param extensionDir - Directory containing the extension
- * @param repoRoot - Repository root directory
- * @returns Path to tsconfig.json or undefined
+ * Uses node:fs directly since this is a simple sync check.
  */
 export function resolveTsConfig(
 	extensionDir: string,
 	repoRoot: string,
-	fs: FileSystemService,
 ): string | undefined {
 	const localTsConfig = join(extensionDir, "tsconfig.json");
-	if (fs.existsSync(localTsConfig)) {
+	if (nodeFs.existsSync(localTsConfig)) {
 		return localTsConfig;
 	}
 
 	const rootTsConfig = join(repoRoot, "tsconfig.json");
-	if (fs.existsSync(rootTsConfig)) {
+	if (nodeFs.existsSync(rootTsConfig)) {
 		return rootTsConfig;
 	}
 
@@ -80,11 +76,6 @@ export function resolveTsConfig(
 
 /**
  * Creates temporary directory for bundling artifacts.
- * Structure: ${os.tmpdir()}/gd-cli/${repoName}/deploy-${timestamp}/
- *
- * @param repoRoot - Repository root path
- * @param timestamp - Timestamp for deploy session
- * @returns Path to temp directory
  */
 export function createTempDirectory(
 	repoRoot: string,
@@ -96,24 +87,21 @@ export function createTempDirectory(
 
 /**
  * Cleans up temporary directory and all contents.
- *
- * @param tempDir - Directory to remove
  */
 export function cleanupTempDirectoryEffect(
 	tempDir: string,
 ): Effect.Effect<void, ConfigurationError, FileSystem> {
 	return Effect.gen(function* () {
 		const fs = yield* FileSystem;
-		try {
-			if (fs.existsSync(tempDir)) {
-				fs.rmSync(tempDir, { recursive: true, force: true });
-			}
-		} catch (error) {
-			return yield* Effect.fail(
-				new ConfigurationError({
-					message: `Failed to cleanup temp directory: ${error instanceof Error ? error.message : String(error)}`,
-					userMessage: "Failed to cleanup temporary build files",
-				}),
+		const exists = yield* fs.exists(tempDir).pipe(Effect.orElseSucceed(() => false));
+		if (exists) {
+			yield* fs.remove(tempDir, { recursive: true }).pipe(
+				Effect.mapError((error) =>
+					new ConfigurationError({
+						message: `Failed to cleanup temp directory: ${error.message}`,
+						userMessage: "Failed to cleanup temporary build files",
+					}),
+				),
 			);
 		}
 	});
@@ -121,14 +109,6 @@ export function cleanupTempDirectoryEffect(
 
 /**
  * Bundles an extension from its directory (convenience wrapper).
- * Resolves entry point and delegates to bundleExtensionEffect.
- *
- * This is the recommended entry point for bundling - it matches the
- * scanExtension pattern used in security scanning.
- *
- * @param extensionDir - Absolute path to extension directory
- * @param options - Bundle options
- * @returns Effect with BundleResult
  */
 export function bundleExtensionFromDirEffect(
 	extensionDir: string,
@@ -136,36 +116,31 @@ export function bundleExtensionFromDirEffect(
 ): Effect.Effect<BundleResult, ConfigurationError, FileSystem> {
 	return Effect.gen(function* () {
 		const fs = yield* FileSystem;
-		const { readPackageJsonWithFs } = yield* Effect.promise(
-			() => import("./workspace"),
-		);
-		const { resolveEntryPoint } = yield* Effect.promise(
-			() => import("../../core/extension/entry"),
-		);
 
 		// Read package.json
 		const packageJsonPath = join(extensionDir, "package.json");
-		let packageJson: Record<string, unknown>;
-		try {
-			packageJson = readPackageJsonWithFs(packageJsonPath, fs);
-		} catch (error) {
-			return yield* Effect.fail(
+		const packageJsonContent = yield* fs.readFileString(packageJsonPath).pipe(
+			Effect.mapError((error) =>
 				new ConfigurationError({
-					message: `Failed to read package.json: ${error instanceof Error ? error.message : String(error)}`,
+					message: `Failed to read package.json: ${error.message}`,
 					userMessage: "Failed to read extension package.json",
 				}),
-			);
-		}
+			),
+		);
+		const packageJson = JSON.parse(packageJsonContent) as Record<string, unknown>;
 
 		const name = packageJson.name as string;
 		const version = packageJson.version as string | undefined;
 
-		// Resolve entry point
-		let entryResolution: Awaited<ReturnType<typeof resolveEntryPoint>>;
+		// Resolve entry point (uses node:fs internally)
+		const { resolveEntryPoint } = yield* Effect.promise(
+			() => import("../../core/extension/entry"),
+		);
+
+		let entryResolution: ReturnType<typeof resolveEntryPoint>;
 		try {
 			entryResolution = resolveEntryPoint(
 				{ packageDir: extensionDir, packageJson },
-				fs,
 			);
 		} catch (error) {
 			return yield* Effect.fail(
@@ -178,7 +153,6 @@ export function bundleExtensionFromDirEffect(
 
 		const { entryPath } = entryResolution;
 
-		// Bundle the extension
 		return yield* bundleExtensionEffect({ name, version }, entryPath, {
 			...options,
 			extensionDir,
@@ -188,22 +162,6 @@ export function bundleExtensionFromDirEffect(
 
 /**
  * Bundles an extension into an ESM artifact with sourcemap.
- *
- * Process:
- * 1. Create temp directory per extension
- * 2. Resolve tsconfig (local -> root -> undefined)
- * 3. Run esbuild with write: false
- * 4. Extract .mjs and .mjs.map from outputFiles
- * 5. Compute hash of bundle content
- * 6. Build artifact filename with sanitization
- * 7. Update sourceMappingURL to match renamed map file
- * 8. Write both files to temp directory
- * 9. Return BundleResult with metadata
- *
- * @param pkg - Package metadata (name, version)
- * @param entryPath - Absolute path to entry point
- * @param options - Bundle options
- * @returns Effect with BundleResult
  */
 export function bundleExtensionEffect(
 	pkg: ExtensionPackage,
@@ -220,11 +178,18 @@ export function bundleExtensionEffect(
 		const tempRoot = createTempDirectory(options.repoRoot, timestamp);
 		const extensionTempDir = join(tempRoot, pkg.name);
 
-		fs.mkdirSync(extensionTempDir, { recursive: true });
+		yield* fs.makeDirectory(extensionTempDir, { recursive: true }).pipe(
+			Effect.mapError((error) =>
+				new ConfigurationError({
+					message: `Failed to create temp directory: ${error.message}`,
+					userMessage: "Failed to create temporary build directory",
+				}),
+			),
+		);
 
 		// Resolve tsconfig
 		const extensionDir = options.extensionDir ?? join(entryPath, "..");
-		const tsconfigPath = resolveTsConfig(extensionDir, options.repoRoot, fs);
+		const tsconfigPath = resolveTsConfig(extensionDir, options.repoRoot);
 
 		// Build esbuild config
 		const config = buildEsbuildOptions({
@@ -267,20 +232,15 @@ export function bundleExtensionEffect(
 			);
 		}
 
-		// Prepare bundle content (will be modified for sourcemap URL)
 		let bundleContent = mjsFile.text;
 
-		// First pass: strip any existing sourceMappingURL for consistent hashing
-		// Also strip trailing newlines for consistency
 		const bundleWithoutSourceMap = bundleContent
 			.replace(/^\/\/# sourceMappingURL=.*$/m, "")
 			.trimEnd();
 
-		// Compute hash on content WITHOUT sourceMappingURL to avoid circularity
 		const sha256 = computeHash(Buffer.from(bundleWithoutSourceMap));
 		const hash = shortHash(sha256);
 
-		// Build artifact name using the hash
 		const artifactName = buildArtifactName(
 			pkg.name,
 			pkg.version || "0.0.0",
@@ -288,7 +248,6 @@ export function bundleExtensionEffect(
 			hash,
 		);
 
-		// Update sourceMappingURL in bundle to match renamed map file
 		bundleContent = bundleWithoutSourceMap;
 		if (mapFile) {
 			const mapName = `${artifactName}.map`;
@@ -297,19 +256,18 @@ export function bundleExtensionEffect(
 
 		// Write bundle file
 		const artifactPath = join(extensionTempDir, artifactName);
-		fs.writeFileSync(artifactPath, bundleContent);
+		yield* fs.writeFileString(artifactPath, bundleContent);
 
 		// Write sourcemap file if present
 		let sourcemapPath: string | undefined;
 		if (mapFile) {
 			sourcemapPath = `${artifactPath}.map`;
-			fs.writeFileSync(sourcemapPath, mapFile.text);
+			yield* fs.writeFileString(sourcemapPath, mapFile.text);
 		}
 
 		const durationMs = Date.now() - startTime;
 		const size = Buffer.byteLength(bundleContent);
 
-		// Emit debug log
 		logger.debug({
 			type: "bundle",
 			extension: pkg.name,
@@ -328,5 +286,16 @@ export function bundleExtensionEffect(
 			sha256,
 			sourcemapPath,
 		};
-	});
+	}).pipe(
+		Effect.catchAll((error) =>
+			Effect.fail(
+				error instanceof ConfigurationError
+					? error
+					: new ConfigurationError({
+							message: "message" in error ? String(error.message) : String(error),
+							userMessage: "Failed to bundle extension",
+						}),
+			),
+		),
+	);
 }

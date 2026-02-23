@@ -1,78 +1,79 @@
+import * as Command from "@effect/cli/Command";
 import * as Effect from "effect/Effect";
 import { webhookEventsEffect } from "../../core/webhooks";
-import { mapRuntimeError } from "../agent/errors";
-import { nextActionsFor } from "../agent/next-actions";
-import {
-	commandIds,
-	findRegistryNodeById,
-	registryNodeToResult,
-} from "../agent/registry";
-import { currentCommandString, emitError, emitSuccess } from "../agent/respond";
+import { EnvelopeWriter } from "../services/envelope-writer";
 import { truncateList } from "../agent/truncation";
-import { Command } from "../command-model";
+import type { NextAction } from "../agent/types";
 
-function emitWebhookError(error: unknown): void {
-	const mapped = mapRuntimeError(error);
-	emitError(
-		currentCommandString(),
-		{ message: mapped.message, code: mapped.code },
-		mapped.fix,
-		nextActionsFor(commandIds.webhookGroup),
-	);
-}
+// ---------------------------------------------------------------------------
+// Colocated next_actions
+// ---------------------------------------------------------------------------
 
-export function createWebhookCommand(): Command {
-	const webhook = new Command("webhook").description(
-		"Manage webhook integrations",
-	);
+const webhookGroupActions: NextAction[] = [
+	{
+		command: "godaddy webhook events",
+		description: "List available webhook events",
+	},
+];
 
-	webhook.action(() =>
-		Effect.sync(() => {
-			const node = findRegistryNodeById(commandIds.webhookGroup);
-			if (!node) {
-				const mapped = mapRuntimeError(
-					new Error("Webhook command registry metadata is missing"),
-				);
-				emitError(
-					currentCommandString(),
-					{ message: mapped.message, code: mapped.code },
-					mapped.fix,
-					nextActionsFor(commandIds.root),
-				);
-				return;
-			}
+const webhookEventsActions: NextAction[] = [
+	{
+		command:
+			"godaddy application add subscription --name <name> --events <events> --url <url>",
+		description: "Add a webhook subscription to config",
+		params: {
+			name: { description: "Subscription name", required: true },
+			events: { description: "Comma-separated event list", required: true },
+			url: { description: "Webhook endpoint", required: true },
+		},
+	},
+	{ command: "godaddy webhook events", description: "Refresh event list" },
+];
 
-			emitSuccess(
-				currentCommandString(),
-				registryNodeToResult(node),
-				nextActionsFor(commandIds.webhookGroup),
-			);
+// ---------------------------------------------------------------------------
+// Subcommands
+// ---------------------------------------------------------------------------
+
+const webhookEvents = Command.make(
+	"events",
+	{},
+	() =>
+		Effect.gen(function* () {
+			const writer = yield* EnvelopeWriter;
+			const events = yield* webhookEventsEffect();
+			const truncated = truncateList(events, "webhook-events");
+
+			yield* writer.emitSuccess("godaddy webhook events", {
+				events: truncated.items,
+				total: truncated.metadata.total,
+				shown: truncated.metadata.shown,
+				truncated: truncated.metadata.truncated,
+				full_output: truncated.metadata.full_output,
+			}, webhookEventsActions);
 		}),
-	);
+).pipe(Command.withDescription("List available webhook event types"));
 
-	webhook
-		.command("events")
-		.description("List available webhook event types")
-		.action(() =>
-			Effect.gen(function* () {
-				const events = yield* webhookEventsEffect();
-				const truncated = truncateList(events, "webhook-events");
+// ---------------------------------------------------------------------------
+// Parent command
+// ---------------------------------------------------------------------------
 
-				emitSuccess(
-					currentCommandString(),
-					{
-						events: truncated.items,
-						total: truncated.metadata.total,
-						shown: truncated.metadata.shown,
-						truncated: truncated.metadata.truncated,
-						full_output: truncated.metadata.full_output,
-					},
-					nextActionsFor(commandIds.webhookEvents),
-				);
-			}).pipe(
-				Effect.catchAll((error) => Effect.sync(() => emitWebhookError(error))),
-			),
-		);
+const webhookParent = Command.make(
+	"webhook",
+	{},
+	() =>
+		Effect.gen(function* () {
+			const writer = yield* EnvelopeWriter;
+			yield* writer.emitSuccess("godaddy webhook", {
+				command: "godaddy webhook",
+				description: "Manage webhook integrations",
+				commands: [
+					{ command: "godaddy webhook events", description: "List available webhook event types", usage: "godaddy webhook events" },
+				],
+			}, webhookGroupActions);
+		}),
+).pipe(
+	Command.withDescription("Manage webhook integrations"),
+	Command.withSubcommands([webhookEvents]),
+);
 
-	return webhook;
-}
+export const webhookCommand = webhookParent;

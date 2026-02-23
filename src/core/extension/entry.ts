@@ -1,5 +1,5 @@
+import * as nodeFs from "node:fs";
 import { join } from "node:path";
-import type { FileSystemService } from "../../effect/services/filesystem";
 
 /**
  * The type of module system used by the entry point
@@ -79,7 +79,7 @@ export interface ResolveEntryPointOptions {
  */
 export function resolveEntryPoint(
 	options: ResolveEntryPointOptions,
-	fs: FileSystemService,
+
 ): EntryPointResolution {
 	const { packageDir, packageJson } = options;
 	const sourceType = getSourceType(packageJson);
@@ -96,7 +96,7 @@ export function resolveEntryPoint(
 			const importPath = (dotExport as Record<string, unknown>)
 				.import as string;
 			if (importPath) {
-				const resolved = tryResolvePath(packageDir, importPath, fs);
+				const resolved = tryResolvePath(packageDir, importPath);
 				if (resolved) {
 					return {
 						entryPath: resolved,
@@ -111,7 +111,7 @@ export function resolveEntryPoint(
 	// Priority 2: module field
 	const moduleField = packageJson.module as string | undefined;
 	if (moduleField) {
-		const resolved = tryResolvePath(packageDir, moduleField, fs);
+		const resolved = tryResolvePath(packageDir, moduleField);
 		if (resolved) {
 			return {
 				entryPath: resolved,
@@ -124,7 +124,7 @@ export function resolveEntryPoint(
 	// Priority 3: main field
 	const mainField = packageJson.main as string | undefined;
 	if (mainField) {
-		const resolved = tryResolvePath(packageDir, mainField, fs);
+		const resolved = tryResolvePath(packageDir, mainField);
 		if (resolved) {
 			return {
 				entryPath: resolved,
@@ -136,7 +136,7 @@ export function resolveEntryPoint(
 
 	// Priority 4: exports (string)
 	if (typeof exports === "string") {
-		const resolved = tryResolvePath(packageDir, exports, fs);
+		const resolved = tryResolvePath(packageDir, exports);
 		if (resolved) {
 			return {
 				entryPath: resolved,
@@ -158,7 +158,7 @@ export function resolveEntryPoint(
 	];
 
 	for (const fallbackPath of fallbackPaths) {
-		const resolved = tryResolvePath(packageDir, fallbackPath, fs);
+		const resolved = tryResolvePath(packageDir, fallbackPath);
 		if (resolved) {
 			return {
 				entryPath: resolved,
@@ -190,7 +190,7 @@ export function resolveEntryPoint(
 export function tryResolvePath(
 	packageDir: string,
 	relativePath: string,
-	fs: FileSystemService,
+
 ): string | null {
 	// Normalize the relative path (remove leading ./)
 	const normalized = relativePath.startsWith("./")
@@ -200,7 +200,7 @@ export function tryResolvePath(
 	const absolutePath = join(packageDir, normalized);
 
 	// Check if file exists
-	if (fs.existsSync(absolutePath)) {
+	if (nodeFs.existsSync(absolutePath)) {
 		return absolutePath;
 	}
 

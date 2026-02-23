@@ -6,8 +6,8 @@ import {
 	NetworkError,
 	ValidationError,
 } from "../effect/errors";
-import { FileSystem } from "../effect/services/filesystem";
-import { HttpClient } from "../effect/services/http";
+import { FileSystem } from "@effect/platform/FileSystem";
+import { Fetch } from "@effect/platform/FetchHttpClient";
 import type { Keychain } from "../effect/services/keychain";
 import { getTokenInfoEffect } from "./auth";
 import { type Environment, envGetEffect, getApiUrl } from "./environment";
@@ -122,7 +122,8 @@ export function readBodyFromFileEffect(
 	return Effect.gen(function* () {
 		const fs = yield* FileSystem;
 
-		if (!fs.existsSync(filePath)) {
+		const exists = yield* fs.exists(filePath).pipe(Effect.orElseSucceed(() => false));
+		if (!exists) {
 			return yield* Effect.fail(
 				new ValidationError({
 					message: `File not found: ${filePath}`,
@@ -131,18 +132,14 @@ export function readBodyFromFileEffect(
 			);
 		}
 
-		let content: string;
-		try {
-			content = fs.readFileSync(filePath, "utf-8");
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			return yield* Effect.fail(
+		const content = yield* fs.readFileString(filePath).pipe(
+			Effect.mapError((error) =>
 				new ValidationError({
-					message: `Failed to read file: ${message}`,
+					message: `Failed to read file: ${error.message}`,
 					userMessage: `Could not read file: ${filePath}`,
 				}),
-			);
-		}
+			),
+		);
 
 		// Validate it's valid JSON
 		try {
@@ -196,7 +193,7 @@ function buildUrlEffect(
  */
 export function apiRequestEffect(
 	options: ApiRequestOptions,
-): Effect.Effect<ApiResponse, CliError, FileSystem | Keychain | HttpClient> {
+): Effect.Effect<ApiResponse, CliError, FileSystem | Keychain | Fetch> {
 	return Effect.gen(function* () {
 		const {
 			endpoint,
@@ -278,11 +275,11 @@ export function apiRequestEffect(
 		}
 
 		// Get the HTTP client from the service context
-		const httpClient = yield* HttpClient;
+		const fetch = yield* Fetch;
 
 		const response = yield* Effect.tryPromise({
 			try: () =>
-				httpClient.fetch(url, {
+				fetch(url, {
 					method,
 					headers: requestHeaders,
 					body: requestBody,

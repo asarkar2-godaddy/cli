@@ -1,32 +1,13 @@
-import * as fs from "node:fs";
 import * as Layer from "effect/Layer";
+import { Fetch } from "@effect/platform/FetchHttpClient";
 import { Browser } from "../services/browser";
-import { Clock } from "../services/clock";
-import { FileSystem, type FileSystemService } from "../services/filesystem";
-import { HttpClient } from "../services/http";
 import { Keychain, type KeychainService } from "../services/keychain";
 
-export const HttpClientLive = Layer.sync(HttpClient, () => ({
-	fetch: (input: RequestInfo | URL, init?: RequestInit) =>
-		globalThis.fetch(input, init),
-}));
-
-export const FileSystemLive = Layer.succeed(FileSystem, {
-	readFileSync: (path: string, encoding: BufferEncoding) =>
-		fs.readFileSync(path, encoding),
-	writeFileSync: (path: string, data: string | NodeJS.ArrayBufferView) =>
-		fs.writeFileSync(path, data),
-	existsSync: (path: string) => fs.existsSync(path),
-	mkdirSync: (path: string, options?: fs.MakeDirectoryOptions) =>
-		fs.mkdirSync(path, options),
-	mkdtempSync: (prefix: string) => fs.mkdtempSync(prefix),
-	readdirSync: ((path: string, options?: unknown) =>
-		options
-			? fs.readdirSync(path, options as Parameters<typeof fs.readdirSync>[1])
-			: fs.readdirSync(path)) as FileSystemService["readdirSync"],
-	statSync: (path: string) => fs.statSync(path),
-	rmSync: (path: string, options?: fs.RmOptions) => fs.rmSync(path, options),
-});
+/**
+ * Provide globalThis.fetch via the platform Fetch tag.
+ * Layer.sync defers resolution so test mocks applied after module load take effect.
+ */
+export const FetchLive = Layer.sync(Fetch, () => globalThis.fetch);
 
 export const KeychainLive = Layer.sync(Keychain, () => {
 	let keytarPromise: Promise<KeychainService> | undefined;
@@ -79,14 +60,15 @@ export const BrowserLive = Layer.sync(Browser, () => ({
 	},
 }));
 
-export const ClockLive = Layer.succeed(Clock, { now: () => Date.now() });
-
+/**
+ * NodeLiveLayer — custom services only.
+ * Platform services (FileSystem, Path, Terminal) come from NodeContext.layer.
+ * The Fetch tag provides globalThis.fetch for HTTP calls.
+ */
 export const NodeLiveLayer = Layer.mergeAll(
-	HttpClientLive,
-	FileSystemLive,
+	FetchLive,
 	KeychainLive,
 	BrowserLive,
-	ClockLive,
 );
 
-export type CliServices = HttpClient | FileSystem | Keychain | Browser | Clock;
+export type CliServices = Fetch | Keychain | Browser;

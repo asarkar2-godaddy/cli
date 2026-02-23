@@ -1,7 +1,6 @@
-import type { Stats } from "node:fs";
 import { join, resolve } from "node:path";
 import * as Effect from "effect/Effect";
-import { FileSystem } from "../../effect/services/filesystem";
+import { FileSystem } from "@effect/platform/FileSystem";
 import { ConfigurationError } from "../../effect/errors";
 import { getSecurityConfig, shouldExcludeFile } from "./config";
 
@@ -13,20 +12,6 @@ const SOURCE_EXTENSIONS = [".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"];
 /**
  * Recursively discover all source files to scan in an extension directory.
  * Applies security configuration exclusion patterns (node_modules, dist, build, __tests__).
- *
- * @param rootPath - Absolute or relative path to extension directory
- * @returns Effect containing Result with array of absolute file paths to scan, or error
- *
- * @example
- * ```ts
- * const result = yield* findFilesToScan('/path/to/extension');
- * if (result.success && result.data) {
- *   console.log(`Found ${result.data.length} files to scan`);
- *   for (const file of result.data) {
- *     console.log(file);
- *   }
- * }
- * ```
  */
 export function findFilesToScan(
 	rootPath: string,
@@ -37,19 +22,16 @@ export function findFilesToScan(
 		const absoluteRoot = resolve(rootPath);
 
 		// Verify root directory exists
-		let rootStats: Stats;
-		try {
-			rootStats = fs.statSync(absoluteRoot);
-		} catch (error) {
-			return yield* Effect.fail(
+		const rootInfo = yield* fs.stat(absoluteRoot).pipe(
+			Effect.mapError((error) =>
 				new ConfigurationError({
-					message: error instanceof Error ? error.message : String(error),
+					message: error.message,
 					userMessage: `Failed to access directory: ${absoluteRoot}`,
 				}),
-			);
-		}
+			),
+		);
 
-		if (!rootStats.isDirectory()) {
+		if (rootInfo.type !== "Directory") {
 			return yield* Effect.fail(
 				new ConfigurationError({
 					message: `Path is not a directory: ${absoluteRoot}`,
@@ -59,72 +41,56 @@ export function findFilesToScan(
 		}
 
 		const files: string[] = [];
-		traverseDirectory(fs, absoluteRoot, files, config);
+		yield* traverseDirectory(fs, absoluteRoot, files, config);
 
 		return files;
 	});
 }
 
+type PlatformFs = Effect.Effect.Success<typeof FileSystem>;
+
 /**
  * Recursively traverse a directory and collect source files.
- * Skips directories and files matching exclusion patterns.
- * Uses synchronous FileSystem service methods.
- *
- * @param fs - FileSystem service instance
- * @param dirPath - Absolute path to directory
- * @param files - Array to accumulate file paths (mutated)
- * @param config - Security configuration with exclusion patterns
  */
 function traverseDirectory(
-	fs: Effect.Effect.Success<typeof FileSystem>,
+	fs: PlatformFs,
 	dirPath: string,
 	files: string[],
 	config: ReturnType<typeof getSecurityConfig>,
-): void {
-	// Check if directory should be excluded
-	if (shouldExcludeFile(dirPath, config)) {
-		return;
-	}
-
-	let entries: string[];
-	try {
-		entries = fs.readdirSync(dirPath);
-	} catch (_error) {
-		// Skip directories we can't read (permission issues, etc.)
-		return;
-	}
-
-	for (const entry of entries) {
-		const fullPath = join(dirPath, entry);
-
-		// Check exclusions before stat
-		if (shouldExcludeFile(fullPath, config)) {
-			continue;
+): Effect.Effect<void> {
+	return Effect.gen(function* () {
+		if (shouldExcludeFile(dirPath, config)) {
+			return;
 		}
 
-		let stats: Stats;
-		try {
-			stats = fs.statSync(fullPath);
-		} catch (_error) {
-			// Skip files/dirs we can't stat
-			continue;
-		}
+		const entries = yield* fs.readDirectory(dirPath).pipe(
+			Effect.orElseSucceed(() => [] as ReadonlyArray<string>),
+		);
 
-		if (stats.isDirectory()) {
-			// Recurse into subdirectory
-			traverseDirectory(fs, fullPath, files, config);
-		} else if (stats.isFile() && isSourceFile(fullPath)) {
-			// Add source file to list
-			files.push(fullPath);
+		for (const entry of entries) {
+			const fullPath = join(dirPath, entry);
+
+			if (shouldExcludeFile(fullPath, config)) {
+				continue;
+			}
+
+			const info = yield* fs.stat(fullPath).pipe(
+				Effect.orElseSucceed(() => null),
+			);
+
+			if (!info) continue;
+
+			if (info.type === "Directory") {
+				yield* traverseDirectory(fs, fullPath, files, config);
+			} else if (info.type === "File" && isSourceFile(fullPath)) {
+				files.push(fullPath);
+			}
 		}
-	}
+	});
 }
 
 /**
  * Check if a file path has a supported source file extension.
- *
- * @param filePath - Path to file
- * @returns True if file has .js, .ts, .jsx, .tsx, .mjs, or .cjs extension
  */
 function isSourceFile(filePath: string): boolean {
 	return SOURCE_EXTENSIONS.some((ext) => filePath.endsWith(ext));

@@ -15,7 +15,7 @@ import type {
 	ScanSummary,
 } from "../../core/security/types";
 import { SecurityError } from "../../effect/errors";
-import { FileSystem, type FileSystemService } from "../../effect/services/filesystem";
+import { FileSystem } from "@effect/platform/FileSystem";
 
 /**
  * Output format for scan results
@@ -51,7 +51,7 @@ export function scanExtensionEffect(
 		// 2. Scan package.json scripts (SEC011)
 		const packageJsonPath = join(packageDir, "package.json");
 		try {
-			const scriptFindings = scanPackageScripts(packageJsonPath, fs);
+			const scriptFindings = scanPackageScripts(packageJsonPath);
 			findings.push(...scriptFindings);
 		} catch {
 			// package.json not found or invalid - not a fatal error for scanning
@@ -62,7 +62,7 @@ export function scanExtensionEffect(
 
 		// 4. For each source file: read, build alias maps, scan
 		for (const filePath of files) {
-			const sourceText = readFileWithFs(filePath, fs);
+			const sourceText = yield* fs.readFileString(filePath);
 
 			// Build alias maps
 			const sourceFile = ts.createSourceFile(
@@ -227,12 +227,7 @@ export function formatSecurityFindings(report: ScanReport): string {
 	return formatFindings(report, "text");
 }
 
-/**
- * Read a file using the FileSystem service (synchronous).
- */
-function readFileWithFs(filePath: string, fs: FileSystemService): string {
-	return fs.readFileSync(filePath, "utf-8");
-}
+// readFileWithFs removed — use yield* fs.readFileString(path) directly
 
 /**
  * Scan bundled artifact(s) with regex-based patterns.
@@ -257,7 +252,7 @@ export function scanBundleEffect(
 
 		// 2. For each file: read content and scan
 		for (const filePath of paths) {
-			const content = readFileWithFs(filePath, fs);
+			const content = yield* fs.readFileString(filePath);
 			const fileFindings = scanBundleContent(content, BUNDLE_RULES, filePath);
 			allFindings.push(...fileFindings);
 		}
@@ -272,12 +267,14 @@ export function scanBundleEffect(
 
 		return report;
 	}).pipe(
-		Effect.catchAllDefect((defect) =>
+		Effect.catchAll((error) =>
 			Effect.fail(
-				new SecurityError({
-					message: defect instanceof Error ? defect.message : String(defect),
-					userMessage: "Bundle security scan failed",
-				}),
+				error instanceof SecurityError
+					? error
+					: new SecurityError({
+							message: "message" in error ? String(error.message) : String(error),
+							userMessage: "Bundle security scan failed",
+						}),
 			),
 		),
 	);

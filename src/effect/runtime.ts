@@ -9,7 +9,4 @@ export {
 	errorCode,
 } from "./errors";
 export { Browser } from "./services/browser";
-export { Clock } from "./services/clock";
-export { FileSystem } from "./services/filesystem";
-export { HttpClient } from "./services/http";
 export { Keychain } from "./services/keychain";

@@ -16,7 +16,7 @@ import {
 	NetworkError,
 	type ValidationError,
 } from "../../effect/errors";
-import type { FileSystem } from "../../effect/services/filesystem";
+import type { FileSystem } from "@effect/platform/FileSystem";
 
 const logger = getLogger();
 

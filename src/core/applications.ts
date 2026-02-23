@@ -7,8 +7,8 @@ import {
 	NetworkError,
 	ValidationError,
 } from "../effect/errors";
-import { FileSystem } from "../effect/services/filesystem";
-import type { HttpClient } from "../effect/services/http";
+import { FileSystem } from "@effect/platform/FileSystem";
+import type { Fetch } from "@effect/platform/FetchHttpClient";
 import type { Keychain } from "../effect/services/keychain";
 import {
 	archiveApplicationEffect as archiveAppServiceEffect,
@@ -23,11 +23,12 @@ import {
 } from "../services/applications";
 import {
 	type ActionConfig,
+	type Config,
 	type SubscriptionConfig,
 	createConfigFileEffect,
 	createEnvFileEffect,
-	getConfigFile,
-	getExtensionsFromConfig,
+	getConfigFileEffect,
+	getExtensionsFromConfigEffect,
 } from "../services/config";
 import { bundleExtensionEffect as bundleExtServiceEffect } from "../services/extension/bundler";
 import { getUploadTargetEffect } from "../services/extension/presigned-url";
@@ -191,7 +192,7 @@ const createApplicationInputValidator = type({
 // ---------------------------------------------------------------------------
 
 function isConfigValidationErrorResult(
-	value: ReturnType<typeof getConfigFile>,
+	value: Config | ArkErrors | null,
 ): value is ArkErrors {
 	return typeof value === "object" && value !== null && "summary" in value;
 }
@@ -246,18 +247,10 @@ function cleanupBundleArtifacts(
 ): Effect.Effect<void, never, FileSystem> {
 	return Effect.gen(function* () {
 		const fs = yield* FileSystem;
-		try {
-			fs.rmSync(artifactPath, { force: true });
-		} catch {
-			// best-effort cleanup
-		}
+		yield* fs.remove(artifactPath).pipe(Effect.orElseSucceed(() => {}));
 
 		if (sourcemapPath) {
-			try {
-				fs.rmSync(sourcemapPath, { force: true });
-			} catch {
-				// best-effort cleanup
-			}
+			yield* fs.remove(sourcemapPath).pipe(Effect.orElseSucceed(() => {}));
 		}
 	});
 }
@@ -832,18 +825,9 @@ export function applicationReleaseEffect(
 		let actions: ActionConfig[] = [];
 		let subscriptions: SubscriptionConfig[] = [];
 
-		const fsService = yield* FileSystem;
-		const configResult = yield* Effect.try({
-			try: () =>
-				getConfigFile({
-					configPath: input.configPath,
-					env: input.env as Environment,
-				}, fsService),
-			catch: () =>
-				new ValidationError({
-					message: "Config file not found",
-					userMessage: "Config file not found",
-				}),
+		const configResult = yield* getConfigFileEffect({
+			configPath: input.configPath,
+			env: input.env as Environment,
 		}).pipe(Effect.orElseSucceed(() => null));
 
 		if (configResult && !isConfigValidationErrorResult(configResult)) {
@@ -892,7 +876,7 @@ export function applicationReleaseEffect(
 export function applicationDeployEffect(
 	applicationName: string,
 	options?: DeployOptions,
-): Effect.Effect<DeployResult, CliError, FileSystem | Keychain | HttpClient> {
+): Effect.Effect<DeployResult, CliError, FileSystem | Keychain | Fetch> {
 	return Effect.gen(function* () {
 		yield* emitProgress(options, {
 			type: "step",
@@ -997,11 +981,10 @@ export function applicationDeployEffect(
 			status: "started",
 		});
 		const repoRoot = process.cwd();
-		const deployFs = yield* FileSystem;
-		const extensions = getExtensionsFromConfig({
+		const extensions = yield* getExtensionsFromConfigEffect({
 			configPath: options?.configPath,
 			env: options?.env,
-		}, deployFs);
+		});
 		yield* emitProgress(options, {
 			type: "step",
 			name: "extensions.discover",

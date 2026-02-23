@@ -1,6 +1,10 @@
 import { join, resolve } from "node:path";
+import * as Args from "@effect/cli/Args";
+import * as Command from "@effect/cli/Command";
+import * as Options from "@effect/cli/Options";
 import type { ArkErrors } from "arktype";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import type {
 	CreateApplicationInput,
 	DeployProgressEvent,
@@ -33,77 +37,13 @@ import {
 	getConfigFile,
 	getConfigFilePath,
 } from "../../services/config";
-import { mapRuntimeError } from "../agent/errors";
-import { nextActionsFor } from "../agent/next-actions";
-import {
-	commandIds,
-	findRegistryNodeById,
-	registryNodeToResult,
-} from "../agent/registry";
-import { currentCommandString, emitError, emitSuccess } from "../agent/respond";
-import {
-	emitStreamError,
-	emitStreamProgress,
-	emitStreamResult,
-	emitStreamStart,
-	emitStreamStep,
-} from "../agent/stream";
+import { EnvelopeWriter } from "../services/envelope-writer";
 import { protectPayload, truncateList } from "../agent/truncation";
-import { Command } from "../command-model";
+import type { NextAction } from "../agent/types";
 
-interface AddBaseOptions {
-	config?: string;
-	environment?: string;
-}
-
-interface UpdateOptions {
-	label?: string;
-	description?: string;
-	status?: string;
-}
-
-interface StoreToggleOptions {
-	storeId: string;
-}
-
-interface AddActionOptions extends AddBaseOptions {
-	name: string;
-	url: string;
-}
-
-interface AddSubscriptionOptions extends AddBaseOptions {
-	name: string;
-	events: string;
-	url: string;
-}
-
-interface AddExtensionEmbedOptions extends AddBaseOptions {
-	name: string;
-	handle: string;
-	source: string;
-	target: string;
-}
-
-interface AddExtensionBlocksOptions extends AddBaseOptions {
-	source: string;
-}
-
-interface InitOptions extends AddBaseOptions {
-	name?: string;
-	description?: string;
-	url?: string;
-	proxyUrl?: string;
-	scopes?: string[];
-}
-
-interface ReleaseOptions extends AddBaseOptions {
-	releaseVersion: string;
-	description?: string;
-}
-
-interface DeployOptions extends AddBaseOptions {
-	follow?: boolean;
-}
+// ---------------------------------------------------------------------------
+// Helpers (pure, no global state)
+// ---------------------------------------------------------------------------
 
 type ConfigReadResult = ReturnType<typeof getConfigFile>;
 
@@ -111,942 +51,584 @@ function resolveEnvironmentEffect(environment?: string) {
 	return envGetEffect(environment);
 }
 
-function resolveConfigPath(
-	configPath: string | undefined,
-	env: Environment,
-): string {
-	if (configPath) {
-		return resolve(process.cwd(), configPath);
-	}
+function resolveConfigPath(configPath: string | undefined, env: Environment): string {
+	if (configPath) return resolve(process.cwd(), configPath);
 	return getConfigFilePath(env);
 }
 
 function parseSpaceSeparated(value: string): string[] {
-	return value
-		.split(" ")
-		.map((item) => item.trim())
-		.filter((item) => item.length > 0);
+	return value.split(" ").map((s) => s.trim()).filter((s) => s.length > 0);
 }
 
 function parseCommaSeparated(value: string): string[] {
-	return value
-		.split(",")
-		.map((item) => item.trim())
-		.filter((item) => item.length > 0);
+	return value.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
 }
 
-function isConfigValidationErrorResult(
-	value: ConfigReadResult,
-): value is ArkErrors {
+function isConfigValidationErrorResult(value: ConfigReadResult): value is ArkErrors {
 	return typeof value === "object" && value !== null && "summary" in value;
 }
 
-function emitRuntimeError(
-	commandId: keyof typeof commandIds,
-	error: unknown,
-): void {
-	const mapped = mapRuntimeError(error);
-	emitError(
-		currentCommandString(),
-		{ message: mapped.message, code: mapped.code },
-		mapped.fix,
-		nextActionsFor(commandIds[commandId]),
-	);
-}
-
-function runApplicationCommand<R>(
-	commandId: keyof typeof commandIds,
-	effect: Effect.Effect<void, unknown, R>,
-): Effect.Effect<void, never, R> {
-	return effect.pipe(
-		Effect.catchAll((error) =>
-			Effect.sync(() => {
-				emitRuntimeError(commandId, error);
-			}),
-		),
-	);
-}
-
-function buildDeployPayload(
-	name: string,
-	deployResult: DeployResult,
-): Record<string, unknown> {
-	const summarizedPayload = protectPayload(
-		{
-			total_extensions: deployResult.totalExtensions,
-			blocked_extensions: deployResult.blockedExtensions,
-			security_reports: deployResult.securityReports.map((report) => ({
-				extension_name: report.extensionName,
-				extension_dir: report.extensionDir,
-				blocked: report.blocked,
-				total_findings: report.totalFindings,
-				blocked_findings: report.blockedFindings,
-				warnings: report.warnings,
-				pre_bundle: {
-					blocked: report.preBundleReport.blocked,
-					scanned_files: report.preBundleReport.scannedFiles,
-					summary: report.preBundleReport.summary,
-					findings: report.preBundleReport.findings,
-				},
-				post_bundle: report.postBundleReport
-					? {
-							blocked: report.postBundleReport.blocked,
-							scanned_files: report.postBundleReport.scannedFiles,
-							summary: report.postBundleReport.summary,
-							findings: report.postBundleReport.findings,
-						}
-					: undefined,
-			})),
-			bundle_reports: deployResult.bundleReports.map((report) => ({
-				extension_name: report.extensionName,
-				artifact_name: report.artifactName,
-				size_bytes: report.size,
-				sha256: report.sha256,
-				targets: report.targets,
-				upload_ids: report.uploadIds,
-				uploaded: report.uploaded,
-			})),
-		},
-		`application-deploy-${name}`,
-	);
-
+function buildDeployPayload(name: string, deployResult: DeployResult): Record<string, unknown> {
+	const summarized = protectPayload({
+		total_extensions: deployResult.totalExtensions,
+		blocked_extensions: deployResult.blockedExtensions,
+		security_reports: deployResult.securityReports.map((r) => ({
+			extension_name: r.extensionName,
+			extension_dir: r.extensionDir,
+			blocked: r.blocked,
+			total_findings: r.totalFindings,
+			blocked_findings: r.blockedFindings,
+			warnings: r.warnings,
+			pre_bundle: { blocked: r.preBundleReport.blocked, scanned_files: r.preBundleReport.scannedFiles, summary: r.preBundleReport.summary, findings: r.preBundleReport.findings },
+			post_bundle: r.postBundleReport ? { blocked: r.postBundleReport.blocked, scanned_files: r.postBundleReport.scannedFiles, summary: r.postBundleReport.summary, findings: r.postBundleReport.findings } : undefined,
+		})),
+		bundle_reports: deployResult.bundleReports.map((r) => ({
+			extension_name: r.extensionName,
+			artifact_name: r.artifactName,
+			size_bytes: r.size,
+			sha256: r.sha256,
+			targets: r.targets,
+			upload_ids: r.uploadIds,
+			uploaded: r.uploaded,
+		})),
+	}, `application-deploy-${name}`);
 	return {
-		...summarizedPayload.value,
-		truncated: summarizedPayload.metadata?.truncated ?? false,
-		total: summarizedPayload.metadata?.total,
-		shown: summarizedPayload.metadata?.shown,
-		full_output: summarizedPayload.metadata?.full_output,
+		...summarized.value,
+		truncated: summarized.metadata?.truncated ?? false,
+		total: summarized.metadata?.total,
+		shown: summarized.metadata?.shown,
+		full_output: summarized.metadata?.full_output,
 	};
 }
 
-function emitDeployProgressAsStream(event: DeployProgressEvent): void {
-	if (event.type === "step") {
-		if (!event.status) {
-			return;
+// ---------------------------------------------------------------------------
+// Colocated next_actions
+// ---------------------------------------------------------------------------
+
+const appGroupActions: NextAction[] = [
+	{ command: "godaddy application list", description: "List all applications" },
+	{ command: "godaddy application init --name <name> --description <description> --url <url> --proxy-url <proxyUrl> --scopes <scopes>", description: "Initialize a new application" },
+	{ command: "godaddy application add action --name <name> --url <url>", description: "Add action configuration" },
+];
+
+function appInfoActions(name: string): NextAction[] {
+	return [
+		{ command: "godaddy application validate <name>", description: "Validate application configuration", params: { name: { value: name, required: true } } },
+		{ command: "godaddy application update <name> [--label <label>] [--description <description>] [--status <status>]", description: "Update application configuration", params: { name: { value: name, required: true }, status: { enum: ["ACTIVE", "INACTIVE"] } } },
+		{ command: "godaddy application release <name> --release-version <version>", description: "Create a release", params: { name: { value: name, required: true }, version: { required: true } } },
+	];
+}
+
+const appListActions: NextAction[] = [
+	{ command: "godaddy application info <name>", description: "Get details for a specific application", params: { name: { required: true } } },
+	{ command: "godaddy application init --name <name> --description <description> --url <url> --proxy-url <proxyUrl> --scopes <scopes>", description: "Initialize a new application" },
+];
+
+function appValidateActions(name: string): NextAction[] {
+	return [
+		{ command: "godaddy application release <name> --release-version <version>", description: "Create a release after validation", params: { name: { value: name, required: true }, version: { required: true } } },
+		{ command: "godaddy application info <name>", description: "Inspect application details", params: { name: { value: name, required: true } } },
+	];
+}
+
+function appUpdateActions(name: string): NextAction[] {
+	return [
+		{ command: "godaddy application info <name>", description: "Inspect updated application", params: { name: { value: name, required: true } } },
+		{ command: "godaddy application deploy <name>", description: "Deploy updated application", params: { name: { value: name, required: true } } },
+	];
+}
+
+function appEnableActions(name: string, storeId: string): NextAction[] {
+	return [
+		{ command: "godaddy application disable <name> --store-id <storeId>", description: "Disable the application on the same store", params: { name: { value: name, required: true }, storeId: { value: storeId, required: true } } },
+		{ command: "godaddy application info <name>", description: "Inspect application status", params: { name: { value: name, required: true } } },
+	];
+}
+
+function appDisableActions(name: string, storeId: string): NextAction[] {
+	return [
+		{ command: "godaddy application enable <name> --store-id <storeId>", description: "Re-enable the application on the same store", params: { name: { value: name, required: true }, storeId: { value: storeId, required: true } } },
+		{ command: "godaddy application info <name>", description: "Inspect application status", params: { name: { value: name, required: true } } },
+	];
+}
+
+function appArchiveActions(name: string): NextAction[] {
+	return [
+		{ command: "godaddy application info <name>", description: "Inspect archived application", params: { name: { value: name, required: true } } },
+		{ command: "godaddy application list", description: "List all applications" },
+	];
+}
+
+function appInitActions(name: string): NextAction[] {
+	return [
+		{ command: "godaddy application add action --name <name> --url <url>", description: "Add first action" },
+		{ command: "godaddy application add subscription --name <name> --events <events> --url <url>", description: "Add webhook subscription" },
+		{ command: "godaddy application release <name> --release-version <version>", description: "Create first release", params: { name: { value: name, required: true }, version: { required: true } } },
+	];
+}
+
+const addConfigActions: NextAction[] = [
+	{ command: "godaddy application validate <name>", description: "Validate application configuration", params: { name: { required: true } } },
+	{ command: "godaddy application release <name> --release-version <version>", description: "Create a new release", params: { name: { required: true }, version: { required: true } } },
+];
+
+function appReleaseActions(name: string): NextAction[] {
+	return [
+		{ command: "godaddy application deploy <name> [--follow]", description: "Deploy the released application", params: { name: { value: name, required: true }, follow: { description: "Stream deploy progress as NDJSON events", default: false } } },
+		{ command: "godaddy application info <name>", description: "Inspect application and latest release", params: { name: { value: name, required: true } } },
+	];
+}
+
+function appDeployActions(name: string): NextAction[] {
+	return [
+		{ command: "godaddy application enable <name> --store-id <storeId>", description: "Enable the application on a store", params: { name: { value: name, required: true }, storeId: { required: true } } },
+		{ command: "godaddy application info <name>", description: "Inspect deployment status", params: { name: { value: name, required: true } } },
+		{ command: "godaddy application deploy <name> [--follow]", description: "Rerun deployment with optional NDJSON progress stream", params: { name: { value: name, required: true }, follow: { description: "Stream deploy progress as NDJSON events", default: false } } },
+	];
+}
+
+const addGroupActions: NextAction[] = [
+	{ command: "godaddy application add action --name <name> --url <url>", description: "Add action configuration" },
+	{ command: "godaddy application add subscription --name <name> --events <events> --url <url>", description: "Add webhook subscription" },
+	{ command: "godaddy application add extension", description: "Show extension add commands" },
+];
+
+const addExtGroupActions: NextAction[] = [
+	{ command: "godaddy application add extension embed --name <name> --handle <handle> --source <source> --target <targets>", description: "Add embed extension" },
+	{ command: "godaddy application add extension checkout --name <name> --handle <handle> --source <source> --target <targets>", description: "Add checkout extension" },
+	{ command: "godaddy application add extension blocks --source <source>", description: "Configure blocks extension" },
+];
+
+// ---------------------------------------------------------------------------
+// Common option sets
+// ---------------------------------------------------------------------------
+
+const configOption = Options.text("config").pipe(
+	Options.withAlias("c"),
+	Options.withDescription("Path to configuration file"),
+	Options.optional,
+);
+const envOption = Options.text("environment").pipe(
+	Options.withDescription("Environment (ote|prod)"),
+	Options.optional,
+);
+
+// ---------------------------------------------------------------------------
+// Leaf commands
+// ---------------------------------------------------------------------------
+
+const appInfo = Command.make("info", {
+	name: Args.text({ name: "name" }).pipe(Args.withDescription("Application name")),
+}, ({ name }) =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		const appData = yield* applicationInfoEffect(name);
+		const latestRelease = appData.releases?.[0] ? {
+			id: appData.releases[0].id,
+			version: appData.releases[0].version,
+			description: appData.releases[0].description,
+			created_at: appData.releases[0].createdAt,
+		} : null;
+		yield* writer.emitSuccess("godaddy application info", {
+			id: appData.id, label: appData.label, name: appData.name,
+			description: appData.description, status: appData.status,
+			url: appData.url, proxy_url: appData.proxyUrl,
+			authorization_scopes: appData.authorizationScopes ?? [],
+			latest_release: latestRelease,
+		}, appInfoActions(name));
+	}),
+).pipe(Command.withDescription("Show application information"));
+
+const appList = Command.make("list", {}, () =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		const applications = yield* applicationListEffect();
+		const truncated = truncateList(applications, "application-list");
+		yield* writer.emitSuccess("godaddy application list", {
+			applications: truncated.items,
+			total: truncated.metadata.total,
+			shown: truncated.metadata.shown,
+			truncated: truncated.metadata.truncated,
+			full_output: truncated.metadata.full_output,
+		}, appListActions);
+	}),
+).pipe(Command.withDescription("List all applications"));
+
+const appValidate = Command.make("validate", {
+	name: Args.text({ name: "name" }).pipe(Args.withDescription("Application name")),
+}, ({ name }) =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		const validation = yield* applicationValidateEffect(name);
+		const pp = protectPayload({ valid: validation.valid, errors: validation.errors, warnings: validation.warnings }, `application-validate-${name}`);
+		yield* writer.emitSuccess("godaddy application validate", {
+			valid: validation.valid,
+			error_count: validation.errors.length,
+			warning_count: validation.warnings.length,
+			details: pp.value,
+			truncated: pp.metadata?.truncated ?? false,
+			total: pp.metadata?.total,
+			shown: pp.metadata?.shown,
+			full_output: pp.metadata?.full_output,
+		}, appValidateActions(name));
+	}),
+).pipe(Command.withDescription("Validate application configuration"));
+
+const appUpdate = Command.make("update", {
+	name: Args.text({ name: "name" }).pipe(Args.withDescription("Application name")),
+	label: Options.text("label").pipe(Options.withDescription("Application label"), Options.optional),
+	description: Options.text("description").pipe(Options.withDescription("Application description"), Options.optional),
+	status: Options.text("status").pipe(Options.withDescription("Application status (ACTIVE|INACTIVE)"), Options.optional),
+}, ({ name, label, description, status }) =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		const config: { label?: string; description?: string; status?: "ACTIVE" | "INACTIVE" } = {};
+		const lbl = Option.getOrUndefined(label);
+		const desc = Option.getOrUndefined(description);
+		const st = Option.getOrUndefined(status);
+		if (lbl) config.label = lbl;
+		if (desc) config.description = desc;
+		if (st) {
+			if (st !== "ACTIVE" && st !== "INACTIVE") {
+				return yield* Effect.fail(new ValidationError({ message: "Status must be either ACTIVE or INACTIVE", userMessage: "Status must be either ACTIVE or INACTIVE" }));
+			}
+			config.status = st;
+		}
+		if (Object.keys(config).length === 0) {
+			return yield* Effect.fail(new ValidationError({ message: "At least one field must be specified for update", userMessage: "Provide one of: --label, --description, --status" }));
+		}
+		yield* applicationUpdateEffect(name, config);
+		yield* writer.emitSuccess("godaddy application update", { name, updated_fields: Object.keys(config), status: config.status }, appUpdateActions(name));
+	}),
+).pipe(Command.withDescription("Update application configuration"));
+
+const appEnable = Command.make("enable", {
+	name: Args.text({ name: "name" }).pipe(Args.withDescription("Application name")),
+	storeId: Options.text("store-id").pipe(Options.withDescription("Store ID")),
+}, ({ name, storeId }) =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		yield* applicationEnableEffect(name, storeId);
+		yield* writer.emitSuccess("godaddy application enable", { name, store_id: storeId, enabled: true }, appEnableActions(name, storeId));
+	}),
+).pipe(Command.withDescription("Enable application on a store"));
+
+const appDisable = Command.make("disable", {
+	name: Args.text({ name: "name" }).pipe(Args.withDescription("Application name")),
+	storeId: Options.text("store-id").pipe(Options.withDescription("Store ID")),
+}, ({ name, storeId }) =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		yield* applicationDisableEffect(name, storeId);
+		yield* writer.emitSuccess("godaddy application disable", { name, store_id: storeId, enabled: false }, appDisableActions(name, storeId));
+	}),
+).pipe(Command.withDescription("Disable application on a store"));
+
+const appArchive = Command.make("archive", {
+	name: Args.text({ name: "name" }).pipe(Args.withDescription("Application name")),
+}, ({ name }) =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		yield* applicationArchiveEffect(name);
+		yield* writer.emitSuccess("godaddy application archive", { name, archived: true }, appArchiveActions(name));
+	}),
+).pipe(Command.withDescription("Archive application"));
+
+const appInit = Command.make("init", {
+	name: Options.text("name").pipe(Options.withDescription("Application name"), Options.optional),
+	description: Options.text("description").pipe(Options.withDescription("Application description"), Options.optional),
+	url: Options.text("url").pipe(Options.withDescription("Application URL"), Options.optional),
+	proxyUrl: Options.text("proxy-url").pipe(Options.withDescription("Proxy URL for API endpoints"), Options.optional),
+	scopes: Options.text("scopes").pipe(Options.withDescription("Authorization scopes (space-separated)"), Options.repeated),
+	config: configOption,
+	environment: envOption,
+}, (opts) =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		const cfgPath = Option.getOrUndefined(opts.config);
+		const envStr = Option.getOrUndefined(opts.environment);
+		let cfg: Config | undefined;
+		if (cfgPath || envStr) {
+			const candidate = getConfigFile({ configPath: cfgPath, env: envStr as Environment | undefined });
+			if (isConfigValidationErrorResult(candidate)) {
+				const problems = typeof candidate.summary === "string" ? candidate.summary : "Config file validation failed";
+				return yield* Effect.fail(new ValidationError({ message: problems, userMessage: problems }));
+			}
+			cfg = candidate;
+		}
+		const nameVal = Option.getOrUndefined(opts.name) ?? cfg?.name ?? "";
+		const descVal = Option.getOrUndefined(opts.description) ?? cfg?.description ?? "";
+		const urlVal = Option.getOrUndefined(opts.url) ?? cfg?.url ?? "";
+		const proxyVal = Option.getOrUndefined(opts.proxyUrl) ?? cfg?.proxy_url ?? "";
+		const scopesVal = opts.scopes.length > 0 ? opts.scopes.flatMap((s) => parseSpaceSeparated(s)) : cfg?.authorization_scopes ?? [];
+
+		const input: CreateApplicationInput = { name: nameVal, description: descVal, url: urlVal, proxyUrl: proxyVal, authorizationScopes: scopesVal };
+		if (!input.name) return yield* Effect.fail(new ValidationError({ message: "Application name is required", userMessage: "Application name is required" }));
+		if (!input.description) return yield* Effect.fail(new ValidationError({ message: "Application description is required", userMessage: "Application description is required" }));
+		if (!input.url) return yield* Effect.fail(new ValidationError({ message: "Application URL is required", userMessage: "Application URL is required" }));
+		if (!input.proxyUrl) return yield* Effect.fail(new ValidationError({ message: "Proxy URL is required", userMessage: "Proxy URL is required" }));
+		if (!input.authorizationScopes.length) return yield* Effect.fail(new ValidationError({ message: "Authorization scopes are required", userMessage: "Authorization scopes are required" }));
+
+		const environment = yield* resolveEnvironmentEffect(envStr);
+		const appData = yield* applicationInitEffect(input, environment);
+		yield* writer.emitSuccess("godaddy application init", {
+			id: appData.id, name: appData.name, status: appData.status,
+			url: appData.url, proxy_url: appData.proxyUrl,
+			authorization_scopes: appData.authorizationScopes,
+			client_id: appData.clientId,
+			files_written: { config: getConfigFilePath(environment), env: join(process.cwd(), `.env.${environment}`) },
+		}, appInitActions(appData.name));
+	}),
+).pipe(Command.withDescription("Initialize/create a new application"));
+
+// --- Add sub-tree ---
+
+const addAction = Command.make("action", {
+	name: Options.text("name").pipe(Options.withDescription("Action name")),
+	url: Options.text("url").pipe(Options.withDescription("Action endpoint URL")),
+	config: configOption,
+	environment: envOption,
+}, (opts) =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		if (opts.name.length < 3) return yield* Effect.fail(new ValidationError({ message: "Action name must be at least 3 characters long", userMessage: "Action name must be at least 3 characters long" }));
+		const env = yield* resolveEnvironmentEffect(Option.getOrUndefined(opts.environment));
+		const action: ActionConfig = { name: opts.name, url: opts.url };
+		yield* addActionToConfigEffect(action, { configPath: Option.getOrUndefined(opts.config), env });
+		yield* writer.emitSuccess("godaddy application add action", { action, config_path: resolveConfigPath(Option.getOrUndefined(opts.config), env) }, addConfigActions);
+	}),
+).pipe(Command.withDescription("Add action configuration to godaddy.toml"));
+
+const addSubscription = Command.make("subscription", {
+	name: Options.text("name").pipe(Options.withDescription("Subscription name")),
+	events: Options.text("events").pipe(Options.withDescription("Comma-separated list of events")),
+	url: Options.text("url").pipe(Options.withDescription("Webhook endpoint URL")),
+	config: configOption,
+	environment: envOption,
+}, (opts) =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		if (opts.name.length < 3) return yield* Effect.fail(new ValidationError({ message: "Subscription name must be at least 3 characters long", userMessage: "Subscription name must be at least 3 characters long" }));
+		const eventList = parseCommaSeparated(opts.events);
+		if (!eventList.length) return yield* Effect.fail(new ValidationError({ message: "At least one event is required", userMessage: "At least one event is required" }));
+		const env = yield* resolveEnvironmentEffect(Option.getOrUndefined(opts.environment));
+		const subscription: SubscriptionConfig = { name: opts.name, events: eventList, url: opts.url };
+		yield* addSubscriptionToConfigEffect(subscription, { configPath: Option.getOrUndefined(opts.config), env });
+		yield* writer.emitSuccess("godaddy application add subscription", { subscription, config_path: resolveConfigPath(Option.getOrUndefined(opts.config), env) }, addConfigActions);
+	}),
+).pipe(Command.withDescription("Add webhook subscription configuration to godaddy.toml"));
+
+// Extension sub-tree
+
+const extEmbed = Command.make("embed", {
+	name: Options.text("name").pipe(Options.withDescription("Extension name")),
+	handle: Options.text("handle").pipe(Options.withDescription("Extension handle")),
+	source: Options.text("source").pipe(Options.withDescription("Path to extension source file")),
+	target: Options.text("target").pipe(Options.withDescription("Comma-separated list of target locations")),
+	config: configOption,
+	environment: envOption,
+}, (opts) =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		if (opts.name.length < 3) return yield* Effect.fail(new ValidationError({ message: "Extension name must be at least 3 characters long", userMessage: "Extension name must be at least 3 characters long" }));
+		if (opts.handle.length < 3) return yield* Effect.fail(new ValidationError({ message: "Extension handle must be at least 3 characters long", userMessage: "Extension handle must be at least 3 characters long" }));
+		const targets = parseCommaSeparated(opts.target).map((t) => ({ target: t }));
+		if (!targets.length) return yield* Effect.fail(new ValidationError({ message: "At least one valid target is required", userMessage: "At least one valid target is required" }));
+		const extension: EmbedExtensionConfig = { name: opts.name, handle: opts.handle, source: opts.source, targets };
+		const env = yield* resolveEnvironmentEffect(Option.getOrUndefined(opts.environment));
+		yield* addExtensionToConfigEffect("embed", extension, { configPath: Option.getOrUndefined(opts.config), env });
+		yield* writer.emitSuccess("godaddy application add extension embed", { extension_type: "embed", extension, config_path: resolveConfigPath(Option.getOrUndefined(opts.config), env) }, addConfigActions);
+	}),
+).pipe(Command.withDescription("Add an embed extension"));
+
+const extCheckout = Command.make("checkout", {
+	name: Options.text("name").pipe(Options.withDescription("Extension name")),
+	handle: Options.text("handle").pipe(Options.withDescription("Extension handle")),
+	source: Options.text("source").pipe(Options.withDescription("Path to extension source file")),
+	target: Options.text("target").pipe(Options.withDescription("Comma-separated list of checkout target locations")),
+	config: configOption,
+	environment: envOption,
+}, (opts) =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		if (opts.name.length < 3) return yield* Effect.fail(new ValidationError({ message: "Extension name must be at least 3 characters long", userMessage: "Extension name must be at least 3 characters long" }));
+		if (opts.handle.length < 3) return yield* Effect.fail(new ValidationError({ message: "Extension handle must be at least 3 characters long", userMessage: "Extension handle must be at least 3 characters long" }));
+		const targets = parseCommaSeparated(opts.target).map((t) => ({ target: t }));
+		if (!targets.length) return yield* Effect.fail(new ValidationError({ message: "At least one valid target is required", userMessage: "At least one valid target is required" }));
+		const extension: CheckoutExtensionConfig = { name: opts.name, handle: opts.handle, source: opts.source, targets };
+		const env = yield* resolveEnvironmentEffect(Option.getOrUndefined(opts.environment));
+		yield* addExtensionToConfigEffect("checkout", extension, { configPath: Option.getOrUndefined(opts.config), env });
+		yield* writer.emitSuccess("godaddy application add extension checkout", { extension_type: "checkout", extension, config_path: resolveConfigPath(Option.getOrUndefined(opts.config), env) }, addConfigActions);
+	}),
+).pipe(Command.withDescription("Add a checkout extension"));
+
+const extBlocks = Command.make("blocks", {
+	source: Options.text("source").pipe(Options.withDescription("Path to blocks extension source file")),
+	config: configOption,
+	environment: envOption,
+}, (opts) =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		const extension: BlocksExtensionConfig = { source: opts.source };
+		const env = yield* resolveEnvironmentEffect(Option.getOrUndefined(opts.environment));
+		yield* addExtensionToConfigEffect("blocks", extension, { configPath: Option.getOrUndefined(opts.config), env });
+		yield* writer.emitSuccess("godaddy application add extension blocks", { extension_type: "blocks", extension, config_path: resolveConfigPath(Option.getOrUndefined(opts.config), env) }, addConfigActions);
+	}),
+).pipe(Command.withDescription("Set the blocks extension source"));
+
+const extensionGroup = Command.make("extension", {}, () =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		yield* writer.emitSuccess("godaddy application add extension", {
+			command: "godaddy application add extension",
+			description: "Add UI extension configuration to godaddy.toml",
+			commands: [
+				{ command: "godaddy application add extension embed", description: "Add an embed extension" },
+				{ command: "godaddy application add extension checkout", description: "Add a checkout extension" },
+				{ command: "godaddy application add extension blocks", description: "Set the blocks extension source" },
+			],
+		}, addExtGroupActions);
+	}),
+).pipe(
+	Command.withDescription("Add UI extension configuration to godaddy.toml"),
+	Command.withSubcommands([extEmbed, extCheckout, extBlocks]),
+);
+
+const addGroup = Command.make("add", {}, () =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		yield* writer.emitSuccess("godaddy application add", {
+			command: "godaddy application add",
+			description: "Add configurations to application",
+			commands: [
+				{ command: "godaddy application add action", description: "Add action configuration to godaddy.toml" },
+				{ command: "godaddy application add subscription", description: "Add webhook subscription configuration to godaddy.toml" },
+				{ command: "godaddy application add extension", description: "Add UI extension configuration to godaddy.toml" },
+			],
+		}, addGroupActions);
+	}),
+).pipe(
+	Command.withDescription("Add configurations to application"),
+	Command.withSubcommands([addAction, addSubscription, extensionGroup]),
+);
+
+const appRelease = Command.make("release", {
+	name: Args.text({ name: "name" }).pipe(Args.withDescription("Application name")),
+	releaseVersion: Options.text("release-version").pipe(Options.withDescription("Release version")),
+	description: Options.text("description").pipe(Options.withDescription("Release description"), Options.optional),
+	config: configOption,
+	environment: envOption,
+}, (opts) =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		const env = yield* resolveEnvironmentEffect(Option.getOrUndefined(opts.environment));
+		const releaseInfo = yield* applicationReleaseEffect({
+			applicationName: opts.name,
+			version: opts.releaseVersion,
+			description: Option.getOrUndefined(opts.description),
+			configPath: Option.getOrUndefined(opts.config),
+			env,
+		});
+		yield* writer.emitSuccess("godaddy application release", {
+			id: releaseInfo.id,
+			version: releaseInfo.version,
+			description: releaseInfo.description,
+			created_at: releaseInfo.createdAt,
+		}, appReleaseActions(opts.name));
+	}),
+).pipe(Command.withDescription("Create a new release for the application"));
+
+const appDeploy = Command.make("deploy", {
+	name: Args.text({ name: "name" }).pipe(Args.withDescription("Application name")),
+	config: configOption,
+	environment: envOption,
+	follow: Options.boolean("follow").pipe(Options.withDescription("Stream deploy progress as NDJSON events")),
+}, (opts) =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		const follow = opts.follow;
+		const cmdStr = follow ? "godaddy application deploy --follow" : "godaddy application deploy";
+		const nextActions = appDeployActions(opts.name);
+
+		if (follow) {
+			yield* writer.emitStreamEvent({ type: "start", command: cmdStr, ts: new Date().toISOString() });
 		}
 
-		emitStreamStep({
-			name: event.name,
-			status: event.status,
-			message: event.message,
-			extensionName: event.extensionName,
-			details: event.details,
-		});
-		return;
-	}
+		const env = yield* resolveEnvironmentEffect(Option.getOrUndefined(opts.environment));
 
-	if (event.type === "progress") {
-		emitStreamProgress({
-			name: event.name,
-			percent: event.percent,
-			message: event.message,
-			details: event.details,
-		});
-	}
-}
-
-export function createApplicationCommand(): Command {
-	const app = new Command("application")
-		.alias("app")
-		.description("Manage applications");
-
-	app.action(() =>
-		Effect.sync(() => {
-			const node = findRegistryNodeById(commandIds.applicationGroup);
-			if (!node) {
-				emitRuntimeError(
-					"root",
-					new Error("Application command registry metadata is missing"),
-				);
-				return;
-			}
-
-			emitSuccess(
-				currentCommandString(),
-				registryNodeToResult(node),
-				nextActionsFor(commandIds.applicationGroup),
-			);
-		}),
-	);
-
-	app
-		.command("info")
-		.description("Show application information")
-		.argument("<name>", "Application name")
-		.action((name: string) =>
-			runApplicationCommand(
-				"applicationGroup",
-				Effect.gen(function* () {
-					const appInfo = yield* applicationInfoEffect(name);
-					const latestRelease = appInfo.releases?.[0]
-						? {
-								id: appInfo.releases[0].id,
-								version: appInfo.releases[0].version,
-								description: appInfo.releases[0].description,
-								created_at: appInfo.releases[0].createdAt,
-							}
-						: null;
-
-					emitSuccess(
-						currentCommandString(),
-						{
-							id: appInfo.id,
-							label: appInfo.label,
-							name: appInfo.name,
-							description: appInfo.description,
-							status: appInfo.status,
-							url: appInfo.url,
-							proxy_url: appInfo.proxyUrl,
-							authorization_scopes: appInfo.authorizationScopes ?? [],
-							latest_release: latestRelease,
-						},
-						nextActionsFor(commandIds.applicationInfo, {
-							applicationName: name,
-						}),
-					);
-				}),
-			),
-		);
-
-	app
-		.command("list")
-		.alias("ls")
-		.description("List all applications")
-		.action(() =>
-			runApplicationCommand(
-				"applicationGroup",
-				Effect.gen(function* () {
-					const applications = yield* applicationListEffect();
-
-					const truncated = truncateList(applications, "application-list");
-
-					emitSuccess(
-						currentCommandString(),
-						{
-							applications: truncated.items,
-							total: truncated.metadata.total,
-							shown: truncated.metadata.shown,
-							truncated: truncated.metadata.truncated,
-							full_output: truncated.metadata.full_output,
-						},
-						nextActionsFor(commandIds.applicationList),
-					);
-				}),
-			),
-		);
-
-	app
-		.command("validate")
-		.description("Validate application configuration")
-		.argument("<name>", "Application name")
-		.action((name: string) =>
-			runApplicationCommand(
-				"applicationGroup",
-				Effect.gen(function* () {
-					const validation = yield* applicationValidateEffect(name);
-
-					const protectedPayload = protectPayload(
-						{
-							valid: validation.valid,
-							errors: validation.errors,
-							warnings: validation.warnings,
-						},
-						`application-validate-${name}`,
-					);
-
-					emitSuccess(
-						currentCommandString(),
-						{
-							valid: validation.valid,
-							error_count: validation.errors.length,
-							warning_count: validation.warnings.length,
-							details: protectedPayload.value,
-							truncated: protectedPayload.metadata?.truncated ?? false,
-							total: protectedPayload.metadata?.total,
-							shown: protectedPayload.metadata?.shown,
-							full_output: protectedPayload.metadata?.full_output,
-						},
-						nextActionsFor(commandIds.applicationValidate, {
-							applicationName: name,
-						}),
-					);
-				}),
-			),
-		);
-
-	app
-		.command("update")
-		.description("Update application configuration")
-		.argument("<name>", "Application name")
-		.option("--label <label>", "Application label")
-		.option("--description <description>", "Application description")
-		.option("--status <status>", "Application status (ACTIVE|INACTIVE)")
-		.action((name: string, options: UpdateOptions) =>
-			runApplicationCommand(
-				"applicationGroup",
-				Effect.gen(function* () {
-					const config: {
-						label?: string;
-						description?: string;
-						status?: "ACTIVE" | "INACTIVE";
-					} = {};
-
-					if (options.label) {
-						config.label = options.label;
-					}
-					if (options.description) {
-						config.description = options.description;
-					}
-					if (options.status) {
-						if (options.status !== "ACTIVE" && options.status !== "INACTIVE") {
-							return yield* Effect.fail(
-								new ValidationError({
-									message: "Status must be either ACTIVE or INACTIVE",
-									userMessage: "Status must be either ACTIVE or INACTIVE",
-								}),
-							);
+		// Stream callback for progress events — routes through EnvelopeWriter
+		const onProgress = follow
+			? (event: DeployProgressEvent): void => {
+					// Best-effort: use Effect.runSync to emit through the writer.
+					// Stream events are non-fatal — catch and discard errors.
+					try {
+						if (event.type === "step" && event.status) {
+							Effect.runSync(writer.emitStreamEvent({
+								type: "step", name: event.name, status: event.status,
+								message: event.message, extension_name: event.extensionName,
+								details: event.details, ts: new Date().toISOString(),
+							}));
+						} else if (event.type === "progress") {
+							Effect.runSync(writer.emitStreamEvent({
+								type: "progress", name: event.name, percent: event.percent,
+								message: event.message, details: event.details,
+								ts: new Date().toISOString(),
+							}));
 						}
-						config.status = options.status;
+					} catch {
+						// Stream events are best-effort — never block deployment.
 					}
-
-					if (Object.keys(config).length === 0) {
-						return yield* Effect.fail(
-							new ValidationError({
-								message: "At least one field must be specified for update",
-								userMessage: "Provide one of: --label, --description, --status",
-							}),
-						);
-					}
-
-					yield* applicationUpdateEffect(name, config);
-
-					emitSuccess(
-						currentCommandString(),
-						{
-							name,
-							updated_fields: Object.keys(config),
-							status: config.status,
-						},
-						nextActionsFor(commandIds.applicationUpdate, {
-							applicationName: name,
-						}),
-					);
-				}),
-			),
-		);
-
-	app
-		.command("enable")
-		.description("Enable application on a store")
-		.argument("<name>", "Application name")
-		.requiredOption("--store-id <storeId>", "Store ID")
-		.action((name: string, options: StoreToggleOptions) =>
-			runApplicationCommand(
-				"applicationGroup",
-				Effect.gen(function* () {
-					yield* applicationEnableEffect(name, options.storeId);
-
-					emitSuccess(
-						currentCommandString(),
-						{ name, store_id: options.storeId, enabled: true },
-						nextActionsFor(commandIds.applicationEnable, {
-							applicationName: name,
-							storeId: options.storeId,
-						}),
-					);
-				}),
-			),
-		);
-
-	app
-		.command("disable")
-		.description("Disable application on a store")
-		.argument("<name>", "Application name")
-		.requiredOption("--store-id <storeId>", "Store ID")
-		.action((name: string, options: StoreToggleOptions) =>
-			runApplicationCommand(
-				"applicationGroup",
-				Effect.gen(function* () {
-					yield* applicationDisableEffect(name, options.storeId);
-
-					emitSuccess(
-						currentCommandString(),
-						{ name, store_id: options.storeId, enabled: false },
-						nextActionsFor(commandIds.applicationDisable, {
-							applicationName: name,
-							storeId: options.storeId,
-						}),
-					);
-				}),
-			),
-		);
-
-	app
-		.command("archive")
-		.description("Archive application")
-		.argument("<name>", "Application name")
-		.action((name: string) =>
-			runApplicationCommand(
-				"applicationGroup",
-				Effect.gen(function* () {
-					yield* applicationArchiveEffect(name);
-					emitSuccess(
-						currentCommandString(),
-						{ name, archived: true },
-						nextActionsFor(commandIds.applicationArchive, {
-							applicationName: name,
-						}),
-					);
-				}),
-			),
-		);
-
-	app
-		.command("init")
-		.description("Initialize/create a new application")
-		.option("--name <name>", "Application name")
-		.option("--description <description>", "Application description")
-		.option("--url <url>", "Application URL")
-		.option("--proxy-url <proxyUrl>", "Proxy URL for API endpoints")
-		.option(
-			"--scopes <scopes>",
-			"Authorization scopes (space-separated)",
-			parseSpaceSeparated,
-		)
-		.option("-c, --config <path>", "Path to configuration file")
-		.option("--environment <env>", "Environment (ote|prod)")
-		.action((options: InitOptions) =>
-			runApplicationCommand(
-				"applicationGroup",
-				Effect.gen(function* () {
-					let cfg: Config | undefined;
-					if (options.config || options.environment) {
-						const candidate = getConfigFile({
-							configPath: options.config,
-							env: options.environment as Environment | undefined,
-						});
-						if (isConfigValidationErrorResult(candidate)) {
-							const problems =
-								typeof candidate.summary === "string"
-									? candidate.summary
-									: "Config file validation failed";
-							return yield* Effect.fail(
-								new ValidationError({
-									message: problems,
-									userMessage: problems,
-								}),
-							);
-						}
-						cfg = candidate;
-					}
-
-					const input: CreateApplicationInput = {
-						name: options.name ?? cfg?.name ?? "",
-						description: options.description ?? cfg?.description ?? "",
-						url: options.url ?? cfg?.url ?? "",
-						proxyUrl: options.proxyUrl ?? cfg?.proxy_url ?? "",
-						authorizationScopes:
-							options.scopes ?? cfg?.authorization_scopes ?? [],
-					};
-
-					if (!input.name) {
-						return yield* Effect.fail(
-							new ValidationError({
-								message: "Application name is required",
-								userMessage: "Application name is required",
-							}),
-						);
-					}
-					if (!input.description) {
-						return yield* Effect.fail(
-							new ValidationError({
-								message: "Application description is required",
-								userMessage: "Application description is required",
-							}),
-						);
-					}
-					if (!input.url) {
-						return yield* Effect.fail(
-							new ValidationError({
-								message: "Application URL is required",
-								userMessage: "Application URL is required",
-							}),
-						);
-					}
-					if (!input.proxyUrl) {
-						return yield* Effect.fail(
-							new ValidationError({
-								message: "Proxy URL is required",
-								userMessage: "Proxy URL is required",
-							}),
-						);
-					}
-					if (!input.authorizationScopes.length) {
-						return yield* Effect.fail(
-							new ValidationError({
-								message: "Authorization scopes are required",
-								userMessage: "Authorization scopes are required",
-							}),
-						);
-					}
-
-					const environment = yield* resolveEnvironmentEffect(
-						options.environment,
-					);
-					const appData = yield* applicationInitEffect(input, environment);
-
-					emitSuccess(
-						currentCommandString(),
-						{
-							id: appData.id,
-							name: appData.name,
-							status: appData.status,
-							url: appData.url,
-							proxy_url: appData.proxyUrl,
-							authorization_scopes: appData.authorizationScopes,
-							client_id: appData.clientId,
-							files_written: {
-								config: getConfigFilePath(environment),
-								env: join(process.cwd(), `.env.${environment}`),
-							},
-						},
-						nextActionsFor(commandIds.applicationInit, {
-							applicationName: appData.name,
-						}),
-					);
-				}),
-			),
-		);
-
-	const addCommand = new Command("add").description(
-		"Add configurations to application",
-	);
-
-	addCommand.action(() =>
-		Effect.sync(() => {
-			const node = findRegistryNodeById(commandIds.applicationAddGroup);
-			if (!node) {
-				emitRuntimeError(
-					"applicationGroup",
-					new Error("Application add registry metadata is missing"),
-				);
-				return;
-			}
-
-			emitSuccess(
-				currentCommandString(),
-				registryNodeToResult(node),
-				nextActionsFor(commandIds.applicationAddGroup),
-			);
-		}),
-	);
-
-	addCommand
-		.command("action")
-		.description("Add action configuration to godaddy.toml")
-		.requiredOption("--name <name>", "Action name")
-		.requiredOption("--url <url>", "Action endpoint URL")
-		.option("--config <path>", "Path to configuration file")
-		.option("--environment <env>", "Environment (ote|prod)")
-		.action((options: AddActionOptions) =>
-			runApplicationCommand(
-				"applicationAddGroup",
-				Effect.gen(function* () {
-					if (options.name.length < 3) {
-						return yield* Effect.fail(
-							new ValidationError({
-								message: "Action name must be at least 3 characters long",
-								userMessage: "Action name must be at least 3 characters long",
-							}),
-						);
-					}
-
-					const environment = yield* resolveEnvironmentEffect(
-						options.environment,
-					);
-					const action: ActionConfig = { name: options.name, url: options.url };
-					yield* addActionToConfigEffect(action, {
-						configPath: options.config,
-						env: environment,
-					});
-
-					emitSuccess(
-						currentCommandString(),
-						{
-							action,
-							config_path: resolveConfigPath(options.config, environment),
-						},
-						nextActionsFor(commandIds.applicationAddAction),
-					);
-				}),
-			),
-		);
-
-	addCommand
-		.command("subscription")
-		.description("Add webhook subscription configuration to godaddy.toml")
-		.requiredOption("--name <name>", "Subscription name")
-		.requiredOption("--events <events>", "Comma-separated list of events")
-		.requiredOption("--url <url>", "Webhook endpoint URL")
-		.option("--config <path>", "Path to configuration file")
-		.option("--environment <env>", "Environment (ote|prod)")
-		.action((options: AddSubscriptionOptions) =>
-			runApplicationCommand(
-				"applicationAddGroup",
-				Effect.gen(function* () {
-					if (options.name.length < 3) {
-						return yield* Effect.fail(
-							new ValidationError({
-								message: "Subscription name must be at least 3 characters long",
-								userMessage:
-									"Subscription name must be at least 3 characters long",
-							}),
-						);
-					}
-
-					const eventList = parseCommaSeparated(options.events);
-					if (!eventList.length) {
-						return yield* Effect.fail(
-							new ValidationError({
-								message: "At least one event is required",
-								userMessage: "At least one event is required",
-							}),
-						);
-					}
-
-					const environment = yield* resolveEnvironmentEffect(
-						options.environment,
-					);
-					const subscription: SubscriptionConfig = {
-						name: options.name,
-						events: eventList,
-						url: options.url,
-					};
-					yield* addSubscriptionToConfigEffect(subscription, {
-						configPath: options.config,
-						env: environment,
-					});
-
-					emitSuccess(
-						currentCommandString(),
-						{
-							subscription,
-							config_path: resolveConfigPath(options.config, environment),
-						},
-						nextActionsFor(commandIds.applicationAddSubscription),
-					);
-				}),
-			),
-		);
-
-	const extensionCommand = addCommand
-		.command("extension")
-		.description("Add UI extension configuration to godaddy.toml");
-
-	extensionCommand.action(() =>
-		Effect.sync(() => {
-			const node = findRegistryNodeById(
-				commandIds.applicationAddExtensionGroup,
-			);
-			if (!node) {
-				emitRuntimeError(
-					"applicationAddGroup",
-					new Error("Application add extension registry metadata is missing"),
-				);
-				return;
-			}
-
-			emitSuccess(
-				currentCommandString(),
-				registryNodeToResult(node),
-				nextActionsFor(commandIds.applicationAddExtensionGroup),
-			);
-		}),
-	);
-
-	extensionCommand
-		.command("embed")
-		.description("Add an embed extension")
-		.requiredOption("--name <name>", "Extension name")
-		.requiredOption("--handle <handle>", "Extension handle")
-		.requiredOption("--source <source>", "Path to extension source file")
-		.requiredOption(
-			"--target <targets>",
-			"Comma-separated list of target locations",
-		)
-		.option("--config <path>", "Path to configuration file")
-		.option("--environment <env>", "Environment (ote|prod)")
-		.action((options: AddExtensionEmbedOptions) =>
-			runApplicationCommand(
-				"applicationAddExtensionGroup",
-				Effect.gen(function* () {
-					if (options.name.length < 3) {
-						return yield* Effect.fail(
-							new ValidationError({
-								message: "Extension name must be at least 3 characters long",
-								userMessage:
-									"Extension name must be at least 3 characters long",
-							}),
-						);
-					}
-					if (options.handle.length < 3) {
-						return yield* Effect.fail(
-							new ValidationError({
-								message: "Extension handle must be at least 3 characters long",
-								userMessage:
-									"Extension handle must be at least 3 characters long",
-							}),
-						);
-					}
-
-					const targets = parseCommaSeparated(options.target).map((target) => ({
-						target,
-					}));
-					if (!targets.length) {
-						return yield* Effect.fail(
-							new ValidationError({
-								message: "At least one valid target is required",
-								userMessage: "At least one valid target is required",
-							}),
-						);
-					}
-
-					const extension: EmbedExtensionConfig = {
-						name: options.name,
-						handle: options.handle,
-						source: options.source,
-						targets,
-					};
-					const environment = yield* resolveEnvironmentEffect(
-						options.environment,
-					);
-					yield* addExtensionToConfigEffect("embed", extension, {
-						configPath: options.config,
-						env: environment,
-					});
-
-					emitSuccess(
-						currentCommandString(),
-						{
-							extension_type: "embed",
-							extension,
-							config_path: resolveConfigPath(options.config, environment),
-						},
-						nextActionsFor(commandIds.applicationAddExtensionEmbed),
-					);
-				}),
-			),
-		);
-
-	extensionCommand
-		.command("checkout")
-		.description("Add a checkout extension")
-		.requiredOption("--name <name>", "Extension name")
-		.requiredOption("--handle <handle>", "Extension handle")
-		.requiredOption("--source <source>", "Path to extension source file")
-		.requiredOption(
-			"--target <targets>",
-			"Comma-separated list of checkout target locations",
-		)
-		.option("--config <path>", "Path to configuration file")
-		.option("--environment <env>", "Environment (ote|prod)")
-		.action((options: AddExtensionEmbedOptions) =>
-			runApplicationCommand(
-				"applicationAddExtensionGroup",
-				Effect.gen(function* () {
-					if (options.name.length < 3) {
-						return yield* Effect.fail(
-							new ValidationError({
-								message: "Extension name must be at least 3 characters long",
-								userMessage:
-									"Extension name must be at least 3 characters long",
-							}),
-						);
-					}
-					if (options.handle.length < 3) {
-						return yield* Effect.fail(
-							new ValidationError({
-								message: "Extension handle must be at least 3 characters long",
-								userMessage:
-									"Extension handle must be at least 3 characters long",
-							}),
-						);
-					}
-
-					const targets = parseCommaSeparated(options.target).map((target) => ({
-						target,
-					}));
-					if (!targets.length) {
-						return yield* Effect.fail(
-							new ValidationError({
-								message: "At least one valid target is required",
-								userMessage: "At least one valid target is required",
-							}),
-						);
-					}
-
-					const extension: CheckoutExtensionConfig = {
-						name: options.name,
-						handle: options.handle,
-						source: options.source,
-						targets,
-					};
-					const environment = yield* resolveEnvironmentEffect(
-						options.environment,
-					);
-					yield* addExtensionToConfigEffect("checkout", extension, {
-						configPath: options.config,
-						env: environment,
-					});
-
-					emitSuccess(
-						currentCommandString(),
-						{
-							extension_type: "checkout",
-							extension,
-							config_path: resolveConfigPath(options.config, environment),
-						},
-						nextActionsFor(commandIds.applicationAddExtensionCheckout),
-					);
-				}),
-			),
-		);
-
-	extensionCommand
-		.command("blocks")
-		.description("Set the blocks extension source")
-		.requiredOption("--source <source>", "Path to blocks extension source file")
-		.option("--config <path>", "Path to configuration file")
-		.option("--environment <env>", "Environment (ote|prod)")
-		.action((options: AddExtensionBlocksOptions) =>
-			runApplicationCommand(
-				"applicationAddExtensionGroup",
-				Effect.gen(function* () {
-					const extension: BlocksExtensionConfig = {
-						source: options.source,
-					};
-					const environment = yield* resolveEnvironmentEffect(
-						options.environment,
-					);
-					yield* addExtensionToConfigEffect("blocks", extension, {
-						configPath: options.config,
-						env: environment,
-					});
-
-					emitSuccess(
-						currentCommandString(),
-						{
-							extension_type: "blocks",
-							extension,
-							config_path: resolveConfigPath(options.config, environment),
-						},
-						nextActionsFor(commandIds.applicationAddExtensionBlocks),
-					);
-				}),
-			),
-		);
-
-	app.addCommand(addCommand);
-
-	app
-		.command("release")
-		.description("Create a new release for the application")
-		.argument("<name>", "Application name")
-		.requiredOption("--release-version <version>", "Release version")
-		.option("--description <description>", "Release description")
-		.option("--config <path>", "Path to configuration file")
-		.option("--environment <env>", "Environment (ote|prod)")
-		.action((name: string, options: ReleaseOptions) =>
-			runApplicationCommand(
-				"applicationGroup",
-				Effect.gen(function* () {
-					const environment = yield* resolveEnvironmentEffect(
-						options.environment,
-					);
-					const releaseInfo = yield* applicationReleaseEffect({
-						applicationName: name,
-						version: options.releaseVersion,
-						description: options.description,
-						configPath: options.config,
-						env: environment,
-					});
-
-					emitSuccess(
-						currentCommandString(),
-						{
-							id: releaseInfo.id,
-							version: releaseInfo.version,
-							description: releaseInfo.description,
-							created_at: releaseInfo.createdAt,
-						},
-						nextActionsFor(commandIds.applicationRelease, {
-							applicationName: name,
-						}),
-					);
-				}),
-			),
-		);
-
-	app
-		.command("deploy")
-		.description("Deploy application (change status to ACTIVE)")
-		.argument("<name>", "Application name")
-		.option("--config <path>", "Path to configuration file")
-		.option("--environment <env>", "Environment (ote|prod)")
-		.option("--follow", "Stream deploy progress as NDJSON events")
-		.action((name: string, options: DeployOptions) => {
-			const command = currentCommandString();
-			const follow = options.follow === true;
-			const nextActions = nextActionsFor(commandIds.applicationDeploy, {
-				applicationName: name,
-			});
-
-			return Effect.gen(function* () {
-				if (follow) {
-					yield* Effect.sync(() => emitStreamStart(command));
 				}
+			: undefined;
 
-				const environment = yield* resolveEnvironmentEffect(
-					options.environment,
-				);
-
-				const deployResult: DeployResult = yield* applicationDeployEffect(
-					name,
-					{
-						configPath: options.config,
-						env: environment,
-						onProgress: follow ? emitDeployProgressAsStream : undefined,
-					},
-				);
-				const payload = buildDeployPayload(name, deployResult);
-
-				yield* Effect.sync(() => {
-					if (follow) {
-						emitStreamResult(command, payload, nextActions);
-						return;
-					}
-
-					emitSuccess(command, payload, nextActions);
-				});
-			}).pipe(
-				Effect.catchAll((error) =>
-					Effect.sync(() => {
-						if (follow) {
-							const mapped = mapRuntimeError(error);
-							emitStreamError(
-								command,
-								{ message: mapped.message, code: mapped.code },
-								mapped.fix,
-								nextActions,
-							);
-							return;
-						}
-
-						emitRuntimeError("applicationGroup", error);
-					}),
-				),
-			);
+		const deployResult: DeployResult = yield* applicationDeployEffect(opts.name, {
+			configPath: Option.getOrUndefined(opts.config),
+			env,
+			onProgress,
 		});
 
-	return app;
-}
+		const payload = buildDeployPayload(opts.name, deployResult);
+
+		if (follow) {
+			yield* writer.emitStreamResult(cmdStr, payload, nextActions);
+		} else {
+			yield* writer.emitSuccess(cmdStr, payload, nextActions);
+		}
+	}),
+).pipe(Command.withDescription("Deploy application (change status to ACTIVE)"));
+
+// ---------------------------------------------------------------------------
+// Parent command
+// ---------------------------------------------------------------------------
+
+const applicationParent = Command.make("application", {}, () =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		yield* writer.emitSuccess("godaddy application", {
+			command: "godaddy application",
+			description: "Manage applications",
+			commands: [
+				{ command: "godaddy application info <name>", description: "Show application information" },
+				{ command: "godaddy application list", description: "List all applications" },
+				{ command: "godaddy application validate <name>", description: "Validate application configuration" },
+				{ command: "godaddy application update <name>", description: "Update application configuration" },
+				{ command: "godaddy application enable <name> --store-id <storeId>", description: "Enable application on a store" },
+				{ command: "godaddy application disable <name> --store-id <storeId>", description: "Disable application on a store" },
+				{ command: "godaddy application archive <name>", description: "Archive application" },
+				{ command: "godaddy application init", description: "Initialize/create a new application" },
+				{ command: "godaddy application add", description: "Add configurations to application" },
+				{ command: "godaddy application release <name> --release-version <version>", description: "Create a new release" },
+				{ command: "godaddy application deploy <name> [--follow]", description: "Deploy application" },
+			],
+		}, appGroupActions);
+	}),
+).pipe(
+	Command.withDescription("Manage applications"),
+	Command.withSubcommands([
+		appInfo, appList, appValidate, appUpdate,
+		appEnable, appDisable, appArchive, appInit,
+		addGroup, appRelease, appDeploy,
+	]),
+);
+
+export const applicationCommand = applicationParent;

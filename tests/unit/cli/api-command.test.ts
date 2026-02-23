@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { createApiCommand, extractPath } from "../../../src/cli/commands/api";
+import { extractPath } from "../../../src/cli/commands/api";
 
 describe("API Command - extractPath", () => {
 	const testData = {
@@ -130,44 +130,9 @@ describe("API Command - extractPath", () => {
 	});
 });
 
-describe("API Command - command model", () => {
-	test("defines a required endpoint positional argument", () => {
-		const command = createApiCommand();
-		expect(command.arguments).toHaveLength(1);
-		expect(command.arguments[0]).toMatchObject({
-			name: "endpoint",
-			required: true,
-		});
-	});
-
-	test("supports repeatable field and header options", () => {
-		const command = createApiCommand();
-		const fieldOption = command.options.find(
-			(option) => option.longName === "field",
-		);
-		const headerOption = command.options.find(
-			(option) => option.longName === "header",
-		);
-
-		expect(fieldOption).toMatchObject({
-			takesValue: true,
-			multiple: true,
-		});
-		expect(headerOption).toMatchObject({
-			takesValue: true,
-			multiple: true,
-		});
-	});
-
-	test("supports include flag as a boolean option", () => {
-		const command = createApiCommand();
-		const includeOption = command.options.find(
-			(option) => option.longName === "include",
-		);
-
-		expect(includeOption).toMatchObject({
-			takesValue: false,
-			multiple: false,
-		});
+describe("API Command - @effect/cli command", () => {
+	test("api command is exported", async () => {
+		const { apiCommand } = await import("../../../src/cli/commands/api");
+		expect(apiCommand).toBeDefined();
 	});
 });

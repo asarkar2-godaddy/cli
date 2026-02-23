@@ -1,4 +1,8 @@
+import * as Args from "@effect/cli/Args";
+import * as Command from "@effect/cli/Command";
+import * as Options from "@effect/cli/Options";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import {
 	type HttpMethod,
 	apiRequestEffect,
@@ -7,12 +11,9 @@ import {
 	readBodyFromFileEffect,
 } from "../../core/api";
 import { ValidationError } from "../../effect/errors";
-import { getVerbosityLevel } from "../../services/logger";
-import { mapRuntimeError } from "../agent/errors";
-import { nextActionsFor } from "../agent/next-actions";
-import { commandIds } from "../agent/registry";
-import { currentCommandString, emitError, emitSuccess } from "../agent/respond";
-import { Command } from "../command-model";
+import { CliConfig } from "../services/cli-config";
+import { EnvelopeWriter } from "../services/envelope-writer";
+import type { NextAction } from "../agent/types";
 
 const VALID_METHODS: readonly HttpMethod[] = [
 	"GET",
@@ -22,8 +23,31 @@ const VALID_METHODS: readonly HttpMethod[] = [
 	"DELETE",
 ];
 
+// ---------------------------------------------------------------------------
+// Colocated next_actions
+// ---------------------------------------------------------------------------
+
+const apiRequestActions: NextAction[] = [
+	{
+		command: "godaddy api <endpoint>",
+		description: "Call another API endpoint",
+		params: {
+			endpoint: {
+				description: "Relative API endpoint (for example /v1/domains)",
+				required: true,
+			},
+		},
+	},
+	{ command: "godaddy auth status", description: "Check auth status" },
+	{ command: "godaddy env get", description: "Check active environment" },
+];
+
+// ---------------------------------------------------------------------------
+// extractPath — public for unit testing
+// ---------------------------------------------------------------------------
+
 /**
- * Extract a value from an object using a simple JSON path
+ * Extract a value from an object using a simple JSON path.
  * Supports: .key, .key.nested, .key[0], .key[0].nested
  */
 export function extractPath(obj: unknown, path: string): unknown {
@@ -72,129 +96,122 @@ export function extractPath(obj: unknown, path: string): unknown {
 	return current;
 }
 
-function normalizeStringArray(value: unknown): string[] {
-	if (Array.isArray(value)) {
-		return value.filter((entry): entry is string => typeof entry === "string");
-	}
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-	if (typeof value === "string") {
-		return [value];
-	}
-
-	return [];
+function normalizeStringArray(value: ReadonlyArray<string>): string[] {
+	return value.filter((entry): entry is string => typeof entry === "string");
 }
 
-interface ApiCommandOptions {
-	method?: string;
-	field?: string[];
-	file?: string;
-	header?: string[];
-	query?: string;
-	include?: boolean;
-}
+// ---------------------------------------------------------------------------
+// Command
+// ---------------------------------------------------------------------------
 
-export function createApiCommand(): Command {
-	return new Command("api")
-		.description("Make authenticated requests to the GoDaddy API")
-		.argument("<endpoint>", "API endpoint (for example: /v1/domains)")
-		.option(
-			"-X, --method <method>",
-			"HTTP method (GET, POST, PUT, PATCH, DELETE)",
-		)
-		.option(
-			"-f, --field <key=value>",
-			"Add request body field (can be repeated)",
-			undefined,
-			true,
-		)
-		.option("-F, --file <path>", "Read request body from JSON file")
-		.option(
-			"-H, --header <header>",
-			"Add custom header (can be repeated)",
-			undefined,
-			true,
-		)
-		.option(
-			"-q, --query <path>",
-			"Extract a value from response JSON (for example: .data[0].id)",
-		)
-		.option("-i, --include", "Include response headers in result")
-		.action((endpoint: string, rawOptions: unknown) =>
-			Effect.gen(function* () {
-				const options = (rawOptions ?? {}) as ApiCommandOptions;
-				const methodInput = (options.method ?? "GET").toUpperCase();
+const apiCommand = Command.make(
+	"api",
+	{
+		endpoint: Args.text({ name: "endpoint" }).pipe(
+			Args.withDescription("API endpoint (for example: /v1/domains)"),
+		),
+		method: Options.text("method").pipe(
+			Options.withAlias("X"),
+			Options.withDescription("HTTP method (GET, POST, PUT, PATCH, DELETE)"),
+			Options.withDefault("GET"),
+		),
+		field: Options.text("field").pipe(
+			Options.withAlias("f"),
+			Options.withDescription("Add request body field (can be repeated)"),
+			Options.repeated,
+		),
+		file: Options.text("file").pipe(
+			Options.withAlias("F"),
+			Options.withDescription("Read request body from JSON file"),
+			Options.optional,
+		),
+		header: Options.text("header").pipe(
+			Options.withAlias("H"),
+			Options.withDescription("Add custom header (can be repeated)"),
+			Options.repeated,
+		),
+		query: Options.text("query").pipe(
+			Options.withAlias("q"),
+			Options.withDescription(
+				"Extract a value from response JSON (for example: .data[0].id)",
+			),
+			Options.optional,
+		),
+		include: Options.boolean("include").pipe(
+			Options.withAlias("i"),
+			Options.withDescription("Include response headers in result"),
+		),
+	},
+	(config) =>
+		Effect.gen(function* () {
+			const writer = yield* EnvelopeWriter;
+			const cliConfig = yield* CliConfig;
+			const methodInput = config.method.toUpperCase();
 
-				if (!VALID_METHODS.includes(methodInput as HttpMethod)) {
+			if (!VALID_METHODS.includes(methodInput as HttpMethod)) {
+				return yield* Effect.fail(
+					new ValidationError({
+						message: `Invalid HTTP method: ${config.method}`,
+						userMessage: `Method must be one of: ${VALID_METHODS.join(", ")}`,
+					}),
+				);
+			}
+
+			const method = methodInput as HttpMethod;
+			const fields = yield* parseFieldsEffect(normalizeStringArray(config.field));
+			const headers = yield* parseHeadersEffect(
+				normalizeStringArray(config.header),
+			);
+
+			let body: string | undefined;
+			const filePath = Option.getOrUndefined(config.file);
+			if (typeof filePath === "string" && filePath.length > 0) {
+				body = yield* readBodyFromFileEffect(filePath);
+			}
+
+			const response = yield* apiRequestEffect({
+				endpoint: config.endpoint,
+				method,
+				fields: Object.keys(fields).length > 0 ? fields : undefined,
+				body,
+				headers: Object.keys(headers).length > 0 ? headers : undefined,
+				debug: cliConfig.verbosity >= 2,
+			});
+
+			let output = response.data;
+			const queryPath = Option.getOrUndefined(config.query);
+			if (typeof queryPath === "string" && output !== undefined) {
+				try {
+					output = extractPath(output, queryPath);
+				} catch (error) {
+					const message =
+						error instanceof Error ? error.message : String(error);
 					return yield* Effect.fail(
 						new ValidationError({
-							message: `Invalid HTTP method: ${options.method ?? ""}`,
-							userMessage: `Method must be one of: ${VALID_METHODS.join(", ")}`,
+							message: `Invalid query path: ${queryPath}`,
+							userMessage: `Query error: ${message}`,
 						}),
 					);
 				}
+			}
 
-				const method = methodInput as HttpMethod;
-				const fields = yield* parseFieldsEffect(
-					normalizeStringArray(options.field),
-				);
-				const headers = yield* parseHeadersEffect(
-					normalizeStringArray(options.header),
-				);
+			yield* writer.emitSuccess("godaddy api", {
+				endpoint: config.endpoint.startsWith("/")
+					? config.endpoint
+					: `/${config.endpoint}`,
+				method,
+				status: response.status,
+				status_text: response.statusText,
+				headers: config.include ? response.headers : undefined,
+				data: output ?? null,
+			}, apiRequestActions);
+		}),
+).pipe(
+	Command.withDescription("Make authenticated requests to the GoDaddy API"),
+);
 
-				let body: string | undefined;
-				if (typeof options.file === "string" && options.file.length > 0) {
-					body = yield* readBodyFromFileEffect(options.file);
-				}
-
-				const response = yield* apiRequestEffect({
-					endpoint,
-					method,
-					fields: Object.keys(fields).length > 0 ? fields : undefined,
-					body,
-					headers: Object.keys(headers).length > 0 ? headers : undefined,
-					debug: getVerbosityLevel() >= 2,
-				});
-
-				let output = response.data;
-				if (typeof options.query === "string" && output !== undefined) {
-					try {
-						output = extractPath(output, options.query);
-					} catch (error) {
-						const message =
-							error instanceof Error ? error.message : String(error);
-						return yield* Effect.fail(
-							new ValidationError({
-								message: `Invalid query path: ${options.query}`,
-								userMessage: `Query error: ${message}`,
-							}),
-						);
-					}
-				}
-
-				emitSuccess(
-					currentCommandString(),
-					{
-						endpoint: endpoint.startsWith("/") ? endpoint : `/${endpoint}`,
-						method,
-						status: response.status,
-						status_text: response.statusText,
-						headers: options.include ? response.headers : undefined,
-						data: output ?? null,
-					},
-					nextActionsFor(commandIds.apiRequest),
-				);
-			}).pipe(
-				Effect.catchAll((error) =>
-					Effect.sync(() => {
-						const mapped = mapRuntimeError(error);
-						emitError(
-							currentCommandString(),
-							{ message: mapped.message, code: mapped.code },
-							mapped.fix,
-							nextActionsFor(commandIds.apiRequest),
-						);
-					}),
-				),
-			),
-		);
-}
+export { apiCommand };

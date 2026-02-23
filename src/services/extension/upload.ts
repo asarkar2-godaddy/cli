@@ -6,8 +6,8 @@
 import { getLogger } from "@/services/logger";
 import * as Effect from "effect/Effect";
 import { NetworkError } from "../../effect/errors";
-import { FileSystem } from "../../effect/services/filesystem";
-import { HttpClient } from "../../effect/services/http";
+import { FileSystem } from "@effect/platform/FileSystem";
+import { Fetch } from "@effect/platform/FetchHttpClient";
 import type { UploadTarget } from "./presigned-url";
 
 const logger = getLogger();
@@ -54,26 +54,23 @@ export function uploadArtifactEffect(
 	target: UploadTarget,
 	filePath: string,
 	options: UploadOptions = {},
-): Effect.Effect<UploadResult, NetworkError, FileSystem | HttpClient> {
+): Effect.Effect<UploadResult, NetworkError, FileSystem | Fetch> {
 	return Effect.gen(function* () {
 		const fs = yield* FileSystem;
-		const httpClient = yield* HttpClient;
+		const fetch = yield* Fetch;
 		const maxRetries = options.maxRetries ?? 3;
 		const baseDelay = options.baseDelayMs ?? 250;
 		const _contentType = options.contentType ?? "application/javascript";
 
-		// Read file content synchronously via FileSystem service
-		let fileContent: string;
-		try {
-			fileContent = fs.readFileSync(filePath, "utf-8");
-		} catch (error) {
-			return yield* Effect.fail(
+		// Read file content via platform FileSystem service
+		const fileContent = yield* fs.readFileString(filePath).pipe(
+			Effect.mapError((error) =>
 				new NetworkError({
-					message: `Failed to read artifact file: ${error instanceof Error ? error.message : String(error)}`,
+					message: `Failed to read artifact file: ${error.message}`,
 					userMessage: "Failed to upload extension artifact",
 				}),
-			);
-		}
+			),
+		);
 
 		const fileBuffer = Buffer.from(fileContent);
 		const sizeBytes = fileBuffer.byteLength;
@@ -118,7 +115,7 @@ export function uploadArtifactEffect(
 
 			const fetchResult = yield* Effect.tryPromise({
 				try: () =>
-					httpClient.fetch(target.url, {
+					fetch(target.url, {
 						method: "PUT",
 						headers,
 						body: fileBuffer,

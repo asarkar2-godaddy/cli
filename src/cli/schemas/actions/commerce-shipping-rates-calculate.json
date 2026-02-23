@@ -1,0 +1,321 @@
+{
+  "name": "commerce.shipping-rates.calculate",
+  "description": "Calculate shipping rates for a shipment with multiple items",
+  "requestSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "commerce.shipping-rates.calculate:request",
+    "type": "object",
+    "properties": {
+      "origin": {
+        "$ref": "#/definitions/address"
+      },
+      "destination": {
+        "$ref": "#/definitions/address"
+      },
+      "items": {
+        "type": "array",
+        "description": "The items to ship",
+        "minItems": 1,
+        "items": {
+          "$ref": "#/definitions/shipmentItem"
+        }
+      },
+      "packages": {
+        "type": "array",
+        "description": "Optionally supply the items pre-packaged for shipment.",
+        "items": {
+          "$ref": "#/definitions/dimensions"
+        }
+      },
+      "orderTotal": {
+        "$ref": "#/definitions/money",
+        "description": "The total order amount, excluding tax."
+      }
+    },
+    "required": [
+      "origin",
+      "destination",
+      "items"
+    ],
+    "additionalProperties": false,
+    "definitions": {
+      "address": {
+        "type": "object",
+        "properties": {
+          "addressLine1": {
+            "type": "string",
+            "description": "The first line of the address. For example, number and street name."
+          },
+          "addressLine2": {
+            "type": "string",
+            "description": "The second line of the address. For example, office suite or apartment number."
+          },
+          "addressLine3": {
+            "type": "string",
+            "description": "The third line of the address, if needed."
+          },
+          "adminArea1": {
+            "type": "string",
+            "description": "The highest level sub-division in a country, which is usually a province, state, or ISO-3166-2 subdivision; formatted for postal delivery."
+          },
+          "adminArea2": {
+            "type": "string",
+            "description": "The city, town, or village. Smaller than `adminArea1`."
+          },
+          "adminArea3": {
+            "type": "string",
+            "description": "The sub-locality, suburb, neighborhood, or district. Smaller than `adminArea2`."
+          },
+          "adminArea4": {
+            "type": "string",
+            "description": "The neighborhood, ward, or district. Smaller than `adminArea3` or `subLocality`."
+          },
+          "countryCode": {
+            "type": "string",
+            "description": "The [two-character ISO 3166-1 code](https://en.wikipedia.org/wiki/ISO_3166-1) that identifies the country or region."
+          },
+          "postalCode": {
+            "type": "string",
+            "description": "The postal code, which is the zip code or equivalent."
+          }
+        },
+        "additionalProperties": false
+      },
+      "package": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "maxWeight": {
+            "$ref": "#/definitions/weight",
+            "description": "Maximum weight of the package"
+          },
+          "dimensions": {
+            "$ref": "#/definitions/dimensions",
+            "description": "Dimensions of the package"
+          },
+          "items": {
+            "type": "array",
+            "description": "Items contained in the package",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "sku": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Quantity of the item in the package"
+                }
+              },
+              "required": [
+                "sku",
+                "quantity"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "name",
+          "maxWeight",
+          "dimensions",
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "dimensions": {
+        "type": "object",
+        "properties": {
+          "units": {
+            "type": "string",
+            "enum": [
+              "INCHES",
+              "CENTIMETERS"
+            ],
+            "description": "Units for package dimensions"
+          },
+          "length": {
+            "type": "number",
+            "description": "Length of the package"
+          },
+          "width": {
+            "type": "number",
+            "description": "Width of the package"
+          },
+          "height": {
+            "type": "number",
+            "description": "Height of the package"
+          },
+          "weight": {
+            "$ref": "#/definitions/weight"
+          }
+        },
+        "required": [
+          "units",
+          "length",
+          "width",
+          "height",
+          "weight"
+        ],
+        "additionalProperties": false
+      },
+      "weight": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "number",
+            "description": "Weight value"
+          },
+          "units": {
+            "type": "string",
+            "enum": [
+              "OUNCES",
+              "POUNDS",
+              "GRAMS",
+              "KILOGRAMS"
+            ],
+            "description": "Units for weight measurement"
+          }
+        },
+        "required": [
+          "value",
+          "units"
+        ],
+        "additionalProperties": false
+      },
+      "shipmentItem": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer"
+          },
+          "price": {
+            "$ref": "#/definitions/money"
+          },
+          "dimensions": {
+            "$ref": "#/definitions/dimensions"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "money": {
+        "type": "object",
+        "properties": {
+          "currencyCode": {
+            "type": "string",
+            "description": "Three-letter ISO currency code (e.g., USD, EUR, GBP)"
+          },
+          "value": {
+            "type": "number",
+            "description": "The monetary amount"
+          }
+        },
+        "required": [
+          "currencyCode",
+          "value"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "responseSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "commerce.shipping-rates.calculate:response",
+    "type": "object",
+    "properties": {
+      "rates": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/shippingRate"
+        },
+        "description": "Available shipping rates that match the request criteria"
+      }
+    },
+    "required": [
+      "status",
+      "rates"
+    ],
+    "additionalProperties": false,
+    "definitions": {
+      "shippingRate": {
+        "type": "object",
+        "properties": {
+          "carrierCode": {
+            "type": "string",
+            "description": "Code identifying the carrier (e.g., UPS, USPS, FedEx)"
+          },
+          "serviceCode": {
+            "type": "string",
+            "description": "Code identifying the specific service offered by the carrier"
+          },
+          "displayName": {
+            "type": "string",
+            "description": "Human-readable name of the shipping service"
+          },
+          "description": {
+            "type": "string",
+            "description": "Additional details about the shipping service, such as estimated delivery timeframe"
+          },
+          "minDeliveryDate": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Earliest estimated delivery date and time"
+          },
+          "maxDeliveryDate": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Latest estimated delivery date and time"
+          },
+          "cost": {
+            "$ref": "#/definitions/money",
+            "description": "The cost of the shipping service"
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of features included with this shipping rate (e.g., tracking, insurance)"
+          }
+        },
+        "required": [
+          "carrierCode",
+          "serviceCode",
+          "displayName",
+          "cost"
+        ],
+        "additionalProperties": false
+      },
+      "money": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "description": "Three-letter ISO currency code (e.g., USD, EUR, GBP)"
+          },
+          "amount": {
+            "type": "number",
+            "description": "The monetary amount"
+          }
+        },
+        "required": [
+          "currency",
+          "amount"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

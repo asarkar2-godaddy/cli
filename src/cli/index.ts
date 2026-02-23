@@ -1,10 +1,11 @@
 /**
- * CLI command model exports
+ * CLI command exports — @effect/cli native commands.
  */
 
-export * from "./types";
-export { createEnvCommand } from "./commands/env";
-export { createAuthCommand } from "./commands/auth";
-export { createWebhookCommand } from "./commands/webhook";
-export { createActionsCommand } from "./commands/actions";
-export { createApplicationCommand } from "./commands/application";
+export { envCommand } from "./commands/env";
+export { authCommand } from "./commands/auth";
+export { webhookCommand } from "./commands/webhook";
+export { actionsCommand } from "./commands/actions";
+export { applicationCommand } from "./commands/application";
+export { EnvelopeWriter, EnvelopeWriterLive, makeTestEnvelopeWriter } from "./services/envelope-writer";
+export { CliConfig, makeCliConfigLayer } from "./services/cli-config";

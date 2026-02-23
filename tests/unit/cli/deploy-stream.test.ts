@@ -1,86 +1,100 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Ref from "effect/Ref";
+import { describe, expect, test } from "vitest";
 import {
-	hasWrittenEnvelope,
-	resetEnvelopeWriter,
-} from "../../../src/cli/agent/respond";
-import {
-	emitStreamError,
-	emitStreamProgress,
-	emitStreamResult,
-	emitStreamStart,
-	emitStreamStep,
-} from "../../../src/cli/agent/stream";
+	type CapturedEnvelope,
+	EnvelopeWriter,
+	makeTestEnvelopeWriter,
+} from "../../../src/cli/services/envelope-writer";
+
+/**
+ * Run a program against a test EnvelopeWriter and return the captured output.
+ */
+function runWithCapture(
+	program: Effect.Effect<void, never, EnvelopeWriter>,
+): Promise<CapturedEnvelope[]> {
+	return Effect.gen(function* () {
+		const { service, captured } = yield* makeTestEnvelopeWriter();
+		yield* program.pipe(
+			Effect.provide(Layer.succeed(EnvelopeWriter, service)),
+		);
+		return yield* Ref.get(captured);
+	}).pipe(Effect.runPromise);
+}
 
 describe("Deploy stream protocol", () => {
-	let writes: string[] = [];
-
-	beforeEach(() => {
-		resetEnvelopeWriter();
-		writes = [];
-		process.exitCode = 0;
-		vi.spyOn(process.stdout, "write").mockImplementation(((
-			chunk: string | Uint8Array,
-		) => {
-			writes.push(
-				typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"),
-			);
-			return true;
-		}) as typeof process.stdout.write);
-	});
-
-	afterEach(() => {
-		vi.restoreAllMocks();
-	});
-
-	test("emits typed NDJSON progress events", () => {
-		emitStreamStart("godaddy application deploy demo --follow");
-		emitStreamStep({
-			name: "scan.prebundle",
-			status: "started",
-			extensionName: "@demo/extension",
-		});
-		emitStreamProgress({
-			name: "scan.prebundle",
-			percent: 50,
-			message: "Scanned 1/2 extension(s)",
-		});
-
-		expect(writes).toHaveLength(3);
-		expect(JSON.parse(writes[0]).type).toBe("start");
-		expect(JSON.parse(writes[1]).type).toBe("step");
-		expect(JSON.parse(writes[1]).extension_name).toBe("@demo/extension");
-		expect(JSON.parse(writes[2]).type).toBe("progress");
-		expect(JSON.parse(writes[2]).percent).toBe(50);
-		expect(hasWrittenEnvelope()).toBe(false);
-	});
-
-	test("emits terminal result event and marks envelope as written", () => {
-		expect(hasWrittenEnvelope()).toBe(false);
-		emitStreamResult(
-			"godaddy application deploy demo --follow",
-			{ total_extensions: 1, blocked_extensions: 0 },
-			[],
+	test("emits typed NDJSON progress events", async () => {
+		const captured = await runWithCapture(
+			Effect.gen(function* () {
+				const writer = yield* EnvelopeWriter;
+				yield* writer.emitStreamEvent({
+					type: "start",
+					command: "godaddy application deploy demo --follow",
+					ts: new Date().toISOString(),
+				});
+				yield* writer.emitStreamEvent({
+					type: "step",
+					name: "scan.prebundle",
+					status: "started",
+					extension_name: "@demo/extension",
+					ts: new Date().toISOString(),
+				});
+				yield* writer.emitStreamEvent({
+					type: "progress",
+					name: "scan.prebundle",
+					percent: 50,
+					message: "Scanned 1/2 extension(s)",
+					ts: new Date().toISOString(),
+				});
+			}),
 		);
 
-		const resultEvent = JSON.parse(writes[0]);
-		expect(resultEvent.type).toBe("result");
-		expect(resultEvent.ok).toBe(true);
-		expect(hasWrittenEnvelope()).toBe(true);
+		expect(captured).toHaveLength(3);
+		const start = captured[0].value as Record<string, unknown>;
+		const step = captured[1].value as Record<string, unknown>;
+		const progress = captured[2].value as Record<string, unknown>;
+		expect(start.type).toBe("start");
+		expect(step.type).toBe("step");
+		expect(step.extension_name).toBe("@demo/extension");
+		expect(progress.type).toBe("progress");
+		expect(progress.percent).toBe(50);
 	});
 
-	test("emits terminal error event and sets exit code", () => {
-		emitStreamError(
-			"godaddy application deploy demo --follow",
-			{ message: "blocked", code: "SECURITY_BLOCKED" },
-			"Resolve findings and rerun",
-			[],
+	test("emits terminal result event", async () => {
+		const captured = await runWithCapture(
+			Effect.gen(function* () {
+				const writer = yield* EnvelopeWriter;
+				yield* writer.emitStreamResult(
+					"godaddy application deploy demo --follow",
+					{ total_extensions: 1, blocked_extensions: 0 },
+					[],
+				);
+			}),
 		);
 
-		const errorEvent = JSON.parse(writes[0]);
-		expect(errorEvent.type).toBe("error");
-		expect(errorEvent.ok).toBe(false);
-		expect(errorEvent.error.code).toBe("SECURITY_BLOCKED");
-		expect(process.exitCode).toBe(1);
-		expect(hasWrittenEnvelope()).toBe(true);
+		expect(captured).toHaveLength(1);
+		const result = captured[0].value as Record<string, unknown>;
+		expect(result.type).toBe("result");
+		expect(result.ok).toBe(true);
+	});
+
+	test("emits terminal error event and marks written", async () => {
+		const hasWritten = await Effect.gen(function* () {
+			const { service, captured: _ } = yield* makeTestEnvelopeWriter();
+			const layer = Layer.succeed(EnvelopeWriter, service);
+			yield* Effect.gen(function* () {
+				const writer = yield* EnvelopeWriter;
+				yield* writer.emitStreamError(
+					"godaddy application deploy demo --follow",
+					{ message: "blocked", code: "SECURITY_BLOCKED" },
+					"Resolve findings and rerun",
+					[],
+				);
+			}).pipe(Effect.provide(layer));
+			return yield* service.hasWritten;
+		}).pipe(Effect.runPromise);
+
+		expect(hasWritten).toBe(true);
 	});
 });

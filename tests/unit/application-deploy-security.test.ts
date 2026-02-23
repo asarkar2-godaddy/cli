@@ -88,7 +88,7 @@ describe("Application Deploy with Security Scanning", () => {
 		// Setup spy for getExtensionsFromConfig (will be configured per test)
 		getExtensionsFromConfigSpy = vi.spyOn(
 			configService,
-			"getExtensionsFromConfig",
+			"getExtensionsFromConfigEffect",
 		);
 
 		// Mock presigned URL generation
@@ -148,7 +148,7 @@ exec('rm -rf /'); // SEC001 violation
 					targets: [{ target: "body.start" }],
 				},
 			];
-			getExtensionsFromConfigSpy.mockReturnValue(extensions);
+			getExtensionsFromConfigSpy.mockReturnValue(Effect.succeed(extensions));
 
 			const exit = await runEffectExit(applicationDeployEffect("test-app"));
 			const err = extractFailure(exit) as { userMessage: string };
@@ -210,7 +210,7 @@ export function greet(name: string) {
 					targets: [{ target: "body.end" }],
 				},
 			];
-			getExtensionsFromConfigSpy.mockReturnValue(extensions);
+			getExtensionsFromConfigSpy.mockReturnValue(Effect.succeed(extensions));
 
 			const result = await runEffect(
 				applicationDeployEffect("test-app", {
@@ -290,7 +290,7 @@ export function func${i}() {
 			}
 
 			// Mock config to return the extensions
-			getExtensionsFromConfigSpy.mockReturnValue(extensions);
+			getExtensionsFromConfigSpy.mockReturnValue(Effect.succeed(extensions));
 
 			const result = await runEffect(applicationDeployEffect("test-app"));
 
@@ -353,7 +353,7 @@ exec('dangerous command'); // SEC001
 					targets: [{ target: "body.end" }],
 				},
 			];
-			getExtensionsFromConfigSpy.mockReturnValue(extensions);
+			getExtensionsFromConfigSpy.mockReturnValue(Effect.succeed(extensions));
 
 			// Deployment should be blocked
 			const exit = await runEffectExit(applicationDeployEffect("test-app"));
@@ -373,7 +373,7 @@ exec('dangerous command'); // SEC001
 
 		try {
 			// Mock config to return no extensions
-			getExtensionsFromConfigSpy.mockReturnValue([]);
+			getExtensionsFromConfigSpy.mockReturnValue(Effect.succeed([]));
 
 			const result = await runEffect(applicationDeployEffect("test-app"));
 
@@ -406,7 +406,7 @@ export function run() {
 `,
 			);
 
-			getExtensionsFromConfigSpy.mockReturnValue([
+			getExtensionsFromConfigSpy.mockReturnValue(Effect.succeed([
 				{
 					type: "embed",
 					name: "@test/extension-upload-fail",
@@ -414,7 +414,7 @@ export function run() {
 					source: "index.ts",
 					targets: [{ target: "body.start" }],
 				},
-			]);
+			]));
 
 			const artifactPath = join(testDir, "upload-fail.bundle.mjs");
 			const sourcemapPath = `${artifactPath}.map`;

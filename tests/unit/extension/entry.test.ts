@@ -96,7 +96,7 @@ describe("Extension Entry Point Resolution", () => {
 				},
 			};
 
-			const result = resolveEntryPoint({ packageDir: tempDir, packageJson }, nodeFs);
+			const result = resolveEntryPoint({ packageDir: tempDir, packageJson });
 
 			expect(result.entryPath).toBe(entryPath);
 			expect(result.sourceType).toBe("module");
@@ -113,7 +113,7 @@ describe("Extension Entry Point Resolution", () => {
 				module: "./src/index.ts",
 			};
 
-			const result = resolveEntryPoint({ packageDir: tempDir, packageJson }, nodeFs);
+			const result = resolveEntryPoint({ packageDir: tempDir, packageJson });
 
 			expect(result.entryPath).toBe(entryPath);
 			expect(result.sourceType).toBe("module");
@@ -128,7 +128,7 @@ describe("Extension Entry Point Resolution", () => {
 				main: "./index.js",
 			};
 
-			const result = resolveEntryPoint({ packageDir: tempDir, packageJson }, nodeFs);
+			const result = resolveEntryPoint({ packageDir: tempDir, packageJson });
 
 			expect(result.entryPath).toBe(entryPath);
 			expect(result.sourceType).toBe("commonjs");
@@ -143,7 +143,7 @@ describe("Extension Entry Point Resolution", () => {
 				exports: "./index.ts",
 			};
 
-			const result = resolveEntryPoint({ packageDir: tempDir, packageJson }, nodeFs);
+			const result = resolveEntryPoint({ packageDir: tempDir, packageJson });
 
 			expect(result.entryPath).toBe(entryPath);
 			expect(result.resolvedFrom).toBe("exports");
@@ -265,7 +265,7 @@ describe("Extension Entry Point Resolution", () => {
 				module: "./src/module.ts",
 			};
 
-			const result = resolveEntryPoint({ packageDir: tempDir, packageJson }, nodeFs);
+			const result = resolveEntryPoint({ packageDir: tempDir, packageJson });
 
 			expect(result.entryPath).toBe(exportsPath);
 			expect(result.resolvedFrom).toBe("exports.import");
@@ -284,7 +284,7 @@ describe("Extension Entry Point Resolution", () => {
 				main: "./src/main.js",
 			};
 
-			const result = resolveEntryPoint({ packageDir: tempDir, packageJson }, nodeFs);
+			const result = resolveEntryPoint({ packageDir: tempDir, packageJson });
 
 			expect(result.entryPath).toBe(modulePath);
 			expect(result.resolvedFrom).toBe("module");
@@ -302,7 +302,7 @@ describe("Extension Entry Point Resolution", () => {
 				main: "./main.js",
 			};
 
-			const result = resolveEntryPoint({ packageDir: tempDir, packageJson }, nodeFs);
+			const result = resolveEntryPoint({ packageDir: tempDir, packageJson });
 
 			expect(result.entryPath).toBe(mainPath);
 			expect(result.resolvedFrom).toBe("main");
@@ -328,7 +328,7 @@ describe("Extension Entry Point Resolution", () => {
 
 			// Should continue to next priority, then throw because nothing found
 			expect(() =>
-				resolveEntryPoint({ packageDir: tempDir, packageJson }, nodeFs),
+				resolveEntryPoint({ packageDir: tempDir, packageJson }),
 			).toThrow("No entry point found");
 		});
 
@@ -341,7 +341,7 @@ describe("Extension Entry Point Resolution", () => {
 				main: "./index.js",
 			};
 
-			const result = resolveEntryPoint({ packageDir: tempDir, packageJson }, nodeFs);
+			const result = resolveEntryPoint({ packageDir: tempDir, packageJson });
 
 			expect(result.sourceType).toBe("module");
 		});
@@ -362,7 +362,7 @@ describe("Extension Entry Point Resolution", () => {
 				},
 			};
 
-			const result = resolveEntryPoint({ packageDir: tempDir, packageJson }, nodeFs);
+			const result = resolveEntryPoint({ packageDir: tempDir, packageJson });
 
 			expect(result.entryPath).toBe(entryPath);
 			expect(result.resolvedFrom).toBe("exports.import");

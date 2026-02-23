@@ -1,3 +1,4 @@
+import * as Command from "@effect/cli/Command";
 import * as Effect from "effect/Effect";
 import {
 	authLoginEffect,
@@ -5,124 +6,138 @@ import {
 	authStatusEffect,
 } from "../../core/auth";
 import { envGetEffect } from "../../core/environment";
-import { mapRuntimeError } from "../agent/errors";
-import { nextActionsFor } from "../agent/next-actions";
-import {
-	commandIds,
-	findRegistryNodeById,
-	registryNodeToResult,
-} from "../agent/registry";
-import { currentCommandString, emitError, emitSuccess } from "../agent/respond";
-import { Command } from "../command-model";
+import { EnvelopeWriter } from "../services/envelope-writer";
+import type { NextAction } from "../agent/types";
 
-function emitAuthError(error: unknown): void {
-	const mapped = mapRuntimeError(error);
-	emitError(
-		currentCommandString(),
-		{ message: mapped.message, code: mapped.code },
-		mapped.fix,
-		nextActionsFor(commandIds.authGroup),
-	);
+// ---------------------------------------------------------------------------
+// Colocated next_actions
+// ---------------------------------------------------------------------------
+
+const authGroupActions: NextAction[] = [
+	{ command: "godaddy auth login", description: "Login" },
+	{ command: "godaddy auth status", description: "Check auth status" },
+];
+
+const authLoginActions: NextAction[] = [
+	{
+		command: "godaddy auth status",
+		description: "Verify current authentication status",
+	},
+	{
+		command: "godaddy application list",
+		description: "List applications for the active account",
+	},
+	{ command: "godaddy auth logout", description: "Logout" },
+];
+
+const authLogoutActions: NextAction[] = [
+	{ command: "godaddy auth login", description: "Authenticate again" },
+	{ command: "godaddy auth status", description: "Check auth status" },
+];
+
+function authStatusActions(authenticated: boolean): NextAction[] {
+	if (!authenticated) {
+		return [
+			{
+				command: "godaddy auth login",
+				description: "Authenticate with GoDaddy",
+			},
+			{
+				command: "godaddy env get",
+				description: "Check the active environment",
+			},
+		];
+	}
+	return [
+		{ command: "godaddy application list", description: "List applications" },
+		{ command: "godaddy env get", description: "Check active environment" },
+	];
 }
 
-export function createAuthCommand(): Command {
-	const auth = new Command("auth").description(
-		"Manage authentication with GoDaddy Developer Platform",
-	);
+// ---------------------------------------------------------------------------
+// Subcommands
+// ---------------------------------------------------------------------------
 
-	auth.action(() =>
-		Effect.sync(() => {
-			const node = findRegistryNodeById(commandIds.authGroup);
-			if (!node) {
-				const mapped = mapRuntimeError(
-					new Error("Auth command registry metadata is missing"),
-				);
-				emitError(
-					currentCommandString(),
-					{ message: mapped.message, code: mapped.code },
-					mapped.fix,
-					nextActionsFor(commandIds.root),
-				);
-				return;
-			}
+const authLogin = Command.make(
+	"login",
+	{},
+	() =>
+		Effect.gen(function* () {
+			const writer = yield* EnvelopeWriter;
+			const loginResult = yield* authLoginEffect();
+			const environment = yield* envGetEffect().pipe(
+				Effect.map(String),
+				Effect.orElseSucceed(() => "unknown"),
+			);
 
-			emitSuccess(
-				currentCommandString(),
-				registryNodeToResult(node),
-				nextActionsFor(commandIds.authGroup),
+			yield* writer.emitSuccess("godaddy auth login", {
+				authenticated: loginResult.success,
+				environment,
+				expires_at: loginResult.expiresAt?.toISOString(),
+			}, authLoginActions);
+		}),
+).pipe(Command.withDescription("Login to GoDaddy Developer Platform"));
+
+const authLogout = Command.make(
+	"logout",
+	{},
+	() =>
+		Effect.gen(function* () {
+			const writer = yield* EnvelopeWriter;
+			yield* authLogoutEffect();
+			const environment = yield* envGetEffect().pipe(
+				Effect.map(String),
+				Effect.orElseSucceed(() => "unknown"),
+			);
+
+			yield* writer.emitSuccess(
+				"godaddy auth logout",
+				{ authenticated: false, environment },
+				authLogoutActions,
 			);
 		}),
-	);
+).pipe(Command.withDescription("Logout and clear stored credentials"));
 
-	auth
-		.command("login")
-		.description("Login to GoDaddy Developer Platform")
-		.action(() =>
-			Effect.gen(function* () {
-				const loginResult = yield* authLoginEffect();
-				const environment = yield* envGetEffect().pipe(
-					Effect.map(String),
-					Effect.orElseSucceed(() => "unknown"),
-				);
+const authStatus = Command.make(
+	"status",
+	{},
+	() =>
+		Effect.gen(function* () {
+			const writer = yield* EnvelopeWriter;
+			const status = yield* authStatusEffect();
 
-				emitSuccess(
-					currentCommandString(),
-					{
-						authenticated: loginResult.success,
-						environment,
-						expires_at: loginResult.expiresAt?.toISOString(),
-					},
-					nextActionsFor(commandIds.authLogin),
-				);
-			}).pipe(
-				Effect.catchAll((error) => Effect.sync(() => emitAuthError(error))),
-			),
-		);
+			yield* writer.emitSuccess("godaddy auth status", {
+				authenticated: status.authenticated,
+				has_token: status.hasToken,
+				token_expiry: status.tokenExpiry?.toISOString(),
+				environment: status.environment,
+			}, authStatusActions(status.authenticated));
+		}),
+).pipe(Command.withDescription("Check authentication status"));
 
-	auth
-		.command("logout")
-		.description("Logout and clear stored credentials")
-		.action(() =>
-			Effect.gen(function* () {
-				yield* authLogoutEffect();
-				const environment = yield* envGetEffect().pipe(
-					Effect.map(String),
-					Effect.orElseSucceed(() => "unknown"),
-				);
+// ---------------------------------------------------------------------------
+// Parent command
+// ---------------------------------------------------------------------------
 
-				emitSuccess(
-					currentCommandString(),
-					{ authenticated: false, environment },
-					nextActionsFor(commandIds.authLogout),
-				);
-			}).pipe(
-				Effect.catchAll((error) => Effect.sync(() => emitAuthError(error))),
-			),
-		);
+const authParent = Command.make(
+	"auth",
+	{},
+	() =>
+		Effect.gen(function* () {
+			const writer = yield* EnvelopeWriter;
+			yield* writer.emitSuccess("godaddy auth", {
+				command: "godaddy auth",
+				description: "Manage authentication with GoDaddy Developer Platform",
+				commands: [
+					{ command: "godaddy auth login", description: "Login to GoDaddy Developer Platform", usage: "godaddy auth login" },
+					{ command: "godaddy auth logout", description: "Logout and clear stored credentials", usage: "godaddy auth logout" },
+					{ command: "godaddy auth status", description: "Check authentication status", usage: "godaddy auth status" },
+				],
+			}, authGroupActions);
+		}),
+).pipe(
+	Command.withDescription("Manage authentication with GoDaddy Developer Platform"),
+	Command.withSubcommands([authLogin, authLogout, authStatus]),
+);
 
-	auth
-		.command("status")
-		.description("Check authentication status")
-		.action(() =>
-			Effect.gen(function* () {
-				const status = yield* authStatusEffect();
-
-				emitSuccess(
-					currentCommandString(),
-					{
-						authenticated: status.authenticated,
-						has_token: status.hasToken,
-						token_expiry: status.tokenExpiry?.toISOString(),
-						environment: status.environment,
-					},
-					nextActionsFor(commandIds.authStatus, {
-						authenticated: status.authenticated,
-					}),
-				);
-			}).pipe(
-				Effect.catchAll((error) => Effect.sync(() => emitAuthError(error))),
-			),
-		);
-
-	return auth;
-}
+export const authCommand = authParent;

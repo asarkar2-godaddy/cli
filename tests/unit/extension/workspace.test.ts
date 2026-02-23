@@ -4,9 +4,9 @@ import * as path from "node:path";
 import * as Effect from "effect/Effect";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
-	detectPackageManagerWithFs,
+	detectPackageManager,
 	getExtensionsEffect,
-	readPackageJsonWithFs,
+	readPackageJson,
 } from "../../../src/services/extension/workspace";
 import { NodeLiveLayer } from "../../../src/effect/layers/node-live";
 import { nodeFs } from "../../helpers/node-fs";
@@ -28,7 +28,7 @@ describe("Extension Workspace", () => {
 		}
 	});
 
-	describe("readPackageJsonWithFs", () => {
+	describe("readPackageJson", () => {
 		test("successfully reads and parses valid package.json", () => {
 			const packageJsonPath = path.join(tempDir, "package.json");
 			const packageData = {
@@ -38,7 +38,7 @@ describe("Extension Workspace", () => {
 			};
 			fs.writeFileSync(packageJsonPath, JSON.stringify(packageData, null, 2));
 
-			const result = readPackageJsonWithFs(packageJsonPath, nodeFs);
+			const result = readPackageJson(packageJsonPath);
 
 			expect(result).toEqual(packageData);
 		});
@@ -46,18 +46,18 @@ describe("Extension Workspace", () => {
 		test("throws when package.json does not exist", () => {
 			const packageJsonPath = path.join(tempDir, "nonexistent.json");
 
-			expect(() => readPackageJsonWithFs(packageJsonPath, nodeFs)).toThrow("not found");
+			expect(() => readPackageJson(packageJsonPath)).toThrow("not found");
 		});
 
 		test("throws when package.json has invalid JSON", () => {
 			const packageJsonPath = path.join(tempDir, "package.json");
 			fs.writeFileSync(packageJsonPath, "{ invalid json }");
 
-			expect(() => readPackageJsonWithFs(packageJsonPath, nodeFs)).toThrow();
+			expect(() => readPackageJson(packageJsonPath)).toThrow();
 		});
 	});
 
-	describe("detectPackageManagerWithFs", () => {
+	describe("detectPackageManager", () => {
 		test("detects pnpm from package.json packageManager field", () => {
 			const packageJsonPath = path.join(tempDir, "package.json");
 			fs.writeFileSync(
@@ -65,7 +65,7 @@ describe("Extension Workspace", () => {
 				JSON.stringify({ packageManager: "pnpm@8.0.0" }),
 			);
 
-			const result = detectPackageManagerWithFs(tempDir, nodeFs);
+			const result = detectPackageManager(tempDir);
 			expect(result).toBe("pnpm");
 		});
 
@@ -76,7 +76,7 @@ describe("Extension Workspace", () => {
 				JSON.stringify({ packageManager: "yarn@3.0.0" }),
 			);
 
-			const result = detectPackageManagerWithFs(tempDir, nodeFs);
+			const result = detectPackageManager(tempDir);
 			expect(result).toBe("yarn");
 		});
 
@@ -87,30 +87,30 @@ describe("Extension Workspace", () => {
 				JSON.stringify({ packageManager: "npm@9.0.0" }),
 			);
 
-			const result = detectPackageManagerWithFs(tempDir, nodeFs);
+			const result = detectPackageManager(tempDir);
 			expect(result).toBe("npm");
 		});
 
 		test("falls back to pnpm-lock.yaml detection", () => {
 			fs.writeFileSync(path.join(tempDir, "pnpm-lock.yaml"), "");
-			const result = detectPackageManagerWithFs(tempDir, nodeFs);
+			const result = detectPackageManager(tempDir);
 			expect(result).toBe("pnpm");
 		});
 
 		test("falls back to yarn.lock detection", () => {
 			fs.writeFileSync(path.join(tempDir, "yarn.lock"), "");
-			const result = detectPackageManagerWithFs(tempDir, nodeFs);
+			const result = detectPackageManager(tempDir);
 			expect(result).toBe("yarn");
 		});
 
 		test("falls back to package-lock.json detection", () => {
 			fs.writeFileSync(path.join(tempDir, "package-lock.json"), "");
-			const result = detectPackageManagerWithFs(tempDir, nodeFs);
+			const result = detectPackageManager(tempDir);
 			expect(result).toBe("npm");
 		});
 
 		test("returns unknown when no package manager is detected", () => {
-			const result = detectPackageManagerWithFs(tempDir, nodeFs);
+			const result = detectPackageManager(tempDir);
 			expect(result).toBe("unknown");
 		});
 
@@ -122,7 +122,7 @@ describe("Extension Workspace", () => {
 			);
 			fs.writeFileSync(path.join(tempDir, "pnpm-lock.yaml"), "");
 
-			const result = detectPackageManagerWithFs(tempDir, nodeFs);
+			const result = detectPackageManager(tempDir);
 			expect(result).toBe("yarn");
 		});
 	});
