@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, test } from "vitest";
 import {
-	envGet,
-	envInfo,
-	envList,
+	envGetEffect,
+	envInfoEffect,
+	envListEffect,
 	setRuntimeEnvironmentOverride,
 } from "../../../src/core/environment";
+import { runEffect } from "../../setup/effect-test-utils";
 
 afterEach(() => {
 	setRuntimeEnvironmentOverride(null);
@@ -14,27 +15,24 @@ describe("Environment Runtime Override", () => {
 	test("envGet returns runtime override when set", async () => {
 		setRuntimeEnvironmentOverride("prod");
 
-		const result = await envGet();
+		const result = await runEffect(envGetEffect());
 
-		expect(result.success).toBe(true);
-		expect(result.data).toBe("prod");
+		expect(result).toBe("prod");
 	});
 
 	test("envList places runtime override first", async () => {
 		setRuntimeEnvironmentOverride("prod");
 
-		const result = await envList();
+		const result = await runEffect(envListEffect());
 
-		expect(result.success).toBe(true);
-		expect(result.data?.[0]).toBe("prod");
+		expect(result[0]).toBe("prod");
 	});
 
 	test("envInfo uses runtime override when no explicit env is provided", async () => {
 		setRuntimeEnvironmentOverride("prod");
 
-		const result = await envInfo();
+		const result = await runEffect(envInfoEffect());
 
-		expect(result.success).toBe(true);
-		expect(result.data?.environment).toBe("prod");
+		expect(result.environment).toBe("prod");
 	});
 });

@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
-import * as Effect from "effect/Effect";
 import { join } from "node:path";
+import * as Effect from "effect/Effect";
 import * as ts from "typescript";
 import { buildAliasMaps } from "../../core/security/alias-builder";
 import { scanBundleContent } from "../../core/security/bundle-scanner";
@@ -15,7 +15,8 @@ import type {
 	ScanReport,
 	ScanSummary,
 } from "../../core/security/types";
-import type { Result } from "../../shared/types";
+import { SecurityError } from "../../effect/errors";
+import type { FileSystem } from "../../effect/services/filesystem";
 
 /**
  * Output format for scan results
@@ -37,24 +38,12 @@ export type ScanOutputFormat = "text" | "json";
  * 6. Sort findings by file path, then line number
  *
  * @param packageDir - Absolute or relative path to extension package directory
- * @returns Result containing ScanReport with all findings, block status, summary statistics
- *
- * @example
- * ```ts
- * const result = await scanExtension('/path/to/extension');
- * if (result.success && result.data) {
- *   const { blocked, findings, scannedFiles } = result.data;
- *   console.log(`Scanned ${scannedFiles} files, found ${findings.length} issues`);
- *   if (blocked) {
- *     console.error('Extension blocked due to security violations');
- *   }
- * }
- * ```
+ * @returns Effect containing ScanReport with all findings, block status, summary statistics
  */
-async function scanExtensionPromise(
+export function scanExtensionEffect(
 	packageDir: string,
-): Promise<Result<ScanReport>> {
-	try {
+): Effect.Effect<ScanReport, SecurityError, FileSystem> {
+	return Effect.gen(function* () {
 		// 1. Get security config (strict, immutable)
 		const config = getSecurityConfig();
 		const findings: Finding[] = [];
@@ -66,20 +55,25 @@ async function scanExtensionPromise(
 			findings.push(...scriptScanResult.data);
 		}
 
-		// 3. Discover source files
-		const filesResult = await findFilesToScan(packageDir);
+		// 3. Discover source files (Effect-based, requires FileSystem)
+		const filesResult = yield* findFilesToScan(packageDir);
 		if (!filesResult.success) {
-			return {
-				success: false,
-				error: filesResult.error,
-			};
+			return yield* Effect.fail(
+				new SecurityError({
+					message:
+						filesResult.error?.message ?? "Failed to discover files to scan",
+					userMessage: "Security scan failed",
+				}),
+			);
 		}
 
 		const files = filesResult.data || [];
 
 		// 4. For each source file: read, build alias maps, scan
 		for (const filePath of files) {
-			const sourceText = await readFile(filePath, "utf-8");
+			const sourceText = yield* Effect.promise(() =>
+				readFile(filePath, "utf-8"),
+			);
 
 			// Build alias maps
 			const sourceFile = ts.createSourceFile(
@@ -117,16 +111,19 @@ async function scanExtensionPromise(
 			scannedFiles: files.length,
 		};
 
-		return {
-			success: true,
-			data: report,
-		};
-	} catch (error) {
-		return {
-			success: false,
-			error: error instanceof Error ? error : new Error(String(error)),
-		};
-	}
+		return report;
+	}).pipe(
+		Effect.catchAll((error) =>
+			Effect.fail(
+				"_tag" in error && error._tag === "SecurityError"
+					? (error as SecurityError)
+					: new SecurityError({
+							message: error instanceof Error ? error.message : String(error),
+							userMessage: "Security scan failed",
+						}),
+			),
+		),
+	);
 }
 
 /**
@@ -139,14 +136,6 @@ async function scanExtensionPromise(
  *
  * @param findings - Array of security findings to summarize
  * @returns ScanSummary with aggregated statistics
- *
- * @example
- * ```ts
- * const summary = buildSummary(findings);
- * console.log(`Total: ${summary.total}`);
- * console.log(`Block-level: ${summary.bySeverity.block}`);
- * console.log(`SEC001 violations: ${summary.byRuleId.SEC001}`);
- * ```
  */
 export function buildSummary(findings: Finding[]): ScanSummary {
 	const summary: ScanSummary = {
@@ -184,18 +173,6 @@ export function buildSummary(findings: Finding[]): ScanSummary {
  * @param report - Complete scan report to format
  * @param format - Output format type ('text' or 'json')
  * @returns Formatted string ready for console output or file writing
- *
- * @example
- * ```ts
- * const report = await scanExtension('/path/to/extension');
- * if (report.success && report.data) {
- *   const textOutput = formatFindings(report.data, 'text');
- *   console.log(textOutput);
- *
- *   const jsonOutput = formatFindings(report.data, 'json');
- *   await writeFile('scan-results.json', jsonOutput);
- * }
- * ```
  */
 export function formatFindings(
 	report: ScanReport,
@@ -219,7 +196,7 @@ export function formatFindings(
 	lines.push(
 		`Block: ${report.summary.bySeverity.block}, Warn: ${report.summary.bySeverity.warn}`,
 	);
-	lines.push(`Status: ${report.blocked ? "BLOCKED ❌" : "PASSED ✓"}`);
+	lines.push(`Status: ${report.blocked ? "BLOCKED" : "PASSED"}`);
 	lines.push("");
 
 	// Findings
@@ -268,107 +245,41 @@ export function formatSecurityFindings(report: ScanReport): string {
  * **Multi-file support**: Handles single file or array of files (code-split bundles).
  * Scans .js and .mjs extensions.
  *
- * **Workflow:**
- * 1. Read bundle file(s) content
- * 2. Scan each file with BUNDLE_RULES (SEC101-SEC110) using two-pass detection
- * 3. Build ScanReport with findings
- * 4. Return Result with block status
- *
  * @param artifactPaths - Path or array of paths to bundled .js/.mjs files
- * @param config - SecurityConfig for trusted domain allowlist
- * @returns Result<ScanReport> with findings and block status
- *
- * **API Contract:**
- * - Input: string | string[] (file paths)
- * - Output: { success: boolean; data?: ScanReport; error?: Error }
- * - ScanReport: { findings, blocked, summary, scannedFiles }
- * - Finding: { ruleId, severity, message, file, line, col, snippet? }
- *
- * @example
- * ```ts
- * // Single file
- * const result = await scanBundle('/tmp/bundle.mjs', securityConfig);
- * if (result.success && result.data?.blocked) {
- *   console.error('Bundle blocked due to security violations');
- * }
- *
- * // Multiple files (code-split bundle)
- * const result = await scanBundle([
- *   '/tmp/chunk-main.js',
- *   '/tmp/chunk-vendor.js'
- * ], securityConfig);
- * ```
+ * @returns Effect with ScanReport containing findings and block status
  */
-async function scanBundlePromise(
+export function scanBundleEffect(
 	artifactPaths: string | string[],
-): Promise<Result<ScanReport>> {
-	try {
-		// 1. Normalize to array
-		const paths = Array.isArray(artifactPaths)
-			? artifactPaths
-			: [artifactPaths];
-		const allFindings: Finding[] = [];
+): Effect.Effect<ScanReport, SecurityError, never> {
+	return Effect.tryPromise({
+		try: async () => {
+			// 1. Normalize to array
+			const paths = Array.isArray(artifactPaths)
+				? artifactPaths
+				: [artifactPaths];
+			const allFindings: Finding[] = [];
 
-		// 2. For each file: read content and scan
-		for (const filePath of paths) {
-			try {
+			// 2. For each file: read content and scan
+			for (const filePath of paths) {
 				const content = await readFile(filePath, "utf-8");
 				const fileFindings = scanBundleContent(content, BUNDLE_RULES, filePath);
 				allFindings.push(...fileFindings);
-			} catch (error) {
-				// File read error - return as failure
-				return {
-					success: false,
-					error:
-						error instanceof Error
-							? error
-							: new Error(`Failed to read bundle file: ${filePath}`),
-				};
 			}
-		}
 
-		// 3. Build ScanReport
-		const report: ScanReport = {
-			findings: allFindings,
-			blocked: allFindings.some((f) => f.severity === "block"),
-			summary: buildSummary(allFindings),
-			scannedFiles: paths.length,
-		};
+			// 3. Build ScanReport
+			const report: ScanReport = {
+				findings: allFindings,
+				blocked: allFindings.some((f) => f.severity === "block"),
+				summary: buildSummary(allFindings),
+				scannedFiles: paths.length,
+			};
 
-		return {
-			success: true,
-			data: report,
-		};
-	} catch (error) {
-		return {
-			success: false,
-			error: error instanceof Error ? error : new Error(String(error)),
-		};
-	}
-}
-
-export function scanExtensionEffect(...args: Parameters<typeof scanExtensionPromise>): Effect.Effect<Awaited<ReturnType<typeof scanExtensionPromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => scanExtensionPromise(...args),
-		catch: (error) => error,
+			return report;
+		},
+		catch: (error) =>
+			new SecurityError({
+				message: error instanceof Error ? error.message : String(error),
+				userMessage: "Bundle security scan failed",
+			}),
 	});
-}
-
-export function scanBundleEffect(...args: Parameters<typeof scanBundlePromise>): Effect.Effect<Awaited<ReturnType<typeof scanBundlePromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => scanBundlePromise(...args),
-		catch: (error) => error,
-	});
-}
-
-export function scanExtension(
-	...args: Parameters<typeof scanExtensionPromise>
-): Promise<Awaited<ReturnType<typeof scanExtensionPromise>>> {
-	return Effect.runPromise(scanExtensionEffect(...args));
-}
-
-export function scanBundle(
-	...args: Parameters<typeof scanBundlePromise>
-): Promise<Awaited<ReturnType<typeof scanBundlePromise>>> {
-	return Effect.runPromise(scanBundleEffect(...args));
 }

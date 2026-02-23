@@ -12,12 +12,7 @@ import {
 	findRegistryNodeById,
 	registryNodeToResult,
 } from "../agent/registry";
-import {
-	currentCommandString,
-	emitError,
-	emitSuccess,
-	unwrapResult,
-} from "../agent/respond";
+import { currentCommandString, emitError, emitSuccess } from "../agent/respond";
 import { Command } from "../command-model";
 
 function emitAuthError(error: unknown): void {
@@ -64,14 +59,11 @@ export function createAuthCommand(): Command {
 		.description("Login to GoDaddy Developer Platform")
 		.action(() =>
 			Effect.gen(function* () {
-				const loginResult = unwrapResult(
-					yield* authLoginEffect(),
-					"Authentication failed",
+				const loginResult = yield* authLoginEffect();
+				const environment = yield* envGetEffect().pipe(
+					Effect.map(String),
+					Effect.orElseSucceed(() => "unknown"),
 				);
-				const environmentResult = yield* envGetEffect();
-				const environment = environmentResult.success
-					? String(environmentResult.data)
-					: "unknown";
 
 				emitSuccess(
 					currentCommandString(),
@@ -82,7 +74,9 @@ export function createAuthCommand(): Command {
 					},
 					nextActionsFor(commandIds.authLogin),
 				);
-			}).pipe(Effect.catchAll((error) => Effect.sync(() => emitAuthError(error)))),
+			}).pipe(
+				Effect.catchAll((error) => Effect.sync(() => emitAuthError(error))),
+			),
 		);
 
 	auth
@@ -90,18 +84,20 @@ export function createAuthCommand(): Command {
 		.description("Logout and clear stored credentials")
 		.action(() =>
 			Effect.gen(function* () {
-				unwrapResult(yield* authLogoutEffect(), "Logout failed");
-				const environmentResult = yield* envGetEffect();
-				const environment = environmentResult.success
-					? String(environmentResult.data)
-					: "unknown";
+				yield* authLogoutEffect();
+				const environment = yield* envGetEffect().pipe(
+					Effect.map(String),
+					Effect.orElseSucceed(() => "unknown"),
+				);
 
 				emitSuccess(
 					currentCommandString(),
 					{ authenticated: false, environment },
 					nextActionsFor(commandIds.authLogout),
 				);
-			}).pipe(Effect.catchAll((error) => Effect.sync(() => emitAuthError(error)))),
+			}).pipe(
+				Effect.catchAll((error) => Effect.sync(() => emitAuthError(error))),
+			),
 		);
 
 	auth
@@ -109,10 +105,7 @@ export function createAuthCommand(): Command {
 		.description("Check authentication status")
 		.action(() =>
 			Effect.gen(function* () {
-				const status = unwrapResult(
-					yield* authStatusEffect(),
-					"Failed to check authentication status",
-				);
+				const status = yield* authStatusEffect();
 
 				emitSuccess(
 					currentCommandString(),
@@ -126,7 +119,9 @@ export function createAuthCommand(): Command {
 						authenticated: status.authenticated,
 					}),
 				);
-			}).pipe(Effect.catchAll((error) => Effect.sync(() => emitAuthError(error)))),
+			}).pipe(
+				Effect.catchAll((error) => Effect.sync(() => emitAuthError(error))),
+			),
 		);
 
 	return auth;

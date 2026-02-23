@@ -1,14 +1,16 @@
-import * as fs from "node:fs";
 import * as Effect from "effect/Effect";
 import { v7 as uuid } from "uuid";
 import {
 	AuthenticationError,
-	type CmdResult,
+	type CliError,
 	NetworkError,
 	ValidationError,
-} from "../shared/types";
-import { getTokenInfo } from "./auth";
-import { type Environment, envGet, getApiUrl } from "./environment";
+} from "../effect/errors";
+import { FileSystem } from "../effect/services/filesystem";
+import { HttpClient } from "../effect/services/http";
+import type { Keychain } from "../effect/services/keychain";
+import { getTokenInfoEffect } from "./auth";
+import { type Environment, envGetEffect, getApiUrl } from "./environment";
 
 // Minimum seconds before expiry to consider token valid for a request
 const TOKEN_EXPIRY_BUFFER_SECONDS = 30;
@@ -32,111 +34,265 @@ export interface ApiResponse {
 }
 
 /**
- * Make an authenticated request to the GoDaddy API
+ * Parse field arguments into an object.
+ * Fields are in the format "key=value".
  */
-async function apiRequestPromise(
+export function parseFieldsEffect(
+	fields: string[],
+): Effect.Effect<Record<string, string>, ValidationError, never> {
+	return Effect.gen(function* () {
+		const result: Record<string, string> = {};
+
+		for (const field of fields) {
+			const eqIndex = field.indexOf("=");
+			if (eqIndex === -1) {
+				return yield* Effect.fail(
+					new ValidationError({
+						message: `Invalid field format: ${field}`,
+						userMessage: `Invalid field format: "${field}". Expected "key=value".`,
+					}),
+				);
+			}
+
+			const key = field.slice(0, eqIndex);
+			const value = field.slice(eqIndex + 1);
+
+			if (!key) {
+				return yield* Effect.fail(
+					new ValidationError({
+						message: `Empty field key: ${field}`,
+						userMessage: `Empty field key in: "${field}"`,
+					}),
+				);
+			}
+
+			result[key] = value;
+		}
+
+		return result;
+	});
+}
+
+/**
+ * Parse header arguments into an object.
+ * Headers are in the format "Key: Value".
+ */
+export function parseHeadersEffect(
+	headers: string[],
+): Effect.Effect<Record<string, string>, ValidationError, never> {
+	return Effect.gen(function* () {
+		const result: Record<string, string> = {};
+
+		for (const header of headers) {
+			const colonIndex = header.indexOf(":");
+			if (colonIndex === -1) {
+				return yield* Effect.fail(
+					new ValidationError({
+						message: `Invalid header format: ${header}`,
+						userMessage: `Invalid header format: "${header}". Expected "Key: Value".`,
+					}),
+				);
+			}
+
+			const key = header.slice(0, colonIndex).trim();
+			const value = header.slice(colonIndex + 1).trim();
+
+			if (!key) {
+				return yield* Effect.fail(
+					new ValidationError({
+						message: `Empty header key: ${header}`,
+						userMessage: `Empty header key in: "${header}"`,
+					}),
+				);
+			}
+
+			result[key] = value;
+		}
+
+		return result;
+	});
+}
+
+/**
+ * Read JSON body from file.
+ */
+export function readBodyFromFileEffect(
+	filePath: string,
+): Effect.Effect<string, ValidationError, FileSystem> {
+	return Effect.gen(function* () {
+		const fs = yield* FileSystem;
+
+		if (!fs.existsSync(filePath)) {
+			return yield* Effect.fail(
+				new ValidationError({
+					message: `File not found: ${filePath}`,
+					userMessage: `File not found: ${filePath}`,
+				}),
+			);
+		}
+
+		let content: string;
+		try {
+			content = fs.readFileSync(filePath, "utf-8");
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			return yield* Effect.fail(
+				new ValidationError({
+					message: `Failed to read file: ${message}`,
+					userMessage: `Could not read file: ${filePath}`,
+				}),
+			);
+		}
+
+		// Validate it's valid JSON
+		try {
+			JSON.parse(content);
+		} catch {
+			return yield* Effect.fail(
+				new ValidationError({
+					message: `Invalid JSON in file: ${filePath}`,
+					userMessage: `File does not contain valid JSON: ${filePath}`,
+				}),
+			);
+		}
+
+		return content;
+	});
+}
+
+/**
+ * Build full URL from endpoint using the current environment.
+ */
+function buildUrlEffect(
+	endpoint: string,
+): Effect.Effect<string, CliError, FileSystem> {
+	return Effect.gen(function* () {
+		// Reject full URLs - only relative paths are allowed
+		if (endpoint.startsWith("http://") || endpoint.startsWith("https://")) {
+			return yield* Effect.fail(
+				new ValidationError({
+					message: "Full URLs are not allowed",
+					userMessage:
+						"Only relative endpoints are allowed (e.g., /v1/domains). Full URLs are not permitted.",
+				}),
+			);
+		}
+
+		// Get base URL from environment
+		const env: Environment = yield* envGetEffect();
+		const baseUrl = getApiUrl(env);
+
+		// Ensure endpoint starts with /
+		const normalizedEndpoint = endpoint.startsWith("/")
+			? endpoint
+			: `/${endpoint}`;
+
+		return `${baseUrl}${normalizedEndpoint}`;
+	});
+}
+
+/**
+ * Make an authenticated request to the GoDaddy API.
+ */
+export function apiRequestEffect(
 	options: ApiRequestOptions,
-): Promise<CmdResult<ApiResponse>> {
-	const {
-		endpoint,
-		method = "GET",
-		fields,
-		body,
-		headers = {},
-		debug,
-	} = options;
+): Effect.Effect<ApiResponse, CliError, FileSystem | Keychain | HttpClient> {
+	return Effect.gen(function* () {
+		const {
+			endpoint,
+			method = "GET",
+			fields,
+			body,
+			headers = {},
+			debug,
+		} = options;
 
-	// Get access token with expiry info
-	let tokenInfo: Awaited<ReturnType<typeof getTokenInfo>>;
-	try {
-		tokenInfo = await getTokenInfo();
-	} catch (err) {
-		const error = new AuthenticationError(
-			`Failed to access token from keychain: ${err}`,
+		// Get access token with expiry info
+		const tokenInfo = yield* getTokenInfoEffect().pipe(
+			Effect.mapError(
+				(err) =>
+					new AuthenticationError({
+						message: `Failed to access token from keychain: ${err.message}`,
+						userMessage:
+							"Unable to access secure credentials. Unlock your keychain and try again.",
+					}),
+			),
 		);
-		error.userMessage =
-			"Unable to access secure credentials. Unlock your keychain and try again.";
-		return {
-			success: false,
-			error,
-		};
-	}
 
-	if (!tokenInfo) {
-		const error = new AuthenticationError("No valid access token found");
-		error.userMessage = "Not authenticated. Run 'godaddy auth login' first.";
-		return {
-			success: false,
-			error,
-		};
-	}
-
-	// Check if token is about to expire
-	if (tokenInfo.expiresInSeconds < TOKEN_EXPIRY_BUFFER_SECONDS) {
-		const error = new AuthenticationError("Access token is about to expire");
-		error.userMessage = `Token expires in ${tokenInfo.expiresInSeconds}s. Run 'godaddy auth login' to refresh.`;
-		return {
-			success: false,
-			error,
-		};
-	}
-
-	const accessToken = tokenInfo.accessToken;
-
-	// Build URL
-	const urlResult = await buildUrl(endpoint);
-	if (!urlResult.success || !urlResult.data) {
-		return {
-			success: false,
-			error:
-				urlResult.error ||
-				new ValidationError(
-					"Failed to build URL",
-					"Could not build request URL",
-				),
-		};
-	}
-	const url = urlResult.data;
-
-	// Build headers
-	const requestHeaders: Record<string, string> = {
-		Authorization: `Bearer ${accessToken}`,
-		"X-Request-ID": uuid(),
-		...headers,
-	};
-
-	// Build body
-	let requestBody: string | undefined;
-	if (body) {
-		requestBody = body;
-		if (!requestHeaders["Content-Type"]) {
-			requestHeaders["Content-Type"] = "application/json";
+		if (!tokenInfo) {
+			return yield* Effect.fail(
+				new AuthenticationError({
+					message: "No valid access token found",
+					userMessage: "Not authenticated. Run 'godaddy auth login' first.",
+				}),
+			);
 		}
-	} else if (fields && Object.keys(fields).length > 0) {
-		requestBody = JSON.stringify(fields);
-		if (!requestHeaders["Content-Type"]) {
-			requestHeaders["Content-Type"] = "application/json";
-		}
-	}
 
-	if (debug) {
-		console.error(`> ${method} ${url}`);
-		for (const [key, value] of Object.entries(requestHeaders)) {
-			const displayValue =
-				key.toLowerCase() === "authorization" ? "Bearer [REDACTED]" : value;
-			console.error(`> ${key}: ${displayValue}`);
+		// Check if token is about to expire
+		if (tokenInfo.expiresInSeconds < TOKEN_EXPIRY_BUFFER_SECONDS) {
+			return yield* Effect.fail(
+				new AuthenticationError({
+					message: "Access token is about to expire",
+					userMessage: `Token expires in ${tokenInfo.expiresInSeconds}s. Run 'godaddy auth login' to refresh.`,
+				}),
+			);
 		}
-		if (requestBody) {
-			console.error(`> Body: ${requestBody}`);
-		}
-		console.error("");
-	}
 
-	try {
-		const response = await fetch(url, {
-			method,
-			headers: requestHeaders,
-			body: requestBody,
+		const accessToken = tokenInfo.accessToken;
+
+		// Build URL
+		const url = yield* buildUrlEffect(endpoint);
+
+		// Build headers
+		const requestHeaders: Record<string, string> = {
+			Authorization: `Bearer ${accessToken}`,
+			"X-Request-ID": uuid(),
+			...headers,
+		};
+
+		// Build body
+		let requestBody: string | undefined;
+		if (body) {
+			requestBody = body;
+			if (!requestHeaders["Content-Type"]) {
+				requestHeaders["Content-Type"] = "application/json";
+			}
+		} else if (fields && Object.keys(fields).length > 0) {
+			requestBody = JSON.stringify(fields);
+			if (!requestHeaders["Content-Type"]) {
+				requestHeaders["Content-Type"] = "application/json";
+			}
+		}
+
+		if (debug) {
+			console.error(`> ${method} ${url}`);
+			for (const [key, value] of Object.entries(requestHeaders)) {
+				const displayValue =
+					key.toLowerCase() === "authorization" ? "Bearer [REDACTED]" : value;
+				console.error(`> ${key}: ${displayValue}`);
+			}
+			if (requestBody) {
+				console.error(`> Body: ${requestBody}`);
+			}
+			console.error("");
+		}
+
+		// Get the HTTP client from the service context
+		const httpClient = yield* HttpClient;
+
+		const response = yield* Effect.tryPromise({
+			try: () =>
+				httpClient.fetch(url, {
+					method,
+					headers: requestHeaders,
+					body: requestBody,
+				}),
+			catch: (err) =>
+				new NetworkError({
+					message: `Network request failed: ${err instanceof Error ? err.message : String(err)}`,
+					userMessage:
+						"Network request failed. Check your connection and try again.",
+				}),
 		});
 
 		// Parse response headers
@@ -157,7 +313,14 @@ async function apiRequestPromise(
 		let data: unknown;
 		const contentType = response.headers.get("content-type") || "";
 		if (contentType.includes("application/json")) {
-			const text = await response.text();
+			const text = yield* Effect.tryPromise({
+				try: () => response.text(),
+				catch: (err) =>
+					new NetworkError({
+						message: `Failed to read response body: ${err}`,
+						userMessage: "Failed to read API response.",
+					}),
+			});
 			if (text) {
 				try {
 					data = JSON.parse(text);
@@ -166,7 +329,14 @@ async function apiRequestPromise(
 				}
 			}
 		} else {
-			data = await response.text();
+			data = yield* Effect.tryPromise({
+				try: () => response.text(),
+				catch: (err) =>
+					new NetworkError({
+						message: `Failed to read response body: ${err}`,
+						userMessage: "Failed to read API response.",
+					}),
+			});
 		}
 
 		// Check for error status codes
@@ -178,228 +348,39 @@ async function apiRequestPromise(
 
 			// Handle 401 Unauthorized specifically - token may be revoked or invalid
 			if (response.status === 401) {
-				const error = new AuthenticationError(
-					`Authentication failed (401): ${errorMessage}`,
+				return yield* Effect.fail(
+					new AuthenticationError({
+						message: `Authentication failed (401): ${errorMessage}`,
+						userMessage:
+							"Your session has expired or is invalid. Run 'godaddy auth login' to re-authenticate.",
+					}),
 				);
-				error.userMessage =
-					"Your session has expired or is invalid. Run 'godaddy auth login' to re-authenticate.";
-				return {
-					success: false,
-					error,
-				};
 			}
 
 			// Handle 403 Forbidden - insufficient permissions
 			if (response.status === 403) {
-				const error = new AuthenticationError(
-					`Access denied (403): ${errorMessage}`,
+				return yield* Effect.fail(
+					new AuthenticationError({
+						message: `Access denied (403): ${errorMessage}`,
+						userMessage:
+							"You don't have permission to access this resource. Check your account permissions.",
+					}),
 				);
-				error.userMessage =
-					"You don't have permission to access this resource. Check your account permissions.";
-				return {
-					success: false,
-					error,
-				};
 			}
 
-			const error = new NetworkError(
-				`API error (${response.status}): ${errorMessage}`,
+			return yield* Effect.fail(
+				new NetworkError({
+					message: `API error (${response.status}): ${errorMessage}`,
+					userMessage: `API request failed with status ${response.status}: ${response.statusText}`,
+				}),
 			);
-			return {
-				success: false,
-				error,
-			};
 		}
 
 		return {
-			success: true,
-			data: {
-				status: response.status,
-				statusText: response.statusText,
-				headers: responseHeaders,
-				data,
-			},
+			status: response.status,
+			statusText: response.statusText,
+			headers: responseHeaders,
+			data,
 		};
-	} catch (err) {
-		const originalError = err instanceof Error ? err : new Error(String(err));
-		return {
-			success: false,
-			error: new NetworkError("Network request failed", originalError),
-		};
-	}
-}
-
-/**
- * Build full URL from endpoint
- */
-async function buildUrl(endpoint: string): Promise<CmdResult<string>> {
-	// Reject full URLs - only relative paths are allowed
-	if (endpoint.startsWith("http://") || endpoint.startsWith("https://")) {
-		return {
-			success: false,
-			error: new ValidationError(
-				"Full URLs are not allowed",
-				"Only relative endpoints are allowed (e.g., /v1/domains). Full URLs are not permitted.",
-			),
-		};
-	}
-
-	// Get base URL from environment
-	const envResult = await envGet();
-	if (!envResult.success || !envResult.data) {
-		return {
-			success: false,
-			error:
-				envResult.error ||
-				new ValidationError(
-					"Failed to get environment",
-					"Could not determine environment. Run 'godaddy env set <env>' first.",
-				),
-		};
-	}
-	const env = envResult.data as Environment;
-	const baseUrl = getApiUrl(env);
-
-	// Ensure endpoint starts with /
-	const normalizedEndpoint = endpoint.startsWith("/")
-		? endpoint
-		: `/${endpoint}`;
-
-	return { success: true, data: `${baseUrl}${normalizedEndpoint}` };
-}
-
-/**
- * Read JSON body from file
- */
-export function readBodyFromFile(filePath: string): CmdResult<string> {
-	try {
-		if (!fs.existsSync(filePath)) {
-			return {
-				success: false,
-				error: new ValidationError(
-					`File not found: ${filePath}`,
-					`File not found: ${filePath}`,
-				),
-			};
-		}
-
-		const content = fs.readFileSync(filePath, "utf-8");
-
-		// Validate it's valid JSON
-		try {
-			JSON.parse(content);
-		} catch {
-			return {
-				success: false,
-				error: new ValidationError(
-					`Invalid JSON in file: ${filePath}`,
-					`File does not contain valid JSON: ${filePath}`,
-				),
-			};
-		}
-
-		return { success: true, data: content };
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		return {
-			success: false,
-			error: new ValidationError(
-				`Failed to read file: ${message}`,
-				`Could not read file: ${filePath}`,
-			),
-		};
-	}
-}
-
-/**
- * Parse field arguments into an object
- * Fields are in the format "key=value"
- */
-export function parseFields(
-	fields: string[],
-): CmdResult<Record<string, string>> {
-	const result: Record<string, string> = {};
-
-	for (const field of fields) {
-		const eqIndex = field.indexOf("=");
-		if (eqIndex === -1) {
-			return {
-				success: false,
-				error: new ValidationError(
-					`Invalid field format: ${field}`,
-					`Invalid field format: "${field}". Expected "key=value".`,
-				),
-			};
-		}
-
-		const key = field.slice(0, eqIndex);
-		const value = field.slice(eqIndex + 1);
-
-		if (!key) {
-			return {
-				success: false,
-				error: new ValidationError(
-					`Empty field key: ${field}`,
-					`Empty field key in: "${field}"`,
-				),
-			};
-		}
-
-		result[key] = value;
-	}
-
-	return { success: true, data: result };
-}
-
-/**
- * Parse header arguments into an object
- * Headers are in the format "Key: Value"
- */
-export function parseHeaders(
-	headers: string[],
-): CmdResult<Record<string, string>> {
-	const result: Record<string, string> = {};
-
-	for (const header of headers) {
-		const colonIndex = header.indexOf(":");
-		if (colonIndex === -1) {
-			return {
-				success: false,
-				error: new ValidationError(
-					`Invalid header format: ${header}`,
-					`Invalid header format: "${header}". Expected "Key: Value".`,
-				),
-			};
-		}
-
-		const key = header.slice(0, colonIndex).trim();
-		const value = header.slice(colonIndex + 1).trim();
-
-		if (!key) {
-			return {
-				success: false,
-				error: new ValidationError(
-					`Empty header key: ${header}`,
-					`Empty header key in: "${header}"`,
-				),
-			};
-		}
-
-		result[key] = value;
-	}
-
-	return { success: true, data: result };
-}
-
-export function apiRequestEffect(...args: Parameters<typeof apiRequestPromise>): Effect.Effect<Awaited<ReturnType<typeof apiRequestPromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => apiRequestPromise(...args),
-		catch: (error) => error,
 	});
-}
-
-export function apiRequest(
-	...args: Parameters<typeof apiRequestPromise>
-): Promise<Awaited<ReturnType<typeof apiRequestPromise>>> {
-	return Effect.runPromise(apiRequestEffect(...args));
 }

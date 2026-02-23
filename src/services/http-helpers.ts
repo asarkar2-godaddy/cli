@@ -2,32 +2,48 @@
  * Shared HTTP helpers for API requests
  */
 
-import { v7 as uuid } from "uuid";
 import * as Effect from "effect/Effect";
-import { type Environment, envGet, getApiUrl } from "../core/environment";
+import { v7 as uuid } from "uuid";
+import { type Environment, envGetEffect, getApiUrl } from "../core/environment";
+import { ConfigurationError } from "../effect/errors";
+import type { FileSystem } from "../effect/services/filesystem";
 
 // Cached API base URL
 let apiBaseUrl: string | null = null;
 
 /**
- * Get or initialize the API base URL based on the environment
+ * Get or initialize the API base URL based on the environment.
+ * Uses envGetEffect to determine the active environment when no override is set.
  */
-async function initApiBaseUrlPromise(): Promise<string> {
-	if (apiBaseUrl) return apiBaseUrl;
+export function initApiBaseUrlEffect(): Effect.Effect<
+	string,
+	ConfigurationError,
+	FileSystem
+> {
+	return Effect.gen(function* () {
+		if (apiBaseUrl) return apiBaseUrl;
 
-	// Use environment variable if set, otherwise determine from active environment
-	if (process.env.APPLICATIONS_GRAPHQL_URL) {
-		apiBaseUrl = process.env.APPLICATIONS_GRAPHQL_URL;
-	} else {
-		const result = await envGet();
-		if (!result.success || !result.data) {
-			throw result.error ?? new Error("Failed to get environment");
+		// Use environment variable if set, otherwise determine from active environment
+		if (process.env.APPLICATIONS_GRAPHQL_URL) {
+			apiBaseUrl = process.env.APPLICATIONS_GRAPHQL_URL;
+		} else {
+			const env: Environment = yield* envGetEffect();
+			apiBaseUrl = `${getApiUrl(env)}/v1/apps/app-registry-subgraph`;
 		}
-		const env = result.data as Environment;
-		apiBaseUrl = `${getApiUrl(env)}/v1/apps/app-registry-subgraph`;
-	}
 
-	return apiBaseUrl;
+		return apiBaseUrl;
+	}).pipe(
+		Effect.catchAll((error) =>
+			Effect.fail(
+				"_tag" in error && error._tag === "ConfigurationError"
+					? (error as ConfigurationError)
+					: new ConfigurationError({
+							message: `Failed to initialize API base URL: ${error}`,
+							userMessage: "Could not determine API base URL",
+						}),
+			),
+		),
+	);
 }
 
 /**
@@ -38,17 +54,4 @@ export function getRequestHeaders(accessToken: string): Record<string, string> {
 		Authorization: `Bearer ${accessToken}`,
 		"X-Request-ID": uuid(),
 	};
-}
-
-export function initApiBaseUrlEffect(...args: Parameters<typeof initApiBaseUrlPromise>): Effect.Effect<Awaited<ReturnType<typeof initApiBaseUrlPromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => initApiBaseUrlPromise(...args),
-		catch: (error) => error,
-	});
-}
-
-export function initApiBaseUrl(
-	...args: Parameters<typeof initApiBaseUrlPromise>
-): Promise<Awaited<ReturnType<typeof initApiBaseUrlPromise>>> {
-	return Effect.runPromise(initApiBaseUrlEffect(...args));
 }

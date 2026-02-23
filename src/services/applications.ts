@@ -2,7 +2,8 @@ import { type } from "arktype";
 import * as Effect from "effect/Effect";
 import { graphql } from "gql.tada";
 import { ClientError, request } from "graphql-request";
-import { getRequestHeaders, initApiBaseUrl } from "./http-helpers";
+import { AuthenticationError, NetworkError } from "../effect/errors";
+import { getRequestHeaders, initApiBaseUrlEffect } from "./http-helpers";
 
 const ApplicationQuery = graphql(`
   query Application($name: String!) {
@@ -150,121 +151,7 @@ export const updateApplicationInput = type({
 	status: '"ACTIVE" | "INACTIVE"?',
 });
 
-async function createApplicationPromise(
-	input: typeof applicationInput.infer,
-	{ accessToken }: { accessToken: string | null },
-) {
-	if (!accessToken) {
-		throw new Error("Access token is required");
-	}
-
-	const inputParseResult = applicationInput(input);
-	if (inputParseResult instanceof type.errors) {
-		throw new Error(inputParseResult.summary);
-	}
-
-	try {
-		const baseUrl = await initApiBaseUrl();
-
-		const result = await request(
-			baseUrl,
-			CreateApplicationMutation,
-			{ input: inputParseResult },
-			getRequestHeaders(accessToken),
-		);
-
-		return result;
-	} catch (err) {
-		if (err instanceof ClientError) {
-			const graphqlErrors = err.response.errors;
-			if (graphqlErrors?.length) {
-				const error = graphqlErrors[0];
-				const errorCode = error.extensions?.code;
-				const errorMessage = errorCode
-					? `${error.message} (${errorCode})`
-					: error.message;
-				throw new Error(errorMessage);
-			}
-			throw new Error("An unexpected error occurred");
-		}
-
-		throw new Error("An unexpected error occurred");
-	}
-}
-
-async function updateApplicationPromise(
-	id: string,
-	input: typeof updateApplicationInput.infer,
-	{ accessToken }: { accessToken: string | null },
-) {
-	if (!accessToken) {
-		throw new Error("Access token is required");
-	}
-
-	try {
-		const baseUrl = await initApiBaseUrl();
-		const result = await request(
-			baseUrl,
-			UpdateApplicationMutation,
-			{ id, input },
-			getRequestHeaders(accessToken),
-		);
-		return result;
-	} catch (err) {
-		if (err instanceof ClientError) {
-			const graphqlErrors = err.response.errors;
-			if (graphqlErrors?.length) {
-				const error = graphqlErrors[0];
-				const errorCode = error.extensions?.code;
-				const errorMessage = errorCode
-					? `${error.message} (${errorCode})`
-					: error.message;
-				throw new Error(errorMessage);
-			}
-			throw new Error("An unexpected error occurred");
-		}
-
-		throw new Error("An unexpected error occurred");
-	}
-}
-
-async function getApplicationPromise(
-	name: string,
-	{ accessToken }: { accessToken: string | null },
-) {
-	if (!accessToken) {
-		throw new Error("Access token is required");
-	}
-
-	const baseUrl = await initApiBaseUrl();
-	const result = await request(
-		baseUrl,
-		ApplicationQuery,
-		{ name },
-		getRequestHeaders(accessToken),
-	);
-	return result;
-}
-
-async function getApplicationAndLatestReleasePromise(
-	name: string,
-	{ accessToken }: { accessToken: string | null },
-) {
-	if (!accessToken) {
-		throw new Error("Access token is required");
-	}
-
-	const baseUrl = await initApiBaseUrl();
-	const result = await request(
-		baseUrl,
-		ApplicationWithLatestReleaseQuery,
-		{ name },
-		getRequestHeaders(accessToken),
-	);
-	return result;
-}
-
-const actionInput = type({
+export const actionInput = type({
 	name: "string",
 	url: "string",
 });
@@ -283,287 +170,340 @@ export const releaseInput = type({
 	subscriptions: subscriptionInput.array().optional(),
 });
 
-async function createReleasePromise(
+/**
+ * Extract a user-friendly error message from a GraphQL ClientError
+ */
+function extractGraphQLError(err: unknown): string {
+	if (err instanceof ClientError) {
+		const graphqlErrors = err.response.errors;
+		if (graphqlErrors?.length) {
+			const error = graphqlErrors[0];
+			const errorCode = error.extensions?.code;
+			return errorCode ? `${error.message} (${errorCode})` : error.message;
+		}
+	}
+	return "An unexpected error occurred";
+}
+
+export function createApplicationEffect(
+	input: typeof applicationInput.infer,
+	{ accessToken }: { accessToken: string | null },
+) {
+	return Effect.gen(function* () {
+		if (!accessToken) {
+			return yield* Effect.fail(
+				new AuthenticationError({
+					message: "Access token is required",
+					userMessage: "Authentication required",
+				}),
+			);
+		}
+
+		const inputParseResult = applicationInput(input);
+		if (inputParseResult instanceof type.errors) {
+			return yield* Effect.fail(
+				new NetworkError({
+					message: inputParseResult.summary,
+					userMessage: inputParseResult.summary,
+				}),
+			);
+		}
+
+		const baseUrl = yield* initApiBaseUrlEffect();
+
+		return yield* Effect.tryPromise({
+			try: () =>
+				request(
+					baseUrl,
+					CreateApplicationMutation,
+					{ input: inputParseResult },
+					getRequestHeaders(accessToken),
+				),
+			catch: (err) =>
+				new NetworkError({
+					message: extractGraphQLError(err),
+					userMessage: extractGraphQLError(err),
+				}),
+		});
+	});
+}
+
+export function updateApplicationEffect(
+	id: string,
+	input: typeof updateApplicationInput.infer,
+	{ accessToken }: { accessToken: string | null },
+) {
+	return Effect.gen(function* () {
+		if (!accessToken) {
+			return yield* Effect.fail(
+				new AuthenticationError({
+					message: "Access token is required",
+					userMessage: "Authentication required",
+				}),
+			);
+		}
+
+		const baseUrl = yield* initApiBaseUrlEffect();
+
+		return yield* Effect.tryPromise({
+			try: () =>
+				request(
+					baseUrl,
+					UpdateApplicationMutation,
+					{ id, input },
+					getRequestHeaders(accessToken),
+				),
+			catch: (err) =>
+				new NetworkError({
+					message: extractGraphQLError(err),
+					userMessage: extractGraphQLError(err),
+				}),
+		});
+	});
+}
+
+export function getApplicationEffect(
+	name: string,
+	{ accessToken }: { accessToken: string | null },
+) {
+	return Effect.gen(function* () {
+		if (!accessToken) {
+			return yield* Effect.fail(
+				new AuthenticationError({
+					message: "Access token is required",
+					userMessage: "Authentication required",
+				}),
+			);
+		}
+
+		const baseUrl = yield* initApiBaseUrlEffect();
+
+		return yield* Effect.tryPromise({
+			try: () =>
+				request(
+					baseUrl,
+					ApplicationQuery,
+					{ name },
+					getRequestHeaders(accessToken),
+				),
+			catch: (err) =>
+				new NetworkError({
+					message: extractGraphQLError(err),
+					userMessage: extractGraphQLError(err),
+				}),
+		});
+	});
+}
+
+export function getApplicationAndLatestReleaseEffect(
+	name: string,
+	{ accessToken }: { accessToken: string | null },
+) {
+	return Effect.gen(function* () {
+		if (!accessToken) {
+			return yield* Effect.fail(
+				new AuthenticationError({
+					message: "Access token is required",
+					userMessage: "Authentication required",
+				}),
+			);
+		}
+
+		const baseUrl = yield* initApiBaseUrlEffect();
+
+		return yield* Effect.tryPromise({
+			try: () =>
+				request(
+					baseUrl,
+					ApplicationWithLatestReleaseQuery,
+					{ name },
+					getRequestHeaders(accessToken),
+				),
+			catch: (err) =>
+				new NetworkError({
+					message: extractGraphQLError(err),
+					userMessage: extractGraphQLError(err),
+				}),
+		});
+	});
+}
+
+export function createReleaseEffect(
 	input: typeof releaseInput.infer,
 	{ accessToken }: { accessToken: string | null },
 ) {
-	if (!accessToken) {
-		throw new Error("Access token is required");
-	}
-
-	const inputParseResult = releaseInput(input);
-	if (inputParseResult instanceof type.errors) {
-		throw new Error(inputParseResult.summary);
-	}
-
-	// Default actions to empty array if undefined
-	const releaseData = {
-		...inputParseResult,
-		actions: inputParseResult.actions ?? [],
-	};
-
-	try {
-		const baseUrl = await initApiBaseUrl();
-		const result = await request(
-			baseUrl,
-			CreateReleaseMutation,
-			{ input: releaseData },
-			getRequestHeaders(accessToken),
-		);
-		return result;
-	} catch (err) {
-		if (err instanceof ClientError) {
-			const graphqlErrors = err.response.errors;
-			if (graphqlErrors?.length) {
-				const error = graphqlErrors[0];
-				const errorCode = error.extensions?.code;
-				const errorMessage = errorCode
-					? `${error.message} (${errorCode})`
-					: error.message;
-				throw new Error(errorMessage);
-			}
-			throw new Error("An unexpected error occurred");
+	return Effect.gen(function* () {
+		if (!accessToken) {
+			return yield* Effect.fail(
+				new AuthenticationError({
+					message: "Access token is required",
+					userMessage: "Authentication required",
+				}),
+			);
 		}
 
-		throw new Error("An unexpected error occurred");
-	}
+		const inputParseResult = releaseInput(input);
+		if (inputParseResult instanceof type.errors) {
+			return yield* Effect.fail(
+				new NetworkError({
+					message: inputParseResult.summary,
+					userMessage: inputParseResult.summary,
+				}),
+			);
+		}
+
+		// Default actions to empty array if undefined
+		const releaseData = {
+			...inputParseResult,
+			actions: inputParseResult.actions ?? [],
+		};
+
+		const baseUrl = yield* initApiBaseUrlEffect();
+
+		return yield* Effect.tryPromise({
+			try: () =>
+				request(
+					baseUrl,
+					CreateReleaseMutation,
+					{ input: releaseData },
+					getRequestHeaders(accessToken),
+				),
+			catch: (err) =>
+				new NetworkError({
+					message: extractGraphQLError(err),
+					userMessage: extractGraphQLError(err),
+				}),
+		});
+	});
 }
 
-async function enableApplicationPromise(
+export function enableApplicationEffect(
 	input: { applicationName: string; storeId: string },
 	{ accessToken }: { accessToken: string | null },
 ) {
-	if (!accessToken) {
-		throw new Error("Access token is required");
-	}
-
-	try {
-		const baseUrl = await initApiBaseUrl();
-		const result = await request(
-			baseUrl,
-			EnableApplicationMutation,
-			{ input },
-			getRequestHeaders(accessToken),
-		);
-		return result;
-	} catch (err) {
-		if (err instanceof ClientError) {
-			const graphqlErrors = err.response.errors;
-			if (graphqlErrors?.length) {
-				const error = graphqlErrors[0];
-				const errorCode = error.extensions?.code;
-				const errorMessage = errorCode
-					? `${error.message} (${errorCode})`
-					: error.message;
-				throw new Error(errorMessage);
-			}
-			throw new Error("An unexpected error occurred");
+	return Effect.gen(function* () {
+		if (!accessToken) {
+			return yield* Effect.fail(
+				new AuthenticationError({
+					message: "Access token is required",
+					userMessage: "Authentication required",
+				}),
+			);
 		}
 
-		throw new Error("An unexpected error occurred");
-	}
+		const baseUrl = yield* initApiBaseUrlEffect();
+
+		return yield* Effect.tryPromise({
+			try: () =>
+				request(
+					baseUrl,
+					EnableApplicationMutation,
+					{ input },
+					getRequestHeaders(accessToken),
+				),
+			catch: (err) =>
+				new NetworkError({
+					message: extractGraphQLError(err),
+					userMessage: extractGraphQLError(err),
+				}),
+		});
+	});
 }
 
-async function disableApplicationPromise(
+export function disableApplicationEffect(
 	input: { applicationName: string; storeId: string },
 	{ accessToken }: { accessToken: string | null },
 ) {
-	if (!accessToken) {
-		throw new Error("Access token is required");
-	}
-
-	try {
-		const baseUrl = await initApiBaseUrl();
-		const result = await request(
-			baseUrl,
-			DisableApplicationMutation,
-			{ input },
-			getRequestHeaders(accessToken),
-		);
-		return result;
-	} catch (err) {
-		if (err instanceof ClientError) {
-			const graphqlErrors = err.response.errors;
-			if (graphqlErrors?.length) {
-				const error = graphqlErrors[0];
-				const errorCode = error.extensions?.code;
-				const errorMessage = errorCode
-					? `${error.message} (${errorCode})`
-					: error.message;
-				throw new Error(errorMessage);
-			}
-			throw new Error("An unexpected error occurred");
+	return Effect.gen(function* () {
+		if (!accessToken) {
+			return yield* Effect.fail(
+				new AuthenticationError({
+					message: "Access token is required",
+					userMessage: "Authentication required",
+				}),
+			);
 		}
 
-		throw new Error("An unexpected error occurred");
-	}
+		const baseUrl = yield* initApiBaseUrlEffect();
+
+		return yield* Effect.tryPromise({
+			try: () =>
+				request(
+					baseUrl,
+					DisableApplicationMutation,
+					{ input },
+					getRequestHeaders(accessToken),
+				),
+			catch: (err) =>
+				new NetworkError({
+					message: extractGraphQLError(err),
+					userMessage: extractGraphQLError(err),
+				}),
+		});
+	});
 }
 
-async function listApplicationsPromise({
+export function listApplicationsEffect({
 	accessToken,
 }: { accessToken: string | null }) {
-	if (!accessToken) {
-		throw new Error("Access token is required");
-	}
+	return Effect.gen(function* () {
+		if (!accessToken) {
+			return yield* Effect.fail(
+				new AuthenticationError({
+					message: "Access token is required",
+					userMessage: "Authentication required",
+				}),
+			);
+		}
 
-	const baseUrl = await initApiBaseUrl();
-	const result = await request(
-		baseUrl,
-		ApplicationsListQuery,
-		{},
-		getRequestHeaders(accessToken),
-	);
-	return result;
+		const baseUrl = yield* initApiBaseUrlEffect();
+
+		return yield* Effect.tryPromise({
+			try: () =>
+				request(
+					baseUrl,
+					ApplicationsListQuery,
+					{},
+					getRequestHeaders(accessToken),
+				),
+			catch: (err) =>
+				new NetworkError({
+					message: extractGraphQLError(err),
+					userMessage: extractGraphQLError(err),
+				}),
+		});
+	});
 }
 
-async function archiveApplicationPromise(
+export function archiveApplicationEffect(
 	id: string,
 	{ accessToken }: { accessToken: string | null },
 ) {
-	if (!accessToken) {
-		throw new Error("Access token is required");
-	}
-
-	try {
-		const baseUrl = await initApiBaseUrl();
-		const result = await request(
-			baseUrl,
-			ArchiveApplicationMutation,
-			{ id },
-			getRequestHeaders(accessToken),
-		);
-		return result;
-	} catch (err) {
-		if (err instanceof ClientError) {
-			const graphqlErrors = err.response.errors;
-			if (graphqlErrors?.length) {
-				const error = graphqlErrors[0];
-				const errorCode = error.extensions?.code;
-				const errorMessage = errorCode
-					? `${error.message} (${errorCode})`
-					: error.message;
-				throw new Error(errorMessage);
-			}
-			throw new Error("An unexpected error occurred");
+	return Effect.gen(function* () {
+		if (!accessToken) {
+			return yield* Effect.fail(
+				new AuthenticationError({
+					message: "Access token is required",
+					userMessage: "Authentication required",
+				}),
+			);
 		}
 
-		throw new Error("An unexpected error occurred");
-	}
-}
+		const baseUrl = yield* initApiBaseUrlEffect();
 
-export function createApplicationEffect(...args: Parameters<typeof createApplicationPromise>): Effect.Effect<Awaited<ReturnType<typeof createApplicationPromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => createApplicationPromise(...args),
-		catch: (error) => error,
+		return yield* Effect.tryPromise({
+			try: () =>
+				request(
+					baseUrl,
+					ArchiveApplicationMutation,
+					{ id },
+					getRequestHeaders(accessToken),
+				),
+			catch: (err) =>
+				new NetworkError({
+					message: extractGraphQLError(err),
+					userMessage: extractGraphQLError(err),
+				}),
+		});
 	});
-}
-
-export function updateApplicationEffect(...args: Parameters<typeof updateApplicationPromise>): Effect.Effect<Awaited<ReturnType<typeof updateApplicationPromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => updateApplicationPromise(...args),
-		catch: (error) => error,
-	});
-}
-
-export function getApplicationEffect(...args: Parameters<typeof getApplicationPromise>): Effect.Effect<Awaited<ReturnType<typeof getApplicationPromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => getApplicationPromise(...args),
-		catch: (error) => error,
-	});
-}
-
-export function getApplicationAndLatestReleaseEffect(...args: Parameters<typeof getApplicationAndLatestReleasePromise>): Effect.Effect<Awaited<ReturnType<typeof getApplicationAndLatestReleasePromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => getApplicationAndLatestReleasePromise(...args),
-		catch: (error) => error,
-	});
-}
-
-export function createReleaseEffect(...args: Parameters<typeof createReleasePromise>): Effect.Effect<Awaited<ReturnType<typeof createReleasePromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => createReleasePromise(...args),
-		catch: (error) => error,
-	});
-}
-
-export function enableApplicationEffect(...args: Parameters<typeof enableApplicationPromise>): Effect.Effect<Awaited<ReturnType<typeof enableApplicationPromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => enableApplicationPromise(...args),
-		catch: (error) => error,
-	});
-}
-
-export function disableApplicationEffect(...args: Parameters<typeof disableApplicationPromise>): Effect.Effect<Awaited<ReturnType<typeof disableApplicationPromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => disableApplicationPromise(...args),
-		catch: (error) => error,
-	});
-}
-
-export function listApplicationsEffect(...args: Parameters<typeof listApplicationsPromise>): Effect.Effect<Awaited<ReturnType<typeof listApplicationsPromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => listApplicationsPromise(...args),
-		catch: (error) => error,
-	});
-}
-
-export function archiveApplicationEffect(...args: Parameters<typeof archiveApplicationPromise>): Effect.Effect<Awaited<ReturnType<typeof archiveApplicationPromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => archiveApplicationPromise(...args),
-		catch: (error) => error,
-	});
-}
-
-export function createApplication(
-	...args: Parameters<typeof createApplicationPromise>
-): Promise<Awaited<ReturnType<typeof createApplicationPromise>>> {
-	return Effect.runPromise(createApplicationEffect(...args));
-}
-
-export function updateApplication(
-	...args: Parameters<typeof updateApplicationPromise>
-): Promise<Awaited<ReturnType<typeof updateApplicationPromise>>> {
-	return Effect.runPromise(updateApplicationEffect(...args));
-}
-
-export function getApplication(
-	...args: Parameters<typeof getApplicationPromise>
-): Promise<Awaited<ReturnType<typeof getApplicationPromise>>> {
-	return Effect.runPromise(getApplicationEffect(...args));
-}
-
-export function getApplicationAndLatestRelease(
-	...args: Parameters<typeof getApplicationAndLatestReleasePromise>
-): Promise<Awaited<ReturnType<typeof getApplicationAndLatestReleasePromise>>> {
-	return Effect.runPromise(getApplicationAndLatestReleaseEffect(...args));
-}
-
-export function createRelease(
-	...args: Parameters<typeof createReleasePromise>
-): Promise<Awaited<ReturnType<typeof createReleasePromise>>> {
-	return Effect.runPromise(createReleaseEffect(...args));
-}
-
-export function enableApplication(
-	...args: Parameters<typeof enableApplicationPromise>
-): Promise<Awaited<ReturnType<typeof enableApplicationPromise>>> {
-	return Effect.runPromise(enableApplicationEffect(...args));
-}
-
-export function disableApplication(
-	...args: Parameters<typeof disableApplicationPromise>
-): Promise<Awaited<ReturnType<typeof disableApplicationPromise>>> {
-	return Effect.runPromise(disableApplicationEffect(...args));
-}
-
-export function listApplications(
-	...args: Parameters<typeof listApplicationsPromise>
-): Promise<Awaited<ReturnType<typeof listApplicationsPromise>>> {
-	return Effect.runPromise(listApplicationsEffect(...args));
-}
-
-export function archiveApplication(
-	...args: Parameters<typeof archiveApplicationPromise>
-): Promise<Awaited<ReturnType<typeof archiveApplicationPromise>>> {
-	return Effect.runPromise(archiveApplicationEffect(...args));
 }

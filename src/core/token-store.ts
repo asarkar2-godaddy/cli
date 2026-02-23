@@ -1,8 +1,11 @@
 import crypto from "node:crypto";
 import * as Effect from "effect/Effect";
+import { ConfigurationError } from "../effect/errors";
+import type { FileSystem } from "../effect/services/filesystem";
+import { Keychain, type KeychainCredential } from "../effect/services/keychain";
 import {
 	type Environment,
-	envGet,
+	envGetEffect,
 	getApiUrl,
 	getClientId,
 } from "./environment";
@@ -12,23 +15,6 @@ const LEGACY_TOKEN_KEY = "token";
 const TOKEN_KEY_VERSION = "v3";
 const LEGACY_SCOPED_TOKEN_KEY_VERSION = "v2";
 const SCOPED_TOKEN_KEY_BYTES = 16;
-let keytarInstance: Promise<KeytarApi> | undefined;
-
-interface KeytarCredential {
-	account: string;
-	password: string;
-}
-
-interface KeytarApi {
-	setPassword(
-		service: string,
-		account: string,
-		password: string,
-	): Promise<void>;
-	getPassword(service: string, account: string): Promise<string | null>;
-	deletePassword(service: string, account: string): Promise<boolean>;
-	findCredentials(service: string): Promise<KeytarCredential[]>;
-}
 
 interface StoredTokenPayload {
 	accessToken: string;
@@ -38,47 +24,6 @@ interface StoredTokenPayload {
 export interface StoredToken {
 	accessToken: string;
 	expiresAt: Date;
-}
-
-function isKeytarApi(candidate: unknown): candidate is KeytarApi {
-	if (typeof candidate !== "object" || candidate === null) {
-		return false;
-	}
-
-	const target = candidate as Record<string, unknown>;
-	const hasFunction = (key: string): boolean => {
-		try {
-			return typeof target[key] === "function";
-		} catch {
-			return false;
-		}
-	};
-
-	return (
-		hasFunction("setPassword") &&
-		hasFunction("getPassword") &&
-		hasFunction("deletePassword") &&
-		hasFunction("findCredentials")
-	);
-}
-
-async function getKeytar(): Promise<KeytarApi> {
-	if (!keytarInstance) {
-		keytarInstance = import("keytar").then((module) => {
-			const defaultExport = (module as { default?: unknown }).default;
-			if (isKeytarApi(defaultExport)) {
-				return defaultExport;
-			}
-
-			if (isKeytarApi(module)) {
-				return module;
-			}
-
-			throw new Error("Keytar module does not expose the expected API");
-		});
-	}
-
-	return keytarInstance;
 }
 
 function getEnvironmentTokenKey(environment: Environment): string {
@@ -101,12 +46,12 @@ function getLegacyScopedTokenKeyPrefix(environment: Environment): string {
 	return `token:${LEGACY_SCOPED_TOKEN_KEY_VERSION}:${environment}:`;
 }
 
-async function getCurrentEnvironment(): Promise<Environment> {
-	const result = await envGet();
-	if (result.success && result.data) {
-		return result.data as Environment;
-	}
-	return "ote";
+function getCurrentEnvironmentEffect(): Effect.Effect<
+	Environment,
+	never,
+	FileSystem
+> {
+	return envGetEffect().pipe(Effect.orElseSucceed(() => "ote" as Environment));
 }
 
 function getTokenEndpoint(environment: Environment): string {
@@ -133,62 +78,6 @@ function getKeyContext(environment: Environment): {
 	};
 }
 
-async function findLegacyScopedToken(
-	environment: Environment,
-): Promise<{ tokenKey: string; token: StoredToken } | null> {
-	try {
-		const keytar = await getKeytar();
-		const legacyPrefix = getLegacyScopedTokenKeyPrefix(environment);
-		const credentials = (await keytar.findCredentials(
-			KEYCHAIN_SERVICE,
-		)) as KeytarCredential[];
-
-		for (const credential of credentials) {
-			if (!credential.account.startsWith(legacyPrefix)) {
-				continue;
-			}
-
-			const token = await parseTokenValue(
-				credential.password,
-				credential.account,
-			);
-			if (token) {
-				return {
-					tokenKey: credential.account,
-					token,
-				};
-			}
-		}
-	} catch {
-		// Ignore lookup failures and continue with other fallback keys.
-	}
-
-	return null;
-}
-
-async function deleteLegacyScopedTokens(
-	environment: Environment,
-): Promise<void> {
-	try {
-		const keytar = await getKeytar();
-		const legacyPrefix = getLegacyScopedTokenKeyPrefix(environment);
-		const credentials = (await keytar.findCredentials(
-			KEYCHAIN_SERVICE,
-		)) as KeytarCredential[];
-		const deletions = credentials
-			.filter((credential: KeytarCredential) =>
-				credential.account.startsWith(legacyPrefix),
-			)
-			.map((credential) =>
-				keytar.deletePassword(KEYCHAIN_SERVICE, credential.account),
-			);
-
-		await Promise.all(deletions);
-	} catch {
-		// Ignore cleanup failures.
-	}
-}
-
 function serializeToken(token: StoredToken): string {
 	return JSON.stringify({
 		accessToken: token.accessToken,
@@ -196,188 +85,260 @@ function serializeToken(token: StoredToken): string {
 	} satisfies StoredTokenPayload);
 }
 
-async function parseTokenValue(
+function parseTokenValueEffect(
 	value: string,
 	tokenKey: string,
-): Promise<StoredToken | null> {
-	const keytar = await getKeytar();
+): Effect.Effect<StoredToken | null, never, Keychain> {
+	return Effect.gen(function* () {
+		const keychain = yield* Keychain;
 
-	try {
-		const parsed = JSON.parse(value) as Partial<StoredTokenPayload>;
-		const accessToken = parsed.accessToken;
-		const expiresAtValue = parsed.expiresAt;
+		try {
+			const parsed = JSON.parse(value) as Partial<StoredTokenPayload>;
+			const accessToken = parsed.accessToken;
+			const expiresAtValue = parsed.expiresAt;
 
-		if (typeof accessToken !== "string" || typeof expiresAtValue !== "string") {
-			await keytar.deletePassword(KEYCHAIN_SERVICE, tokenKey);
+			if (
+				typeof accessToken !== "string" ||
+				typeof expiresAtValue !== "string"
+			) {
+				yield* Effect.promise(() =>
+					keychain.deletePassword(KEYCHAIN_SERVICE, tokenKey),
+				);
+				return null;
+			}
+
+			const expiresAt = new Date(expiresAtValue);
+			if (Number.isNaN(expiresAt.getTime())) {
+				yield* Effect.promise(() =>
+					keychain.deletePassword(KEYCHAIN_SERVICE, tokenKey),
+				);
+				return null;
+			}
+
+			if (expiresAt.getTime() <= Date.now()) {
+				yield* Effect.promise(() =>
+					keychain.deletePassword(KEYCHAIN_SERVICE, tokenKey),
+				);
+				return null;
+			}
+
+			return { accessToken, expiresAt };
+		} catch {
+			yield* Effect.promise(() =>
+				keychain.deletePassword(KEYCHAIN_SERVICE, tokenKey),
+			);
 			return null;
 		}
-
-		const expiresAt = new Date(expiresAtValue);
-		if (Number.isNaN(expiresAt.getTime())) {
-			await keytar.deletePassword(KEYCHAIN_SERVICE, tokenKey);
-			return null;
-		}
-
-		if (expiresAt.getTime() <= Date.now()) {
-			await keytar.deletePassword(KEYCHAIN_SERVICE, tokenKey);
-			return null;
-		}
-
-		return { accessToken, expiresAt };
-	} catch {
-		await keytar.deletePassword(KEYCHAIN_SERVICE, tokenKey);
-		return null;
-	}
+	});
 }
 
-async function saveTokenPromise(
+function findLegacyScopedTokenEffect(
+	environment: Environment,
+): Effect.Effect<
+	{ tokenKey: string; token: StoredToken } | null,
+	never,
+	Keychain
+> {
+	return Effect.gen(function* () {
+		const keychain = yield* Keychain;
+		try {
+			const legacyPrefix = getLegacyScopedTokenKeyPrefix(environment);
+			const credentials = (yield* Effect.promise(() =>
+				keychain.findCredentials(KEYCHAIN_SERVICE),
+			)) as KeychainCredential[];
+
+			for (const credential of credentials) {
+				if (!credential.account.startsWith(legacyPrefix)) {
+					continue;
+				}
+
+				const token = yield* parseTokenValueEffect(
+					credential.password,
+					credential.account,
+				);
+				if (token) {
+					return { tokenKey: credential.account, token };
+				}
+			}
+		} catch {
+			// Ignore lookup failures and continue with other fallback keys.
+		}
+
+		return null;
+	});
+}
+
+function deleteLegacyScopedTokensEffect(
+	environment: Environment,
+): Effect.Effect<void, never, Keychain> {
+	return Effect.gen(function* () {
+		const keychain = yield* Keychain;
+		try {
+			const legacyPrefix = getLegacyScopedTokenKeyPrefix(environment);
+			const credentials = (yield* Effect.promise(() =>
+				keychain.findCredentials(KEYCHAIN_SERVICE),
+			)) as KeychainCredential[];
+			const deletions = credentials
+				.filter((credential: KeychainCredential) =>
+					credential.account.startsWith(legacyPrefix),
+				)
+				.map((credential) =>
+					keychain.deletePassword(KEYCHAIN_SERVICE, credential.account),
+				);
+
+			yield* Effect.promise(() => Promise.all(deletions));
+		} catch {
+			// Ignore cleanup failures.
+		}
+	});
+}
+
+export function saveTokenEffect(
 	accessToken: string,
 	expiresAt: Date,
 	environment?: Environment,
-): Promise<void> {
-	const keytar = await getKeytar();
-	const env = environment ?? (await getCurrentEnvironment());
-	const { scopedTokenKey } = getKeyContext(env);
-	const token = serializeToken({ accessToken, expiresAt });
-	await keytar.setPassword(KEYCHAIN_SERVICE, scopedTokenKey, token);
+): Effect.Effect<void, ConfigurationError, FileSystem | Keychain> {
+	return Effect.gen(function* () {
+		const keychain = yield* Keychain;
+		const env = environment ?? (yield* getCurrentEnvironmentEffect());
+		const { scopedTokenKey } = getKeyContext(env);
+		const token = serializeToken({ accessToken, expiresAt });
+		yield* Effect.tryPromise({
+			try: () => keychain.setPassword(KEYCHAIN_SERVICE, scopedTokenKey, token),
+			catch: (e) =>
+				new ConfigurationError({
+					message: `Failed to save token: ${e}`,
+					userMessage: "Could not save authentication token to keychain",
+				}),
+		});
+	});
 }
 
-async function getStoredTokenPromise(
+export function getStoredTokenEffect(
 	environment?: Environment,
-): Promise<StoredToken | null> {
-	const keytar = await getKeytar();
-	const env = environment ?? (await getCurrentEnvironment());
-	const { scopedTokenKey, legacyEnvironmentTokenKey } = getKeyContext(env);
+): Effect.Effect<
+	StoredToken | null,
+	ConfigurationError,
+	FileSystem | Keychain
+> {
+	return Effect.gen(function* () {
+		const keychain = yield* Keychain;
+		const env = environment ?? (yield* getCurrentEnvironmentEffect());
+		const { scopedTokenKey, legacyEnvironmentTokenKey } = getKeyContext(env);
 
-	const scopedValue = await keytar.getPassword(
-		KEYCHAIN_SERVICE,
-		scopedTokenKey,
-	);
-	if (scopedValue) {
-		return parseTokenValue(scopedValue, scopedTokenKey);
-	}
-
-	// Backward compatibility: migrate from previous environment-scoped key.
-	const legacyEnvironmentValue = await keytar.getPassword(
-		KEYCHAIN_SERVICE,
-		legacyEnvironmentTokenKey,
-	);
-	if (legacyEnvironmentValue) {
-		const legacyEnvironmentToken = await parseTokenValue(
-			legacyEnvironmentValue,
-			legacyEnvironmentTokenKey,
+		const scopedValue = yield* Effect.promise(() =>
+			keychain.getPassword(KEYCHAIN_SERVICE, scopedTokenKey),
 		);
-		if (legacyEnvironmentToken) {
+		if (scopedValue) {
+			return yield* parseTokenValueEffect(scopedValue, scopedTokenKey);
+		}
+
+		// Backward compatibility: migrate from previous environment-scoped key.
+		const legacyEnvironmentValue = yield* Effect.promise(() =>
+			keychain.getPassword(KEYCHAIN_SERVICE, legacyEnvironmentTokenKey),
+		);
+		if (legacyEnvironmentValue) {
+			const legacyEnvironmentToken = yield* parseTokenValueEffect(
+				legacyEnvironmentValue,
+				legacyEnvironmentTokenKey,
+			);
+			if (legacyEnvironmentToken) {
+				try {
+					yield* Effect.promise(() =>
+						keychain.setPassword(
+							KEYCHAIN_SERVICE,
+							scopedTokenKey,
+							serializeToken(legacyEnvironmentToken),
+						),
+					);
+					yield* Effect.promise(() =>
+						keychain.deletePassword(
+							KEYCHAIN_SERVICE,
+							legacyEnvironmentTokenKey,
+						),
+					);
+				} catch {
+					// Non-fatal: return token even if migration write fails.
+				}
+				return legacyEnvironmentToken;
+			}
+		}
+
+		// Backward compatibility: migrate from previous v2 scoped token key.
+		const legacyScopedToken = yield* findLegacyScopedTokenEffect(env);
+		if (legacyScopedToken) {
 			try {
-				await keytar.setPassword(
-					KEYCHAIN_SERVICE,
-					scopedTokenKey,
-					serializeToken(legacyEnvironmentToken),
+				yield* Effect.promise(() =>
+					keychain.setPassword(
+						KEYCHAIN_SERVICE,
+						scopedTokenKey,
+						serializeToken(legacyScopedToken.token),
+					),
 				);
-				await keytar.deletePassword(
-					KEYCHAIN_SERVICE,
-					legacyEnvironmentTokenKey,
+				yield* Effect.promise(() =>
+					keychain.deletePassword(KEYCHAIN_SERVICE, legacyScopedToken.tokenKey),
 				);
 			} catch {
 				// Non-fatal: return token even if migration write fails.
 			}
-			return legacyEnvironmentToken;
-		}
-	}
 
-	// Backward compatibility: migrate from previous v2 scoped token key.
-	const legacyScopedToken = await findLegacyScopedToken(env);
-	if (legacyScopedToken) {
+			return legacyScopedToken.token;
+		}
+
+		// Backward compatibility: migrate from legacy token key if present.
+		const legacyValue = yield* Effect.promise(() =>
+			keychain.getPassword(KEYCHAIN_SERVICE, LEGACY_TOKEN_KEY),
+		);
+		if (!legacyValue) {
+			return null;
+		}
+
+		const legacyToken = yield* parseTokenValueEffect(
+			legacyValue,
+			LEGACY_TOKEN_KEY,
+		);
+		if (!legacyToken) {
+			return null;
+		}
+
 		try {
-			await keytar.setPassword(
-				KEYCHAIN_SERVICE,
-				scopedTokenKey,
-				serializeToken(legacyScopedToken.token),
+			yield* Effect.promise(() =>
+				keychain.setPassword(
+					KEYCHAIN_SERVICE,
+					scopedTokenKey,
+					serializeToken(legacyToken),
+				),
 			);
-			await keytar.deletePassword(KEYCHAIN_SERVICE, legacyScopedToken.tokenKey);
+			yield* Effect.promise(() =>
+				keychain.deletePassword(KEYCHAIN_SERVICE, legacyEnvironmentTokenKey),
+			);
+			yield* Effect.promise(() =>
+				keychain.deletePassword(KEYCHAIN_SERVICE, LEGACY_TOKEN_KEY),
+			);
 		} catch {
 			// Non-fatal: return token even if migration write fails.
 		}
 
-		return legacyScopedToken.token;
-	}
-
-	// Backward compatibility: migrate from legacy token key if present.
-	const legacyValue = await keytar.getPassword(
-		KEYCHAIN_SERVICE,
-		LEGACY_TOKEN_KEY,
-	);
-	if (!legacyValue) {
-		return null;
-	}
-
-	const legacyToken = await parseTokenValue(legacyValue, LEGACY_TOKEN_KEY);
-	if (!legacyToken) {
-		return null;
-	}
-
-	try {
-		await keytar.setPassword(
-			KEYCHAIN_SERVICE,
-			scopedTokenKey,
-			serializeToken(legacyToken),
-		);
-		await keytar.deletePassword(KEYCHAIN_SERVICE, legacyEnvironmentTokenKey);
-		await keytar.deletePassword(KEYCHAIN_SERVICE, LEGACY_TOKEN_KEY);
-	} catch {
-		// Non-fatal: return token even if migration write fails.
-	}
-
-	return legacyToken;
+		return legacyToken;
+	});
 }
 
-async function deleteStoredTokenPromise(
+export function deleteStoredTokenEffect(
 	environment?: Environment,
-): Promise<void> {
-	const keytar = await getKeytar();
-	const env = environment ?? (await getCurrentEnvironment());
-	const { scopedTokenKey, legacyEnvironmentTokenKey } = getKeyContext(env);
-	await keytar.deletePassword(KEYCHAIN_SERVICE, scopedTokenKey);
-	await deleteLegacyScopedTokens(env);
-	await keytar.deletePassword(KEYCHAIN_SERVICE, legacyEnvironmentTokenKey);
-	await keytar.deletePassword(KEYCHAIN_SERVICE, LEGACY_TOKEN_KEY);
-}
-
-export function saveTokenEffect(...args: Parameters<typeof saveTokenPromise>): Effect.Effect<Awaited<ReturnType<typeof saveTokenPromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => saveTokenPromise(...args),
-		catch: (error) => error,
+): Effect.Effect<void, ConfigurationError, FileSystem | Keychain> {
+	return Effect.gen(function* () {
+		const keychain = yield* Keychain;
+		const env = environment ?? (yield* getCurrentEnvironmentEffect());
+		const { scopedTokenKey, legacyEnvironmentTokenKey } = getKeyContext(env);
+		yield* Effect.promise(() =>
+			keychain.deletePassword(KEYCHAIN_SERVICE, scopedTokenKey),
+		);
+		yield* deleteLegacyScopedTokensEffect(env);
+		yield* Effect.promise(() =>
+			keychain.deletePassword(KEYCHAIN_SERVICE, legacyEnvironmentTokenKey),
+		);
+		yield* Effect.promise(() =>
+			keychain.deletePassword(KEYCHAIN_SERVICE, LEGACY_TOKEN_KEY),
+		);
 	});
-}
-
-export function getStoredTokenEffect(...args: Parameters<typeof getStoredTokenPromise>): Effect.Effect<Awaited<ReturnType<typeof getStoredTokenPromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => getStoredTokenPromise(...args),
-		catch: (error) => error,
-	});
-}
-
-export function deleteStoredTokenEffect(...args: Parameters<typeof deleteStoredTokenPromise>): Effect.Effect<Awaited<ReturnType<typeof deleteStoredTokenPromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => deleteStoredTokenPromise(...args),
-		catch: (error) => error,
-	});
-}
-
-export function saveToken(
-	...args: Parameters<typeof saveTokenPromise>
-): Promise<Awaited<ReturnType<typeof saveTokenPromise>>> {
-	return Effect.runPromise(saveTokenEffect(...args));
-}
-
-export function getStoredToken(
-	...args: Parameters<typeof getStoredTokenPromise>
-): Promise<Awaited<ReturnType<typeof getStoredTokenPromise>>> {
-	return Effect.runPromise(getStoredTokenEffect(...args));
-}
-
-export function deleteStoredToken(
-	...args: Parameters<typeof deleteStoredTokenPromise>
-): Promise<Awaited<ReturnType<typeof deleteStoredTokenPromise>>> {
-	return Effect.runPromise(deleteStoredTokenEffect(...args));
 }

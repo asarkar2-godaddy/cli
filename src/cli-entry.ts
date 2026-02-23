@@ -32,6 +32,7 @@ import { createApplicationCommand } from "./cli/commands/application";
 import { createWebhookCommand } from "./cli/commands/webhook";
 import { authStatusEffect } from "./core/auth";
 import { envGetEffect, validateEnvironment } from "./core/environment";
+import { NodeLiveLayer } from "./effect/runtime";
 import { setVerbosityLevel } from "./services/logger";
 
 type Descriptor = CommandDescriptor.Command<unknown>;
@@ -357,19 +358,22 @@ function invokeCommandAction(
 	const argumentsList = extractCommandArguments(command, parsedValue);
 	const options = extractCommandOptions(command, parsedValue);
 
+	let effect: Effect.Effect<unknown, unknown, unknown>;
+
 	if (argumentsList.length > 0 && command.options.length > 0) {
-		return action(...argumentsList, options).pipe(Effect.asVoid);
+		effect = action(...argumentsList, options);
+	} else if (argumentsList.length > 0) {
+		effect = action(...argumentsList);
+	} else if (command.options.length > 0) {
+		effect = action(options);
+	} else {
+		effect = action();
 	}
 
-	if (argumentsList.length > 0) {
-		return action(...argumentsList).pipe(Effect.asVoid);
-	}
-
-	if (command.options.length > 0) {
-		return action(options).pipe(Effect.asVoid);
-	}
-
-	return action().pipe(Effect.asVoid);
+	return effect.pipe(
+		Effect.provide(NodeLiveLayer),
+		Effect.asVoid,
+	) as Effect.Effect<void, unknown, never>;
 }
 
 function applyGlobalOptions(
@@ -443,37 +447,41 @@ export function createCliProgram(): Command {
 		)
 		.option("--info", "Enable basic verbose output (same as -v)")
 		.option("--debug", "Enable full verbose output (same as -vv)")
-		.option(
-			"--pretty",
-			"Pretty-print JSON envelopes with 2-space indentation",
-		)
+		.option("--pretty", "Pretty-print JSON envelopes with 2-space indentation")
 		.action(() =>
 			Effect.gen(function* () {
-				const envResult = yield* envGetEffect();
+				const environment = yield* envGetEffect().pipe(
+					Effect.map((env) => ({ active: env })),
+					Effect.catchAll((error) =>
+						Effect.succeed({
+							error: error.message,
+						}),
+					),
+				);
 				const commandTree = getRootCommandTree();
-				let authSnapshot: { error: string } | Record<string, unknown> | undefined;
-				try {
-					const authResult = yield* authStatusEffect();
-					authSnapshot = authResult.success
-						? { ...(authResult.data ?? {}) }
-						: { error: authResult.error?.message ?? "unknown" };
-				} catch (error) {
-					authSnapshot = {
-						error:
-							error instanceof Error
-								? error.message
-								: "Failed to load auth module",
-					};
-				}
+				const authSnapshot = yield* authStatusEffect().pipe(
+					Effect.map(
+						(status) =>
+							({
+								authenticated: status.authenticated,
+								has_token: status.hasToken,
+								token_expiry: status.tokenExpiry?.toISOString(),
+								environment: status.environment,
+							}) as Record<string, unknown>,
+					),
+					Effect.catchAll((error) =>
+						Effect.succeed({
+							error: error.message,
+						} as Record<string, unknown>),
+					),
+				);
 
 				emitSuccess(
 					currentCommandString(),
 					{
 						description: commandTree.description,
 						version: packageJson.version,
-						environment: envResult.success
-							? { active: envResult.data }
-							: { error: envResult.error?.message ?? "unknown" },
+						environment,
 						authentication: authSnapshot,
 						command_tree: commandTree,
 					},

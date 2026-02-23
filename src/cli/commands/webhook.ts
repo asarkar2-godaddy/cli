@@ -7,12 +7,7 @@ import {
 	findRegistryNodeById,
 	registryNodeToResult,
 } from "../agent/registry";
-import {
-	currentCommandString,
-	emitError,
-	emitSuccess,
-	unwrapResult,
-} from "../agent/respond";
+import { currentCommandString, emitError, emitSuccess } from "../agent/respond";
 import { truncateList } from "../agent/truncation";
 import { Command } from "../command-model";
 
@@ -60,10 +55,7 @@ export function createWebhookCommand(): Command {
 		.description("List available webhook event types")
 		.action(() =>
 			Effect.gen(function* () {
-				const events = unwrapResult(
-					yield* webhookEventsEffect(),
-					"Failed to get webhook events",
-				);
+				const events = yield* webhookEventsEffect();
 				const truncated = truncateList(events, "webhook-events");
 
 				emitSuccess(

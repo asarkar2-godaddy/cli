@@ -1,7 +1,7 @@
 import type { Stats } from "node:fs";
-import * as Effect from "effect/Effect";
-import { readdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import * as Effect from "effect/Effect";
+import { FileSystem } from "../../effect/services/filesystem";
 import type { Result } from "../../shared/types";
 import { getSecurityConfig, shouldExcludeFile } from "./config";
 
@@ -15,11 +15,11 @@ const SOURCE_EXTENSIONS = [".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"];
  * Applies security configuration exclusion patterns (node_modules, dist, build, __tests__).
  *
  * @param rootPath - Absolute or relative path to extension directory
- * @returns Result containing array of absolute file paths to scan, or error
+ * @returns Effect containing Result with array of absolute file paths to scan, or error
  *
  * @example
  * ```ts
- * const result = await findFilesToScan('/path/to/extension');
+ * const result = yield* findFilesToScan('/path/to/extension');
  * if (result.success && result.data) {
  *   console.log(`Found ${result.data.length} files to scan`);
  *   for (const file of result.data) {
@@ -28,57 +28,58 @@ const SOURCE_EXTENSIONS = [".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"];
  * }
  * ```
  */
-async function findFilesToScanPromise(
+export function findFilesToScan(
 	rootPath: string,
-): Promise<Result<string[]>> {
-	try {
+): Effect.Effect<Result<string[]>, never, FileSystem> {
+	return Effect.gen(function* () {
+		const fs = yield* FileSystem;
 		const config = getSecurityConfig();
 		const absoluteRoot = resolve(rootPath);
 
 		// Verify root directory exists
+		let rootStats: Stats;
 		try {
-			const rootStats = await stat(absoluteRoot);
-			if (!rootStats.isDirectory()) {
-				return {
-					success: false,
-					error: new Error(`Path is not a directory: ${absoluteRoot}`),
-				};
-			}
+			rootStats = fs.statSync(absoluteRoot);
 		} catch (error) {
 			return {
 				success: false,
 				error: error instanceof Error ? error : new Error(String(error)),
-			};
+			} as Result<string[]>;
+		}
+
+		if (!rootStats.isDirectory()) {
+			return {
+				success: false,
+				error: new Error(`Path is not a directory: ${absoluteRoot}`),
+			} as Result<string[]>;
 		}
 
 		const files: string[] = [];
-		await traverseDirectory(absoluteRoot, files, config);
+		traverseDirectory(fs, absoluteRoot, files, config);
 
 		return {
 			success: true,
 			data: files,
-		};
-	} catch (error) {
-		return {
-			success: false,
-			error: error instanceof Error ? error : new Error(String(error)),
-		};
-	}
+		} as Result<string[]>;
+	});
 }
 
 /**
  * Recursively traverse a directory and collect source files.
  * Skips directories and files matching exclusion patterns.
+ * Uses synchronous FileSystem service methods.
  *
+ * @param fs - FileSystem service instance
  * @param dirPath - Absolute path to directory
  * @param files - Array to accumulate file paths (mutated)
  * @param config - Security configuration with exclusion patterns
  */
-async function traverseDirectory(
+function traverseDirectory(
+	fs: Effect.Effect.Success<typeof FileSystem>,
 	dirPath: string,
 	files: string[],
 	config: ReturnType<typeof getSecurityConfig>,
-): Promise<void> {
+): void {
 	// Check if directory should be excluded
 	if (shouldExcludeFile(dirPath, config)) {
 		return;
@@ -86,8 +87,8 @@ async function traverseDirectory(
 
 	let entries: string[];
 	try {
-		entries = await readdir(dirPath);
-	} catch (error) {
+		entries = fs.readdirSync(dirPath);
+	} catch (_error) {
 		// Skip directories we can't read (permission issues, etc.)
 		return;
 	}
@@ -102,15 +103,15 @@ async function traverseDirectory(
 
 		let stats: Stats;
 		try {
-			stats = await stat(fullPath);
-		} catch (error) {
+			stats = fs.statSync(fullPath);
+		} catch (_error) {
 			// Skip files/dirs we can't stat
 			continue;
 		}
 
 		if (stats.isDirectory()) {
 			// Recurse into subdirectory
-			await traverseDirectory(fullPath, files, config);
+			traverseDirectory(fs, fullPath, files, config);
 		} else if (stats.isFile() && isSourceFile(fullPath)) {
 			// Add source file to list
 			files.push(fullPath);
@@ -126,17 +127,4 @@ async function traverseDirectory(
  */
 function isSourceFile(filePath: string): boolean {
 	return SOURCE_EXTENSIONS.some((ext) => filePath.endsWith(ext));
-}
-
-export function findFilesToScanEffect(...args: Parameters<typeof findFilesToScanPromise>): Effect.Effect<Awaited<ReturnType<typeof findFilesToScanPromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => findFilesToScanPromise(...args),
-		catch: (error) => error,
-	});
-}
-
-export function findFilesToScan(
-	...args: Parameters<typeof findFilesToScanPromise>
-): Promise<Awaited<ReturnType<typeof findFilesToScanPromise>>> {
-	return Effect.runPromise(findFilesToScanEffect(...args));
 }

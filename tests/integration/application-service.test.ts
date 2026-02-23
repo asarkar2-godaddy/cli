@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, test } from "vitest";
 import {
-	archiveApplication,
-	createApplication,
-	createRelease,
-	disableApplication,
-	enableApplication,
-	getApplication,
-	getApplicationAndLatestRelease,
-	updateApplication,
+	archiveApplicationEffect,
+	createApplicationEffect,
+	createReleaseEffect,
+	disableApplicationEffect,
+	enableApplicationEffect,
+	getApplicationEffect,
+	getApplicationAndLatestReleaseEffect,
+	updateApplicationEffect,
 } from "../../src/services/applications";
+import { runEffect } from "../setup/effect-test-utils";
 import { withValidAuth } from "../setup/test-utils";
 
 describe("Application Service", () => {
@@ -17,9 +18,11 @@ describe("Application Service", () => {
 	});
 
 	test("gets application by name", async () => {
-		const app = await getApplication("test-app-1", {
-			accessToken: "test-token-123",
-		});
+		const app = await runEffect(
+			getApplicationEffect("test-app-1", {
+				accessToken: "test-token-123",
+			}),
+		);
 
 		expect(app).toBeTruthy();
 		expect(app?.application?.name).toBe("test-app-1");
@@ -27,16 +30,20 @@ describe("Application Service", () => {
 	});
 
 	test("returns null for non-existent application", async () => {
-		const app = await getApplication("non-existent-app", {
-			accessToken: "test-token-123",
-		});
+		const app = await runEffect(
+			getApplicationEffect("non-existent-app", {
+				accessToken: "test-token-123",
+			}),
+		);
 		expect(app.application).toBeNull();
 	});
 
 	test("gets application with releases", async () => {
-		const app = await getApplicationAndLatestRelease("test-app-1", {
-			accessToken: "test-token-123",
-		});
+		const app = await runEffect(
+			getApplicationAndLatestReleaseEffect("test-app-1", {
+				accessToken: "test-token-123",
+			}),
+		);
 
 		expect(app).toBeTruthy();
 		expect(app?.application?.releases).toHaveLength(2);
@@ -52,9 +59,11 @@ describe("Application Service", () => {
 			authorizationScopes: ["read", "write"],
 		};
 
-		const app = await createApplication(input, {
-			accessToken: "test-token-123",
-		});
+		const app = await runEffect(
+			createApplicationEffect(input, {
+				accessToken: "test-token-123",
+			}),
+		);
 
 		expect(app).toBeTruthy();
 		expect(app?.createApplication?.name).toBe(input.name);
@@ -74,9 +83,15 @@ describe("Application Service", () => {
 			authorizationScopes: ["read"],
 		};
 
-		await expect(
-			createApplication(input, { accessToken: "test-token-123" }),
-		).rejects.toThrow("already exists");
+		try {
+			await runEffect(
+				createApplicationEffect(input, { accessToken: "test-token-123" }),
+			);
+			expect.unreachable("Should have thrown");
+		} catch (error: unknown) {
+			const err = error as { message?: string };
+			expect(err.message).toContain("already exists");
+		}
 	});
 
 	test("updates existing application", async () => {
@@ -85,9 +100,11 @@ describe("Application Service", () => {
 			description: "This application has been updated",
 		};
 
-		const app = await updateApplication("app-1", updates, {
-			accessToken: "test-token-123",
-		});
+		const app = await runEffect(
+			updateApplicationEffect("app-1", updates, {
+				accessToken: "test-token-123",
+			}),
+		);
 
 		expect(app?.updateApplication?.label).toBe(updates.label);
 		expect(app?.updateApplication?.description).toBe(updates.description);
@@ -103,9 +120,11 @@ describe("Application Service", () => {
 			subscriptions: [],
 		};
 
-		const release = await createRelease(input, {
-			accessToken: "test-token-123",
-		});
+		const release = await runEffect(
+			createReleaseEffect(input, {
+				accessToken: "test-token-123",
+			}),
+		);
 
 		expect(release?.createRelease?.version).toBe(input.version);
 		expect(release?.createRelease?.description).toBe(input.description);
@@ -114,27 +133,33 @@ describe("Application Service", () => {
 	});
 
 	test("enables application", async () => {
-		const result = await enableApplication(
-			{ applicationName: "test-app-1", storeId: "store-1" },
-			{ accessToken: "test-token-123" },
+		const result = await runEffect(
+			enableApplicationEffect(
+				{ applicationName: "test-app-1", storeId: "store-1" },
+				{ accessToken: "test-token-123" },
+			),
 		);
 
 		expect(result?.enableStoreApplication?.id).toBe("app-1");
 	});
 
 	test("disables application", async () => {
-		const result = await disableApplication(
-			{ applicationName: "test-app-1", storeId: "store-1" },
-			{ accessToken: "test-token-123" },
+		const result = await runEffect(
+			disableApplicationEffect(
+				{ applicationName: "test-app-1", storeId: "store-1" },
+				{ accessToken: "test-token-123" },
+			),
 		);
 
 		expect(result?.disableStoreApplication?.id).toBe("app-1");
 	});
 
 	test("archives application", async () => {
-		const result = await archiveApplication("app-1", {
-			accessToken: "test-token-123",
-		});
+		const result = await runEffect(
+			archiveApplicationEffect("app-1", {
+				accessToken: "test-token-123",
+			}),
+		);
 
 		expect(result?.archiveApplication?.id).toBe("app-1");
 		expect(result?.archiveApplication?.status).toBe("ARCHIVED");

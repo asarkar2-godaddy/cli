@@ -1,9 +1,10 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import * as Effect from "effect/Effect";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
 	type DeployProgressEvent,
-	applicationDeploy,
+	applicationDeployEffect,
 } from "../../src/core/applications";
 import * as authModule from "../../src/core/auth";
 import * as applicationsService from "../../src/services/applications";
@@ -11,6 +12,7 @@ import * as configService from "../../src/services/config";
 import type { ConfigExtensionInfo } from "../../src/services/config";
 import * as presignedUrlService from "../../src/services/extension/presigned-url";
 import * as uploadService from "../../src/services/extension/upload";
+import { runEffect } from "../setup/effect-test-utils";
 
 const testDir = join(process.cwd(), "tests", "fixtures", "test-app-deploy");
 const extensionsDir = join(testDir, "extensions");
@@ -24,13 +26,13 @@ describe("Application Deploy with Security Scanning", () => {
 		await mkdir(extensionsDir, { recursive: true });
 
 		// Mock authentication
-		vi.spyOn(authModule, "getFromKeychain").mockResolvedValue("test-token");
+		vi.spyOn(authModule, "getFromKeychainEffect").mockReturnValue(Effect.succeed("test-token" as string | null));
 
-		// Mock getApplicationAndLatestRelease to return a valid application with release
+		// Mock getApplicationAndLatestReleaseEffect to return a valid application with release
 		vi.spyOn(
 			applicationsService,
-			"getApplicationAndLatestRelease",
-		).mockResolvedValue({
+			"getApplicationAndLatestReleaseEffect",
+		).mockReturnValue(Effect.succeed({
 			application: {
 				id: "app-123",
 				name: "test-app",
@@ -53,10 +55,10 @@ describe("Application Deploy with Security Scanning", () => {
 					],
 				},
 			},
-		});
+		}));
 
-		// Mock updateApplication
-		vi.spyOn(applicationsService, "updateApplication").mockResolvedValue({
+		// Mock updateApplicationEffect
+		vi.spyOn(applicationsService, "updateApplicationEffect").mockReturnValue(Effect.succeed({
 			updateApplication: {
 				id: "app-123",
 				name: "test-app",
@@ -67,7 +69,7 @@ describe("Application Deploy with Security Scanning", () => {
 				proxyUrl: "https://proxy.test.example.com",
 				clientId: "test-client-id",
 			},
-		});
+		}));
 
 		// Setup spy for getExtensionsFromConfig (will be configured per test)
 		getExtensionsFromConfigSpy = vi.spyOn(
@@ -76,22 +78,22 @@ describe("Application Deploy with Security Scanning", () => {
 		);
 
 		// Mock presigned URL generation
-		vi.spyOn(presignedUrlService, "getUploadTarget").mockResolvedValue({
+		vi.spyOn(presignedUrlService, "getUploadTargetEffect").mockReturnValue(Effect.succeed({
 			uploadId: "upload-123",
 			url: "https://s3.example.com/presigned-url",
 			key: "test/bundle.js",
 			expiresAt: "2025-12-31T23:59:59Z",
 			maxSizeBytes: 10485760,
 			requiredHeaders: {},
-		});
+		}));
 
 		// Mock S3 upload
-		vi.spyOn(uploadService, "uploadArtifact").mockResolvedValue({
+		vi.spyOn(uploadService, "uploadArtifactEffect").mockReturnValue(Effect.succeed({
 			uploadId: "upload-123",
 			etag: '"abc123"',
 			status: 200,
 			sizeBytes: 1000,
-		});
+		}));
 	});
 
 	afterEach(async () => {
@@ -130,11 +132,14 @@ exec('rm -rf /'); // SEC001 violation
 			];
 			getExtensionsFromConfigSpy.mockReturnValue(extensions);
 
-			const result = await applicationDeploy("test-app");
-
-			expect(result.success).toBe(false);
-			expect(result.error?.userMessage).toContain("blocked");
-			expect(applicationsService.updateApplication).not.toHaveBeenCalled();
+			try {
+				await runEffect(applicationDeployEffect("test-app"));
+				expect.unreachable("Should have thrown");
+			} catch (error: unknown) {
+				const err = error as { userMessage?: string };
+				expect(err.userMessage).toContain("blocked");
+			}
+			expect(applicationsService.updateApplicationEffect).not.toHaveBeenCalled();
 		} finally {
 			process.chdir(originalCwd);
 		}
@@ -191,19 +196,18 @@ export function greet(name: string) {
 			];
 			getExtensionsFromConfigSpy.mockReturnValue(extensions);
 
-			const result = await applicationDeploy("test-app", {
+			const result = await runEffect(applicationDeployEffect("test-app", {
 				onProgress: (event) => {
 					progressEvents.push(event);
 				},
-			});
+			}));
 
-			expect(result.success).toBe(true);
-			expect(result.data?.totalExtensions).toBe(2);
-			expect(result.data?.blockedExtensions).toBe(0);
-			expect(result.data?.securityReports).toHaveLength(2);
-			expect(result.data?.securityReports[0].preBundleReport).toBeDefined();
-			expect(result.data?.securityReports[0].postBundleReport).toBeDefined();
-			expect(result.data?.securityReports[0].postBundleReport?.blocked).toBe(
+			expect(result.totalExtensions).toBe(2);
+			expect(result.blockedExtensions).toBe(0);
+			expect(result.securityReports).toHaveLength(2);
+			expect(result.securityReports[0].preBundleReport).toBeDefined();
+			expect(result.securityReports[0].postBundleReport).toBeDefined();
+			expect(result.securityReports[0].postBundleReport?.blocked).toBe(
 				false,
 			);
 			expect(
@@ -230,7 +234,7 @@ export function greet(name: string) {
 						event.status === "completed",
 				),
 			).toBe(true);
-			expect(applicationsService.updateApplication).toHaveBeenCalledWith(
+			expect(applicationsService.updateApplicationEffect).toHaveBeenCalledWith(
 				"app-123",
 				{ status: "ACTIVE" },
 				{ accessToken: "test-token" },
@@ -272,14 +276,13 @@ export function func${i}() {
 			// Mock config to return the extensions
 			getExtensionsFromConfigSpy.mockReturnValue(extensions);
 
-			const result = await applicationDeploy("test-app");
+			const result = await runEffect(applicationDeployEffect("test-app"));
 
-			expect(result.success).toBe(true);
-			expect(result.data?.totalExtensions).toBe(3);
-			expect(result.data?.securityReports).toHaveLength(3);
+			expect(result.totalExtensions).toBe(3);
+			expect(result.securityReports).toHaveLength(3);
 
 			// Verify all extensions were scanned
-			const extensionNames = result.data?.securityReports.map(
+			const extensionNames = result.securityReports.map(
 				(r) => r.extensionName,
 			);
 			expect(extensionNames).toContain("@test/extension-1");
@@ -338,12 +341,15 @@ exec('dangerous command'); // SEC001
 			];
 			getExtensionsFromConfigSpy.mockReturnValue(extensions);
 
-			const result = await applicationDeploy("test-app");
-
 			// Deployment should be blocked
-			expect(result.success).toBe(false);
-			expect(result.error?.userMessage).toContain("blocked");
-			expect(applicationsService.updateApplication).not.toHaveBeenCalled();
+			try {
+				await runEffect(applicationDeployEffect("test-app"));
+				expect.unreachable("Should have thrown");
+			} catch (error: unknown) {
+				const err = error as { userMessage?: string };
+				expect(err.userMessage).toContain("blocked");
+			}
+			expect(applicationsService.updateApplicationEffect).not.toHaveBeenCalled();
 		} finally {
 			process.chdir(originalCwd);
 		}
@@ -357,13 +363,12 @@ exec('dangerous command'); // SEC001
 			// Mock config to return no extensions
 			getExtensionsFromConfigSpy.mockReturnValue([]);
 
-			const result = await applicationDeploy("test-app");
+			const result = await runEffect(applicationDeployEffect("test-app"));
 
-			expect(result.success).toBe(true);
-			expect(result.data?.totalExtensions).toBe(0);
-			expect(result.data?.securityReports).toHaveLength(0);
+			expect(result.totalExtensions).toBe(0);
+			expect(result.securityReports).toHaveLength(0);
 			// Deployment should still proceed
-			expect(applicationsService.updateApplication).toHaveBeenCalledWith(
+			expect(applicationsService.updateApplicationEffect).toHaveBeenCalledWith(
 				"app-123",
 				{ status: "ACTIVE" },
 				{ accessToken: "test-token" },

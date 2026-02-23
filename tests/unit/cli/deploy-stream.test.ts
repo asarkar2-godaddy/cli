@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
+	hasWrittenEnvelope,
+	resetEnvelopeWriter,
+} from "../../../src/cli/agent/respond";
+import {
 	emitStreamError,
 	emitStreamProgress,
 	emitStreamResult,
 	emitStreamStart,
 	emitStreamStep,
 } from "../../../src/cli/agent/stream";
-import {
-	hasWrittenEnvelope,
-	resetEnvelopeWriter,
-} from "../../../src/cli/agent/respond";
 
 describe("Deploy stream protocol", () => {
 	let writes: string[] = [];
@@ -18,14 +18,14 @@ describe("Deploy stream protocol", () => {
 		resetEnvelopeWriter();
 		writes = [];
 		process.exitCode = 0;
-		vi.spyOn(process.stdout, "write").mockImplementation(
-			((chunk: string | Uint8Array) => {
-				writes.push(
-					typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"),
-				);
-				return true;
-			}) as typeof process.stdout.write,
-		);
+		vi.spyOn(process.stdout, "write").mockImplementation(((
+			chunk: string | Uint8Array,
+		) => {
+			writes.push(
+				typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"),
+			);
+			return true;
+		}) as typeof process.stdout.write);
 	});
 
 	afterEach(() => {

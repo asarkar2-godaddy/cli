@@ -1,5 +1,12 @@
-import { type Environment, envGet, getApiUrl } from "../core/environment";
 import * as Effect from "effect/Effect";
+import { type Environment, envGetEffect, getApiUrl } from "../core/environment";
+import {
+	AuthenticationError,
+	type ConfigurationError,
+	NetworkError,
+	type ValidationError,
+} from "../effect/errors";
+import type { FileSystem } from "../effect/services/filesystem";
 import { logHttpRequest, logHttpResponse } from "./logger";
 
 export type WebhookEventType = {
@@ -7,67 +14,89 @@ export type WebhookEventType = {
 	description: string;
 };
 
-async function getWebhookEventsTypesPromise({
+/**
+ * Fetch webhook event types from the API.
+ * Requires FileSystem service (via envGetEffect).
+ */
+export function getWebhookEventsTypesEffect({
 	accessToken,
 }: {
 	accessToken: string | null;
-}): Promise<{ events: Array<WebhookEventType> }> {
-	if (!accessToken) {
-		throw new Error("Access token is required");
-	}
+}): Effect.Effect<
+	{ events: Array<WebhookEventType> },
+	AuthenticationError | NetworkError | ConfigurationError | ValidationError,
+	FileSystem
+> {
+	return Effect.gen(function* () {
+		if (!accessToken) {
+			return yield* Effect.fail(
+				new AuthenticationError({
+					message: "Access token is required",
+					userMessage: "Authentication required to fetch webhook events",
+				}),
+			);
+		}
 
-	// Get the current environment and build the API URL
-	const result = await envGet();
-	if (!result.success || !result.data) {
-		throw result.error ?? new Error("Failed to get environment");
-	}
-	const env = result.data as Environment;
-	const baseUrl = getApiUrl(env);
+		// Get the current environment and build the API URL
+		const env: Environment = yield* envGetEffect();
+		const baseUrl = getApiUrl(env);
 
-	const url = `${baseUrl}/v1/apis/webhook-event-types`;
-	const headers = {
-		Authorization: `Bearer ${accessToken}`,
-		UserAgent: "@godaddy/cli",
-	};
+		const url = `${baseUrl}/v1/apis/webhook-event-types`;
+		const headers = {
+			Authorization: `Bearer ${accessToken}`,
+			UserAgent: "@godaddy/cli",
+		};
 
-	const startTime = Date.now();
+		const startTime = Date.now();
 
-	// Log HTTP request
-	logHttpRequest({
-		method: "GET",
+		// Log HTTP request
+		logHttpRequest({
+			method: "GET",
+		});
+
+		const response = yield* Effect.tryPromise({
+			try: () => fetch(url, { headers }),
+			catch: (error) =>
+				new NetworkError({
+					message: `Failed to fetch webhook events: ${error instanceof Error ? error.message : String(error)}`,
+					userMessage: "Network error fetching webhook events",
+				}),
+		});
+
+		const duration = Date.now() - startTime;
+
+		const json = yield* Effect.tryPromise({
+			try: () =>
+				response.json() as Promise<{
+					events: Array<WebhookEventType>;
+					error?: string;
+				}>,
+			catch: (error) =>
+				new NetworkError({
+					message: `Failed to parse webhook events response: ${error instanceof Error ? error.message : String(error)}`,
+					userMessage: "Failed to parse webhook events response",
+				}),
+		});
+
+		// Log HTTP response
+		logHttpResponse({
+			method: "GET",
+			status: response.status,
+			statusText: response.statusText,
+			headers: response.headers ? {} : undefined,
+			body: json,
+			duration,
+		});
+
+		if (!response.ok) {
+			return yield* Effect.fail(
+				new AuthenticationError({
+					message: json.error || "Authentication failed",
+					userMessage: json.error || "Authentication failed",
+				}),
+			);
+		}
+
+		return json as { events: Array<WebhookEventType> };
 	});
-
-	const response = await fetch(url, { headers });
-	const duration = Date.now() - startTime;
-
-	const json = await response.json();
-
-	// Log HTTP response
-	logHttpResponse({
-		method: "GET",
-		status: response.status,
-		statusText: response.statusText,
-		headers: response.headers ? {} : undefined,
-		body: json,
-		duration,
-	});
-
-	if (!response.ok) {
-		throw new Error(json.error || "Authentication failed");
-	}
-
-	return json;
-}
-
-export function getWebhookEventsTypesEffect(...args: Parameters<typeof getWebhookEventsTypesPromise>): Effect.Effect<Awaited<ReturnType<typeof getWebhookEventsTypesPromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => getWebhookEventsTypesPromise(...args),
-		catch: (error) => error,
-	});
-}
-
-export function getWebhookEventsTypes(
-	...args: Parameters<typeof getWebhookEventsTypesPromise>
-): Promise<Awaited<ReturnType<typeof getWebhookEventsTypesPromise>>> {
-	return Effect.runPromise(getWebhookEventsTypesEffect(...args));
 }

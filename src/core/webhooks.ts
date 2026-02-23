@@ -1,11 +1,14 @@
-import { getWebhookEventsTypes } from "../services/webhook-events";
 import * as Effect from "effect/Effect";
 import {
 	AuthenticationError,
-	type CmdResult,
-	NetworkError,
-} from "../shared/types";
-import { getFromKeychain } from "./auth";
+	type ConfigurationError,
+	type NetworkError,
+	type ValidationError,
+} from "../effect/errors";
+import type { FileSystem } from "../effect/services/filesystem";
+import type { Keychain } from "../effect/services/keychain";
+import { getWebhookEventsTypesEffect } from "../services/webhook-events";
+import { getFromKeychainEffect } from "./auth";
 
 // Type definitions for core webhook functions
 export interface WebhookEvent {
@@ -16,50 +19,28 @@ export interface WebhookEvent {
 /**
  * Get list of available webhook event types
  */
-async function webhookEventsPromise(): Promise<CmdResult<WebhookEvent[]>> {
-	try {
-		const accessToken = await getFromKeychain("token");
+export function webhookEventsEffect(): Effect.Effect<
+	WebhookEvent[],
+	AuthenticationError | NetworkError | ConfigurationError | ValidationError,
+	FileSystem | Keychain
+> {
+	return Effect.gen(function* () {
+		const accessToken = yield* getFromKeychainEffect("token");
+
 		if (!accessToken) {
-			return {
-				success: false,
-				error: new AuthenticationError(
-					"Not authenticated",
-					"Please run 'godaddy auth login' first",
-				),
-			};
+			return yield* new AuthenticationError({
+				message: "Not authenticated",
+				userMessage: "Please run 'godaddy auth login' first",
+			});
 		}
 
-		const result = await getWebhookEventsTypes({ accessToken });
+		const result = yield* getWebhookEventsTypesEffect({ accessToken });
 
 		const events: WebhookEvent[] = result.events.map((event) => ({
 			eventType: event.eventType,
 			description: event.description,
 		}));
 
-		return {
-			success: true,
-			data: events,
-		};
-	} catch (error) {
-		return {
-			success: false,
-			error: new NetworkError(
-				`Failed to get webhook events: ${error}`,
-				error as Error,
-			),
-		};
-	}
-}
-
-export function webhookEventsEffect(...args: Parameters<typeof webhookEventsPromise>): Effect.Effect<Awaited<ReturnType<typeof webhookEventsPromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => webhookEventsPromise(...args),
-		catch: (error) => error,
+		return events;
 	});
-}
-
-export function webhookEvents(
-	...args: Parameters<typeof webhookEventsPromise>
-): Promise<Awaited<ReturnType<typeof webhookEventsPromise>>> {
-	return Effect.runPromise(webhookEventsEffect(...args));
 }

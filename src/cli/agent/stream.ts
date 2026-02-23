@@ -1,5 +1,5 @@
-import type { NextAction } from "./types";
 import { markEnvelopeWritten } from "./respond";
+import type { NextAction } from "./types";
 
 export interface StreamStartEvent {
 	type: "start";

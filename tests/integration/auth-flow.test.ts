@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "vitest";
-import { getFromKeychain } from "../../src/services/auth";
+import { getFromKeychainEffect } from "../../src/core/auth";
+import { runEffect } from "../setup/effect-test-utils";
 import { mockKeytar } from "../setup/system-mocks";
 import { withNoAuth, withValidAuth } from "../setup/test-utils";
 
@@ -11,7 +12,7 @@ describe("Authentication Flow", () => {
 	test("getFromKeychain returns valid token when present", async () => {
 		withValidAuth();
 
-		const token = await getFromKeychain("token");
+		const token = await runEffect(getFromKeychainEffect("token"));
 		expect(token).toBe("test-token-123");
 	});
 
@@ -25,7 +26,7 @@ describe("Authentication Flow", () => {
 		);
 		mockKeytar.deletePassword.mockResolvedValueOnce(true);
 
-		const token = await getFromKeychain("token");
+		const token = await runEffect(getFromKeychainEffect("token"));
 		expect(token).toBeNull();
 
 		// Should have deleted expired token
@@ -38,7 +39,7 @@ describe("Authentication Flow", () => {
 	test("getFromKeychain returns null when no token exists", async () => {
 		withNoAuth();
 
-		const token = await getFromKeychain("token");
+		const token = await runEffect(getFromKeychainEffect("token"));
 		expect(token).toBeNull();
 	});
 
@@ -71,7 +72,7 @@ describe("Authentication Flow", () => {
 				mockKeytar.deletePassword.mockResolvedValueOnce(true);
 			}
 
-			const result = await getFromKeychain("token");
+			const result = await runEffect(getFromKeychainEffect("token"));
 			expect(result).toBe(scenario.expected);
 		}
 	});

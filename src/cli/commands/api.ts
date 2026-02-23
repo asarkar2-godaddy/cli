@@ -2,21 +2,16 @@ import * as Effect from "effect/Effect";
 import {
 	type HttpMethod,
 	apiRequestEffect,
-	parseFields,
-	parseHeaders,
-	readBodyFromFile,
+	parseFieldsEffect,
+	parseHeadersEffect,
+	readBodyFromFileEffect,
 } from "../../core/api";
+import { ValidationError } from "../../effect/errors";
 import { getVerbosityLevel } from "../../services/logger";
-import { ValidationError } from "../../shared/types";
 import { mapRuntimeError } from "../agent/errors";
 import { nextActionsFor } from "../agent/next-actions";
 import { commandIds } from "../agent/registry";
-import {
-	currentCommandString,
-	emitError,
-	emitSuccess,
-	unwrapResult,
-} from "../agent/respond";
+import { currentCommandString, emitError, emitSuccess } from "../agent/respond";
 import { Command } from "../command-model";
 
 const VALID_METHODS: readonly HttpMethod[] = [
@@ -131,42 +126,34 @@ export function createApiCommand(): Command {
 
 				if (!VALID_METHODS.includes(methodInput as HttpMethod)) {
 					return yield* Effect.fail(
-						new ValidationError(
-							`Invalid HTTP method: ${options.method ?? ""}`,
-							`Method must be one of: ${VALID_METHODS.join(", ")}`,
-						),
+						new ValidationError({
+							message: `Invalid HTTP method: ${options.method ?? ""}`,
+							userMessage: `Method must be one of: ${VALID_METHODS.join(", ")}`,
+						}),
 					);
 				}
 
 				const method = methodInput as HttpMethod;
-				const fields = unwrapResult(
-					parseFields(normalizeStringArray(options.field)),
-					"Invalid field format",
+				const fields = yield* parseFieldsEffect(
+					normalizeStringArray(options.field),
 				);
-				const headers = unwrapResult(
-					parseHeaders(normalizeStringArray(options.header)),
-					"Invalid header format",
+				const headers = yield* parseHeadersEffect(
+					normalizeStringArray(options.header),
 				);
 
 				let body: string | undefined;
 				if (typeof options.file === "string" && options.file.length > 0) {
-					body = unwrapResult(
-						readBodyFromFile(options.file),
-						"Failed to read request body file",
-					);
+					body = yield* readBodyFromFileEffect(options.file);
 				}
 
-				const response = unwrapResult(
-					yield* apiRequestEffect({
-						endpoint,
-						method,
-						fields: Object.keys(fields).length > 0 ? fields : undefined,
-						body,
-						headers: Object.keys(headers).length > 0 ? headers : undefined,
-						debug: getVerbosityLevel() >= 2,
-					}),
-					"API request failed",
-				);
+				const response = yield* apiRequestEffect({
+					endpoint,
+					method,
+					fields: Object.keys(fields).length > 0 ? fields : undefined,
+					body,
+					headers: Object.keys(headers).length > 0 ? headers : undefined,
+					debug: getVerbosityLevel() >= 2,
+				});
 
 				let output = response.data;
 				if (typeof options.query === "string" && output !== undefined) {
@@ -176,10 +163,10 @@ export function createApiCommand(): Command {
 						const message =
 							error instanceof Error ? error.message : String(error);
 						return yield* Effect.fail(
-							new ValidationError(
-								`Invalid query path: ${options.query}`,
-								`Query error: ${message}`,
-							),
+							new ValidationError({
+								message: `Invalid query path: ${options.query}`,
+								userMessage: `Query error: ${message}`,
+							}),
 						);
 					}
 				}

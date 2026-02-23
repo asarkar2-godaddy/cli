@@ -1,6 +1,5 @@
 import * as Effect from "effect/Effect";
 import {
-	type Environment,
 	envGetEffect,
 	envInfoEffect,
 	envListEffect,
@@ -14,12 +13,7 @@ import {
 	findRegistryNodeById,
 	registryNodeToResult,
 } from "../agent/registry";
-import {
-	currentCommandString,
-	emitError,
-	emitSuccess,
-	unwrapResult,
-} from "../agent/respond";
+import { currentCommandString, emitError, emitSuccess } from "../agent/respond";
 import { Command } from "../command-model";
 
 function emitEnvError(error: unknown): void {
@@ -66,10 +60,7 @@ export function createEnvCommand(): Command {
 		.description("List all available environments")
 		.action(() =>
 			Effect.gen(function* () {
-				const environments = unwrapResult(
-					yield* envListEffect(),
-					"Failed to list environments",
-				);
+				const environments = yield* envListEffect();
 				const activeEnvironment = environments[0];
 
 				emitSuccess(
@@ -83,7 +74,9 @@ export function createEnvCommand(): Command {
 					},
 					nextActionsFor(commandIds.envList),
 				);
-			}).pipe(Effect.catchAll((error) => Effect.sync(() => emitEnvError(error)))),
+			}).pipe(
+				Effect.catchAll((error) => Effect.sync(() => emitEnvError(error))),
+			),
 		);
 
 	env
@@ -91,17 +84,16 @@ export function createEnvCommand(): Command {
 		.description("Get current active environment")
 		.action(() =>
 			Effect.gen(function* () {
-				const environment = unwrapResult(
-					yield* envGetEffect(),
-					"Failed to get environment",
-				) as Environment;
+				const environment = yield* envGetEffect();
 
 				emitSuccess(
 					currentCommandString(),
 					{ environment },
 					nextActionsFor(commandIds.envGet),
 				);
-			}).pipe(Effect.catchAll((error) => Effect.sync(() => emitEnvError(error)))),
+			}).pipe(
+				Effect.catchAll((error) => Effect.sync(() => emitEnvError(error))),
+			),
 		);
 
 	env
@@ -110,11 +102,8 @@ export function createEnvCommand(): Command {
 		.argument("<environment>", "Environment to set (ote|prod)")
 		.action((environment: string) =>
 			Effect.gen(function* () {
-				const previousEnvironment = unwrapResult(
-					yield* envGetEffect(),
-					"Failed to get current environment",
-				) as Environment;
-				unwrapResult(yield* envSetEffect(environment), "Failed to set environment");
+				const previousEnvironment = yield* envGetEffect();
+				yield* envSetEffect(environment);
 
 				emitSuccess(
 					currentCommandString(),
@@ -124,7 +113,9 @@ export function createEnvCommand(): Command {
 					},
 					nextActionsFor(commandIds.envSet),
 				);
-			}).pipe(Effect.catchAll((error) => Effect.sync(() => emitEnvError(error)))),
+			}).pipe(
+				Effect.catchAll((error) => Effect.sync(() => emitEnvError(error))),
+			),
 		);
 
 	env
@@ -133,10 +124,7 @@ export function createEnvCommand(): Command {
 		.argument("[environment]", "Environment to show info for")
 		.action((environment: string | undefined) =>
 			Effect.gen(function* () {
-				const info = unwrapResult(
-					yield* envInfoEffect(environment),
-					"Failed to get environment info",
-				);
+				const info = yield* envInfoEffect(environment);
 
 				emitSuccess(
 					currentCommandString(),
@@ -159,7 +147,9 @@ export function createEnvCommand(): Command {
 						environment: info.environment,
 					}),
 				);
-			}).pipe(Effect.catchAll((error) => Effect.sync(() => emitEnvError(error)))),
+			}).pipe(
+				Effect.catchAll((error) => Effect.sync(() => emitEnvError(error))),
+			),
 		);
 
 	return env;

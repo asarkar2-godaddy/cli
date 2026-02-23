@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
-	apiRequest,
-	parseFields,
-	parseHeaders,
-	readBodyFromFile,
+	apiRequestEffect,
+	parseFieldsEffect,
+	parseHeadersEffect,
+	readBodyFromFileEffect,
 } from "../../../src/core/api";
 import { mockKeytar, mockValidToken } from "../../setup/system-mocks";
+import { runEffect } from "../../setup/effect-test-utils";
 
 describe("API Core Functions", () => {
 	beforeEach(() => {
@@ -19,30 +20,38 @@ describe("API Core Functions", () => {
 		process.env.GODADDY_API_BASE_URL = "";
 	});
 
-	describe("apiRequest", () => {
+	describe("apiRequestEffect", () => {
 		test("returns auth error when secure credential storage is unavailable", async () => {
 			mockKeytar.getPassword.mockRejectedValueOnce(
 				new Error("Keychain locked"),
 			);
 
-			const result = await apiRequest({ endpoint: "/v1/domains" });
-
-			expect(result.success).toBe(false);
-			expect(result.error?.code).toBe("AUTH_ERROR");
-			expect(result.error?.userMessage).toContain(
-				"Unable to access secure credentials",
-			);
+			try {
+				await runEffect(apiRequestEffect({ endpoint: "/v1/domains" }));
+				expect.unreachable("Should have thrown");
+			} catch (error: unknown) {
+				const err = error as { _tag?: string; userMessage?: string };
+				expect(err._tag).toBe("AuthenticationError");
+				expect(err.userMessage).toContain(
+					"Unable to access secure credentials",
+				);
+			}
 			expect(fetch).not.toHaveBeenCalled();
 		});
 
 		test("returns validation error for full URL endpoints", async () => {
-			const result = await apiRequest({
-				endpoint: "https://api.godaddy.com/v1/domains",
-			});
-
-			expect(result.success).toBe(false);
-			expect(result.error?.code).toBe("VALIDATION_ERROR");
-			expect(result.error?.userMessage).toContain("Only relative endpoints");
+			try {
+				await runEffect(
+					apiRequestEffect({
+						endpoint: "https://api.godaddy.com/v1/domains",
+					}),
+				);
+				expect.unreachable("Should have thrown");
+			} catch (error: unknown) {
+				const err = error as { _tag?: string; userMessage?: string };
+				expect(err._tag).toBe("ValidationError");
+				expect(err.userMessage).toContain("Only relative endpoints");
+			}
 			expect(fetch).not.toHaveBeenCalled();
 		});
 
@@ -57,11 +66,12 @@ describe("API Core Functions", () => {
 				}),
 			);
 
-			const result = await apiRequest({ endpoint: "/v1/shoppers/me" });
+			const result = await runEffect(
+				apiRequestEffect({ endpoint: "/v1/shoppers/me" }),
+			);
 
-			expect(result.success).toBe(true);
-			expect(result.data?.status).toBe(200);
-			expect(result.data?.data).toEqual({ shopperId: "12345" });
+			expect(result.status).toBe(200);
+			expect(result.data).toEqual({ shopperId: "12345" });
 			expect(fetch).toHaveBeenCalledTimes(1);
 			expect(fetch).toHaveBeenCalledWith(
 				"https://api.ote-godaddy.com/v1/shoppers/me",
@@ -83,115 +93,146 @@ describe("API Core Functions", () => {
 				}),
 			);
 
-			const result = await apiRequest({ endpoint: "/v1/shoppers/me" });
-
-			expect(result.success).toBe(false);
-			expect(result.error?.code).toBe("AUTH_ERROR");
-			expect(result.error?.userMessage).toContain("re-authenticate");
+			try {
+				await runEffect(
+					apiRequestEffect({ endpoint: "/v1/shoppers/me" }),
+				);
+				expect.unreachable("Should have thrown");
+			} catch (error: unknown) {
+				const err = error as { _tag?: string; userMessage?: string };
+				expect(err._tag).toBe("AuthenticationError");
+				expect(err.userMessage).toContain("re-authenticate");
+			}
 		});
 	});
 
-	describe("parseFields", () => {
-		test("parses single field correctly", () => {
-			const result = parseFields(["name=John"]);
-			expect(result.success).toBe(true);
-			expect(result.data).toEqual({ name: "John" });
+	describe("parseFieldsEffect", () => {
+		test("parses single field correctly", async () => {
+			const result = await runEffect(parseFieldsEffect(["name=John"]));
+			expect(result).toEqual({ name: "John" });
 		});
 
-		test("parses multiple fields correctly", () => {
-			const result = parseFields(["name=John", "age=30", "city=NYC"]);
-			expect(result.success).toBe(true);
-			expect(result.data).toEqual({ name: "John", age: "30", city: "NYC" });
+		test("parses multiple fields correctly", async () => {
+			const result = await runEffect(
+				parseFieldsEffect(["name=John", "age=30", "city=NYC"]),
+			);
+			expect(result).toEqual({ name: "John", age: "30", city: "NYC" });
 		});
 
-		test("handles values with equals signs", () => {
-			const result = parseFields(["query=a=b&c=d"]);
-			expect(result.success).toBe(true);
-			expect(result.data).toEqual({ query: "a=b&c=d" });
+		test("handles values with equals signs", async () => {
+			const result = await runEffect(
+				parseFieldsEffect(["query=a=b&c=d"]),
+			);
+			expect(result).toEqual({ query: "a=b&c=d" });
 		});
 
-		test("handles empty value", () => {
-			const result = parseFields(["key="]);
-			expect(result.success).toBe(true);
-			expect(result.data).toEqual({ key: "" });
+		test("handles empty value", async () => {
+			const result = await runEffect(parseFieldsEffect(["key="]));
+			expect(result).toEqual({ key: "" });
 		});
 
-		test("returns error for missing equals sign", () => {
-			const result = parseFields(["invalidfield"]);
-			expect(result.success).toBe(false);
-			expect(result.error?.userMessage).toContain("Invalid field format");
+		test("returns error for missing equals sign", async () => {
+			try {
+				await runEffect(parseFieldsEffect(["invalidfield"]));
+				expect.unreachable("Should have thrown");
+			} catch (error: unknown) {
+				const err = error as { userMessage?: string };
+				expect(err.userMessage).toContain("Invalid field format");
+			}
 		});
 
-		test("returns error for empty key", () => {
-			const result = parseFields(["=value"]);
-			expect(result.success).toBe(false);
-			expect(result.error?.userMessage).toContain("Empty field key");
+		test("returns error for empty key", async () => {
+			try {
+				await runEffect(parseFieldsEffect(["=value"]));
+				expect.unreachable("Should have thrown");
+			} catch (error: unknown) {
+				const err = error as { userMessage?: string };
+				expect(err.userMessage).toContain("Empty field key");
+			}
 		});
 
-		test("handles empty array", () => {
-			const result = parseFields([]);
-			expect(result.success).toBe(true);
-			expect(result.data).toEqual({});
+		test("handles empty array", async () => {
+			const result = await runEffect(parseFieldsEffect([]));
+			expect(result).toEqual({});
 		});
 	});
 
-	describe("parseHeaders", () => {
-		test("parses single header correctly", () => {
-			const result = parseHeaders(["Content-Type: application/json"]);
-			expect(result.success).toBe(true);
-			expect(result.data).toEqual({ "Content-Type": "application/json" });
+	describe("parseHeadersEffect", () => {
+		test("parses single header correctly", async () => {
+			const result = await runEffect(
+				parseHeadersEffect(["Content-Type: application/json"]),
+			);
+			expect(result).toEqual({ "Content-Type": "application/json" });
 		});
 
-		test("parses multiple headers correctly", () => {
-			const result = parseHeaders([
-				"Content-Type: application/json",
-				"X-Custom: value",
-				"Accept: */*",
-			]);
-			expect(result.success).toBe(true);
-			expect(result.data).toEqual({
+		test("parses multiple headers correctly", async () => {
+			const result = await runEffect(
+				parseHeadersEffect([
+					"Content-Type: application/json",
+					"X-Custom: value",
+					"Accept: */*",
+				]),
+			);
+			expect(result).toEqual({
 				"Content-Type": "application/json",
 				"X-Custom": "value",
 				Accept: "*/*",
 			});
 		});
 
-		test("handles header values with colons", () => {
-			const result = parseHeaders(["X-Time: 12:30:00"]);
-			expect(result.success).toBe(true);
-			expect(result.data).toEqual({ "X-Time": "12:30:00" });
+		test("handles header values with colons", async () => {
+			const result = await runEffect(
+				parseHeadersEffect(["X-Time: 12:30:00"]),
+			);
+			expect(result).toEqual({ "X-Time": "12:30:00" });
 		});
 
-		test("trims whitespace from key and value", () => {
-			const result = parseHeaders(["  Content-Type  :  application/json  "]);
-			expect(result.success).toBe(true);
-			expect(result.data).toEqual({ "Content-Type": "application/json" });
+		test("trims whitespace from key and value", async () => {
+			const result = await runEffect(
+				parseHeadersEffect([
+					"  Content-Type  :  application/json  ",
+				]),
+			);
+			expect(result).toEqual({ "Content-Type": "application/json" });
 		});
 
-		test("returns error for missing colon", () => {
-			const result = parseHeaders(["InvalidHeader"]);
-			expect(result.success).toBe(false);
-			expect(result.error?.userMessage).toContain("Invalid header format");
+		test("returns error for missing colon", async () => {
+			try {
+				await runEffect(parseHeadersEffect(["InvalidHeader"]));
+				expect.unreachable("Should have thrown");
+			} catch (error: unknown) {
+				const err = error as { userMessage?: string };
+				expect(err.userMessage).toContain("Invalid header format");
+			}
 		});
 
-		test("returns error for empty key", () => {
-			const result = parseHeaders([": value"]);
-			expect(result.success).toBe(false);
-			expect(result.error?.userMessage).toContain("Empty header key");
+		test("returns error for empty key", async () => {
+			try {
+				await runEffect(parseHeadersEffect([": value"]));
+				expect.unreachable("Should have thrown");
+			} catch (error: unknown) {
+				const err = error as { userMessage?: string };
+				expect(err.userMessage).toContain("Empty header key");
+			}
 		});
 
-		test("handles empty array", () => {
-			const result = parseHeaders([]);
-			expect(result.success).toBe(true);
-			expect(result.data).toEqual({});
+		test("handles empty array", async () => {
+			const result = await runEffect(parseHeadersEffect([]));
+			expect(result).toEqual({});
 		});
 	});
 
-	describe("readBodyFromFile", () => {
-		test("returns error for non-existent file", () => {
-			const result = readBodyFromFile("/non/existent/file.json");
-			expect(result.success).toBe(false);
-			expect(result.error?.userMessage).toContain("File not found");
+	describe("readBodyFromFileEffect", () => {
+		test("returns error for non-existent file", async () => {
+			try {
+				await runEffect(
+					readBodyFromFileEffect("/non/existent/file.json"),
+				);
+				expect.unreachable("Should have thrown");
+			} catch (error: unknown) {
+				const err = error as { userMessage?: string };
+				expect(err.userMessage).toContain("File not found");
+			}
 		});
 	});
 });

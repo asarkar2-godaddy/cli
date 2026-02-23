@@ -12,12 +12,13 @@ import {
 	type BundleOptions,
 	type BundleResult,
 	type ExtensionPackage,
-	bundleExtension,
-	cleanupTempDirectory,
+	bundleExtensionEffect,
+	cleanupTempDirectoryEffect,
 	createTempDirectory,
 	resolveTsConfig,
 } from "@/services/extension/bundler";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { runEffect } from "../../../tests/setup/effect-test-utils";
 
 describe("bundler service", () => {
 	let tempTestDir: string;
@@ -47,23 +48,19 @@ describe("bundler service", () => {
 				version: "1.0.0",
 			};
 
-			const result = await bundleExtension(pkg, entryPath, {
+			const result = await runEffect(bundleExtensionEffect(pkg, entryPath, {
 				repoRoot: fixtureDir,
 				timestamp: "20250128143022",
-			});
+			}));
 
-			expect(result.success).toBe(true);
-			expect(result.data).toBeDefined();
-
-			const bundle = result.data!;
-			expect(bundle.packageName).toBe("simple-extension");
-			expect(bundle.version).toBe("1.0.0");
-			expect(bundle.artifactName).toMatch(
+			expect(result.packageName).toBe("simple-extension");
+			expect(result.version).toBe("1.0.0");
+			expect(result.artifactName).toMatch(
 				/^simple-extension-1\.0\.0-20250128143022-[a-f0-9]{6}\.mjs$/,
 			);
-			expect(bundle.size).toBeGreaterThan(0);
-			expect(bundle.sha256).toHaveLength(64); // Full SHA256 hash
-			expect(existsSync(bundle.artifactPath)).toBe(true);
+			expect(result.size).toBeGreaterThan(0);
+			expect(result.sha256).toHaveLength(64); // Full SHA256 hash
+			expect(existsSync(result.artifactPath)).toBe(true);
 		});
 
 		it("should bundle extension with external dependencies", async () => {
@@ -77,23 +74,20 @@ describe("bundler service", () => {
 				version: "2.1.0",
 			};
 
-			const result = await bundleExtension(pkg, entryPath, {
+			const result = await runEffect(bundleExtensionEffect(pkg, entryPath, {
 				repoRoot: fixtureDir,
 				timestamp: "20250128143022",
-			});
-
-			expect(result.success).toBe(true);
-			const bundle = result.data!;
+			}));
 
 			// Verify the bundle includes the dependency (ms library)
 			// The minified bundle contains time constants from ms library (e.g., 365.25 for year calculation)
-			const bundleContent = await readFile(bundle.artifactPath, "utf-8");
+			const bundleContent = await readFile(result.artifactPath, "utf-8");
 			expect(bundleContent).toContain("365.25");
 			// Also verify the exported name constant is included
 			expect(bundleContent).toContain("extension-with-deps");
 
 			// Verify artifact naming
-			expect(bundle.artifactName).toMatch(
+			expect(result.artifactName).toMatch(
 				/^extension-with-deps-2\.1\.0-20250128143022-[a-f0-9]{6}\.mjs$/,
 			);
 		});
@@ -109,17 +103,14 @@ describe("bundler service", () => {
 				version: "1.0.0",
 			};
 
-			const result = await bundleExtension(pkg, entryPath, {
+			const result = await runEffect(bundleExtensionEffect(pkg, entryPath, {
 				repoRoot: fixtureDir,
 				timestamp: "20250128143022",
-			});
-
-			expect(result.success).toBe(true);
-			const bundle = result.data!;
+			}));
 
 			// Compute hash of the actual file (strip sourceMappingURL to match implementation)
 			// The implementation strips the sourceMappingURL line and trims trailing whitespace
-			const fileContent = await readFile(bundle.artifactPath, "utf-8");
+			const fileContent = await readFile(result.artifactPath, "utf-8");
 
 			// Strip sourceMappingURL exactly as the implementation does
 			const contentForHash = fileContent
@@ -129,11 +120,11 @@ describe("bundler service", () => {
 				.update(Buffer.from(contentForHash))
 				.digest("hex");
 
-			expect(bundle.sha256).toBe(computedHash);
+			expect(result.sha256).toBe(computedHash);
 
 			// Verify short hash in filename matches
 			const shortHashValue = computedHash.slice(0, 6);
-			expect(bundle.artifactName).toContain(shortHashValue);
+			expect(result.artifactName).toContain(shortHashValue);
 		});
 
 		it("should sanitize extension name in artifact filename", async () => {
@@ -147,20 +138,17 @@ describe("bundler service", () => {
 				version: "0.5.2",
 			};
 
-			const result = await bundleExtension(pkg, entryPath, {
+			const result = await runEffect(bundleExtensionEffect(pkg, entryPath, {
 				repoRoot: fixtureDir,
 				timestamp: "20250128143022",
-			});
-
-			expect(result.success).toBe(true);
-			const bundle = result.data!;
+			}));
 
 			// Verify name is sanitized (@ and / replaced with -)
-			expect(bundle.artifactName).toMatch(
+			expect(result.artifactName).toMatch(
 				/^scoped-extension-0\.5\.2-20250128143022-[a-f0-9]{6}\.mjs$/,
 			);
-			expect(bundle.artifactName).not.toContain("@");
-			expect(bundle.artifactName).not.toContain("/");
+			expect(result.artifactName).not.toContain("@");
+			expect(result.artifactName).not.toContain("/");
 		});
 
 		it("should resolve local tsconfig when present", async () => {
@@ -289,20 +277,17 @@ describe("bundler service", () => {
 				version: "1.0.0",
 			};
 
-			const result = await bundleExtension(pkg, entryPath, {
+			const result = await runEffect(bundleExtensionEffect(pkg, entryPath, {
 				repoRoot: fixtureDir,
 				timestamp: "20250128143022",
-			});
-
-			expect(result.success).toBe(true);
-			const bundle = result.data!;
+			}));
 
 			// Verify sourcemap exists
-			expect(bundle.sourcemapPath).toBeDefined();
-			expect(existsSync(bundle.sourcemapPath!)).toBe(true);
+			expect(result.sourcemapPath).toBeDefined();
+			expect(existsSync(result.sourcemapPath!)).toBe(true);
 
 			// Verify sourcemap filename matches artifact name
-			expect(bundle.sourcemapPath).toBe(`${bundle.artifactPath}.map`);
+			expect(result.sourcemapPath).toBe(`${result.artifactPath}.map`);
 		});
 
 		it("should update sourceMappingURL in bundle", async () => {
@@ -316,16 +301,13 @@ describe("bundler service", () => {
 				version: "1.0.0",
 			};
 
-			const result = await bundleExtension(pkg, entryPath, {
+			const result = await runEffect(bundleExtensionEffect(pkg, entryPath, {
 				repoRoot: fixtureDir,
 				timestamp: "20250128143022",
-			});
-
-			expect(result.success).toBe(true);
-			const bundle = result.data!;
+			}));
 
 			// Read bundle content and verify sourceMappingURL
-			const bundleContent = await readFile(bundle.artifactPath, "utf-8");
+			const bundleContent = await readFile(result.artifactPath, "utf-8");
 			expect(bundleContent).toContain("//# sourceMappingURL=");
 
 			// Extract the map filename from the comment
@@ -335,7 +317,7 @@ describe("bundler service", () => {
 			expect(mapMatch).toBeTruthy();
 
 			// Verify it matches the actual sourcemap filename
-			const expectedMapName = `${bundle.artifactName}.map`;
+			const expectedMapName = `${result.artifactName}.map`;
 			expect(mapMatch?.[1]).toBe(expectedMapName);
 		});
 

@@ -2,6 +2,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findFilesToScan } from "@/core/security/file-discovery.ts";
+import { runEffect } from "../../../setup/effect-test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 describe("File Discovery", () => {
@@ -28,7 +29,7 @@ describe("File Discovery", () => {
 			await writeFile(join(testDir, "utils.ts"), "export const b = 2;");
 			await writeFile(join(testDir, "component.tsx"), "export const c = 3;");
 
-			const result = await findFilesToScan(testDir);
+			const result = await runEffect(findFilesToScan(testDir));
 
 			expect(result.success).toBe(true);
 			expect(result.data).toHaveLength(3);
@@ -46,7 +47,7 @@ describe("File Discovery", () => {
 			await writeFile(join(testDir, "utils.mjs"), "export const a = 1;");
 			await writeFile(join(testDir, "config.cjs"), "module.exports = {};");
 
-			const result = await findFilesToScan(testDir);
+			const result = await runEffect(findFilesToScan(testDir));
 
 			expect(result.success).toBe(true);
 			expect(result.data).toHaveLength(3);
@@ -69,7 +70,7 @@ describe("File Discovery", () => {
 			await writeFile(join(srcDir, "main.ts"), "export const b = 2;");
 			await writeFile(join(libDir, "utils.ts"), "export const c = 3;");
 
-			const result = await findFilesToScan(testDir);
+			const result = await runEffect(findFilesToScan(testDir));
 
 			expect(result.success).toBe(true);
 			expect(result.data).toHaveLength(3);
@@ -89,7 +90,7 @@ describe("File Discovery", () => {
 			await writeFile(join(testDir, "index.ts"), "export const a = 1;");
 			await writeFile(join(nodeModulesDir, "lib.js"), "module.exports = {};");
 
-			const result = await findFilesToScan(testDir);
+			const result = await runEffect(findFilesToScan(testDir));
 
 			expect(result.success).toBe(true);
 			expect(result.data).toHaveLength(1);
@@ -104,7 +105,7 @@ describe("File Discovery", () => {
 			await writeFile(join(testDir, "index.ts"), "export const a = 1;");
 			await writeFile(join(distDir, "bundle.js"), "// bundled code");
 
-			const result = await findFilesToScan(testDir);
+			const result = await runEffect(findFilesToScan(testDir));
 
 			expect(result.success).toBe(true);
 			expect(result.data).toHaveLength(1);
@@ -119,7 +120,7 @@ describe("File Discovery", () => {
 			await writeFile(join(testDir, "index.ts"), "export const a = 1;");
 			await writeFile(join(buildDir, "output.js"), "// build output");
 
-			const result = await findFilesToScan(testDir);
+			const result = await runEffect(findFilesToScan(testDir));
 
 			expect(result.success).toBe(true);
 			expect(result.data).toHaveLength(1);
@@ -137,7 +138,7 @@ describe("File Discovery", () => {
 				"test('example', () => {});",
 			);
 
-			const result = await findFilesToScan(testDir);
+			const result = await runEffect(findFilesToScan(testDir));
 
 			expect(result.success).toBe(true);
 			expect(result.data).toHaveLength(1);
@@ -155,7 +156,7 @@ describe("File Discovery", () => {
 			await writeFile(join(srcDir, "main.ts"), "export const b = 2;");
 			await writeFile(join(nodeModulesDir, "lib.js"), "module.exports = {};");
 
-			const result = await findFilesToScan(testDir);
+			const result = await runEffect(findFilesToScan(testDir));
 
 			expect(result.success).toBe(true);
 			expect(result.data).toHaveLength(2);
@@ -174,7 +175,7 @@ describe("File Discovery", () => {
 			await writeFile(join(testDir, "config.json"), "{}");
 			await writeFile(join(testDir, "data.txt"), "some data");
 
-			const result = await findFilesToScan(testDir);
+			const result = await runEffect(findFilesToScan(testDir));
 
 			expect(result.success).toBe(true);
 			expect(result.data).toHaveLength(1);
@@ -185,14 +186,14 @@ describe("File Discovery", () => {
 			await writeFile(join(testDir, "README.md"), "# README");
 			await writeFile(join(testDir, "config.json"), "{}");
 
-			const result = await findFilesToScan(testDir);
+			const result = await runEffect(findFilesToScan(testDir));
 
 			expect(result.success).toBe(true);
 			expect(result.data).toHaveLength(0);
 		});
 
 		it("should handle empty directory", async () => {
-			const result = await findFilesToScan(testDir);
+			const result = await runEffect(findFilesToScan(testDir));
 
 			expect(result.success).toBe(true);
 			expect(result.data).toHaveLength(0);
@@ -201,7 +202,7 @@ describe("File Discovery", () => {
 		it("should return error for non-existent directory", async () => {
 			const nonExistentDir = join(testDir, "does-not-exist");
 
-			const result = await findFilesToScan(nonExistentDir);
+			const result = await runEffect(findFilesToScan(nonExistentDir));
 
 			expect(result.success).toBe(false);
 			expect(result.error).toBeDefined();
@@ -216,7 +217,7 @@ describe("File Discovery", () => {
 			await writeFile(join(testDir, "module.mjs"), "export const d = 4;");
 			await writeFile(join(testDir, "config.cjs"), "module.exports = {};");
 
-			const result = await findFilesToScan(testDir);
+			const result = await runEffect(findFilesToScan(testDir));
 
 			expect(result.success).toBe(true);
 			expect(result.data).toHaveLength(6);
@@ -225,7 +226,7 @@ describe("File Discovery", () => {
 		it("should return absolute paths", async () => {
 			await writeFile(join(testDir, "index.ts"), "export const a = 1;");
 
-			const result = await findFilesToScan(testDir);
+			const result = await runEffect(findFilesToScan(testDir));
 
 			expect(result.success).toBe(true);
 			expect(result.data).toHaveLength(1);
@@ -236,7 +237,7 @@ describe("File Discovery", () => {
 			await writeFile(join(testDir, "index.ts"), "export const a = 1;");
 
 			// Pass a relative path
-			const result = await findFilesToScan(".");
+			const result = await runEffect(findFilesToScan("."));
 
 			expect(result.success).toBe(true);
 			expect(result.data).toBeDefined();
@@ -267,7 +268,7 @@ describe("File Discovery", () => {
 			await writeFile(join(buildDir, "output.js"), "// build");
 			await writeFile(join(testsDir, "test.ts"), "test('example', () => {});");
 
-			const result = await findFilesToScan(testDir);
+			const result = await runEffect(findFilesToScan(testDir));
 
 			expect(result.success).toBe(true);
 			expect(result.data).toHaveLength(2);

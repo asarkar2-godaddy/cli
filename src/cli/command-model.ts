@@ -22,7 +22,8 @@ export interface CommandOptionDefinition {
 
 export type CommandAction = (
 	...args: unknown[]
-) => Effect.Effect<unknown, unknown, never>;
+	// biome-ignore lint/suspicious/noExplicitAny: service requirements are erased at the command boundary
+) => Effect.Effect<unknown, unknown, any>;
 
 function toCamelCase(value: string): string {
 	return value.replace(/-([a-z])/g, (_, char: string) => char.toUpperCase());
@@ -178,10 +179,8 @@ export class Command {
 		return this;
 	}
 
-	action<TArgs extends unknown[], TResult>(
-		handler: (
-			...args: TArgs
-		) => Effect.Effect<TResult, unknown, never>,
+	action<TArgs extends unknown[], TResult, R>(
+		handler: (...args: TArgs) => Effect.Effect<TResult, unknown, R>,
 	): this {
 		this.actionValue = ((...args: unknown[]) =>
 			Effect.suspend(() => handler(...(args as TArgs)))) as CommandAction;

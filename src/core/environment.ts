@@ -1,18 +1,14 @@
-import * as fs from "node:fs";
-import * as Effect from "effect/Effect";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ArkErrors } from "arktype";
+import * as Effect from "effect/Effect";
+import { ConfigurationError, ValidationError } from "../effect/errors";
+import { FileSystem } from "../effect/services/filesystem";
 import {
 	type Config,
 	getConfigFile,
 	getConfigFilePath,
 } from "../services/config";
-import {
-	type CmdResult,
-	ConfigurationError,
-	ValidationError,
-} from "../shared/types";
 
 export type Environment = "ote" | "prod";
 
@@ -48,88 +44,105 @@ export function setRuntimeEnvironmentOverride(env: Environment | null): void {
 }
 
 /**
+ * Get the current active environment (internal helper)
+ */
+function getActiveEnvironmentInternalEffect(): Effect.Effect<
+	Environment,
+	never,
+	FileSystem
+> {
+	return Effect.gen(function* () {
+		if (runtimeEnvironmentOverride) {
+			return runtimeEnvironmentOverride;
+		}
+
+		const fs = yield* FileSystem;
+		return yield* Effect.try(() => {
+			if (fs.existsSync(ENV_PATH)) {
+				const file = fs.readFileSync(ENV_PATH, "utf-8");
+				return validateEnvironment(file.trim());
+			}
+			return "ote" as Environment;
+		}).pipe(Effect.orElseSucceed(() => "ote" as Environment));
+	});
+}
+
+/**
  * Get all available environments
  */
-async function envListPromise(): Promise<CmdResult<Environment[]>> {
-	try {
-		const activeEnv = await getActiveEnvironmentInternal();
-		// Return environments with active one first
+export function envListEffect(): Effect.Effect<
+	Environment[],
+	ConfigurationError,
+	FileSystem
+> {
+	return Effect.gen(function* () {
+		const activeEnv = yield* getActiveEnvironmentInternalEffect();
 		const sorted = [
 			activeEnv,
 			...ALL_ENVIRONMENTS.filter((e) => e !== activeEnv),
 		];
-		return { success: true, data: sorted };
-	} catch (error) {
-		return {
-			success: false,
-			error: new ConfigurationError(
-				`Failed to get environment list: ${error}`,
-				"Could not retrieve environment list",
+		return sorted;
+	}).pipe(
+		Effect.catchAll((error) =>
+			Effect.fail(
+				new ConfigurationError({
+					message: `Failed to get environment list: ${error}`,
+					userMessage: "Could not retrieve environment list",
+				}),
 			),
-		};
-	}
+		),
+	);
 }
 
 /**
  * Get current active environment or specific environment info
  */
-async function envGetPromise(
+export function envGetEffect(
 	name?: string,
-): Promise<CmdResult<Environment | Environment[]>> {
-	try {
+): Effect.Effect<
+	Environment,
+	ConfigurationError | ValidationError,
+	FileSystem
+> {
+	return Effect.gen(function* () {
 		if (name) {
-			const validEnv = validateEnvironment(name);
-			return { success: true, data: validEnv };
+			return yield* validateEnvironmentEffect(name);
 		}
-
-		const activeEnv = await getActiveEnvironmentInternal();
-		return { success: true, data: activeEnv };
-	} catch (error) {
-		return {
-			success: false,
-			error:
-				error instanceof ValidationError
-					? error
-					: new ConfigurationError(
-							`Failed to get environment: ${error}`,
-							"Could not retrieve environment information",
-						),
-		};
-	}
+		return yield* getActiveEnvironmentInternalEffect();
+	}).pipe(
+		Effect.mapError((error): ConfigurationError | ValidationError => error),
+	);
 }
 
 /**
  * Set active environment
  */
-async function envSetPromise(name: string): Promise<CmdResult<void>> {
-	try {
-		const validEnv = validateEnvironment(name);
+export function envSetEffect(
+	name: string,
+): Effect.Effect<void, ConfigurationError | ValidationError, FileSystem> {
+	return Effect.gen(function* () {
+		const validEnv = yield* validateEnvironmentEffect(name);
+		const fs = yield* FileSystem;
 		fs.writeFileSync(ENV_PATH, validEnv);
-		return { success: true };
-	} catch (error) {
-		return {
-			success: false,
-			error:
-				error instanceof ValidationError
-					? error
-					: new ConfigurationError(
-							`Failed to set environment: ${error}`,
-							"Could not set active environment",
-						),
-		};
-	}
+	}).pipe(
+		Effect.mapError((error): ConfigurationError | ValidationError => error),
+	);
 }
 
 /**
  * Get detailed environment information
  */
-async function envInfoPromise(
+export function envInfoEffect(
 	name?: string,
-): Promise<CmdResult<EnvironmentInfo>> {
-	try {
+): Effect.Effect<
+	EnvironmentInfo,
+	ConfigurationError | ValidationError,
+	FileSystem
+> {
+	return Effect.gen(function* () {
 		const env = name
-			? validateEnvironment(name)
-			: await getActiveEnvironmentInternal();
+			? yield* validateEnvironmentEffect(name)
+			: yield* getActiveEnvironmentInternalEffect();
 		const display = getEnvironmentDisplay(env);
 		const configFilePath = getConfigFilePath(env);
 
@@ -143,47 +156,10 @@ async function envInfoPromise(
 			// Config file doesn't exist, which is fine
 		}
 
-		return {
-			success: true,
-			data: {
-				environment: env,
-				display,
-				configFile: configFilePath,
-				config,
-			},
-		};
-	} catch (error) {
-		return {
-			success: false,
-			error:
-				error instanceof ValidationError
-					? error
-					: new ConfigurationError(
-							`Failed to get environment info: ${error}`,
-							"Could not retrieve environment information",
-						),
-		};
-	}
-}
-
-/**
- * Get the current active environment (internal helper)
- */
-async function getActiveEnvironmentInternal(): Promise<Environment> {
-	if (runtimeEnvironmentOverride) {
-		return runtimeEnvironmentOverride;
-	}
-
-	try {
-		if (fs.existsSync(ENV_PATH)) {
-			const file = fs.readFileSync(ENV_PATH, "utf-8");
-			const env = file.trim();
-			return validateEnvironment(env);
-		}
-		return "ote";
-	} catch (error) {
-		return "ote";
-	}
+		return { environment: env, display, configFile: configFilePath, config };
+	}).pipe(
+		Effect.mapError((error): ConfigurationError | ValidationError => error),
+	);
 }
 
 /**
@@ -196,10 +172,22 @@ export function validateEnvironment(env: string): Environment {
 		return normalizedEnv as Environment;
 	}
 
-	throw new ValidationError(
-		`Invalid environment: ${env}. Must be one of: ${ALL_ENVIRONMENTS.join(", ")}`,
-		`Invalid environment: ${env}. Must be one of: ${ALL_ENVIRONMENTS.join(", ")}`,
-	);
+	throw new ValidationError({
+		message: `Invalid environment: ${env}. Must be one of: ${ALL_ENVIRONMENTS.join(", ")}`,
+		userMessage: `Invalid environment: ${env}. Must be one of: ${ALL_ENVIRONMENTS.join(", ")}`,
+	});
+}
+
+/**
+ * Effect-based version of validateEnvironment that produces a typed error
+ */
+function validateEnvironmentEffect(
+	env: string,
+): Effect.Effect<Environment, ValidationError> {
+	return Effect.try({
+		try: () => validateEnvironment(env),
+		catch: (e) => e as ValidationError,
+	});
 }
 
 /**
@@ -262,56 +250,4 @@ export function requiresConfirmation(
 	}
 
 	return false;
-}
-
-export function envListEffect(...args: Parameters<typeof envListPromise>): Effect.Effect<Awaited<ReturnType<typeof envListPromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => envListPromise(...args),
-		catch: (error) => error,
-	});
-}
-
-export function envGetEffect(...args: Parameters<typeof envGetPromise>): Effect.Effect<Awaited<ReturnType<typeof envGetPromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => envGetPromise(...args),
-		catch: (error) => error,
-	});
-}
-
-export function envSetEffect(...args: Parameters<typeof envSetPromise>): Effect.Effect<Awaited<ReturnType<typeof envSetPromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => envSetPromise(...args),
-		catch: (error) => error,
-	});
-}
-
-export function envInfoEffect(...args: Parameters<typeof envInfoPromise>): Effect.Effect<Awaited<ReturnType<typeof envInfoPromise>>, unknown, never> {
-	return Effect.tryPromise({
-		try: () => envInfoPromise(...args),
-		catch: (error) => error,
-	});
-}
-
-export function envList(
-	...args: Parameters<typeof envListPromise>
-): Promise<Awaited<ReturnType<typeof envListPromise>>> {
-	return Effect.runPromise(envListEffect(...args));
-}
-
-export function envGet(
-	...args: Parameters<typeof envGetPromise>
-): Promise<Awaited<ReturnType<typeof envGetPromise>>> {
-	return Effect.runPromise(envGetEffect(...args));
-}
-
-export function envSet(
-	...args: Parameters<typeof envSetPromise>
-): Promise<Awaited<ReturnType<typeof envSetPromise>>> {
-	return Effect.runPromise(envSetEffect(...args));
-}
-
-export function envInfo(
-	...args: Parameters<typeof envInfoPromise>
-): Promise<Awaited<ReturnType<typeof envInfoPromise>>> {
-	return Effect.runPromise(envInfoEffect(...args));
 }

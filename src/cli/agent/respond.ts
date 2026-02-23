@@ -1,4 +1,3 @@
-import type { CmdResult } from "../../shared/types";
 import type {
 	AgentEnvelope,
 	AgentErrorEnvelope,
@@ -80,15 +79,4 @@ export function emitError(
 	writeEnvelope(envelope);
 	process.exitCode = 1;
 	return envelope;
-}
-
-export function unwrapResult<T>(
-	result: CmdResult<T>,
-	fallbackMessage: string,
-): T {
-	if (!result.success) {
-		throw result.error ?? new Error(fallbackMessage);
-	}
-
-	return result.data as T;
 }

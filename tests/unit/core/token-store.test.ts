@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { setRuntimeEnvironmentOverride } from "../../../src/core/environment";
 import {
-	deleteStoredToken,
-	getStoredToken,
-	saveToken,
+	deleteStoredTokenEffect,
+	getStoredTokenEffect,
+	saveTokenEffect,
 } from "../../../src/core/token-store";
+import { runEffect } from "../../setup/effect-test-utils";
 import { mockKeytar } from "../../setup/system-mocks";
 
 afterEach(() => {
@@ -16,7 +17,7 @@ describe("Token Store", () => {
 		setRuntimeEnvironmentOverride("prod");
 		const expiresAt = new Date(Date.now() + 60_000);
 
-		await saveToken("test-token", expiresAt);
+		await runEffect(saveTokenEffect("test-token", expiresAt));
 
 		expect(mockKeytar.setPassword).toHaveBeenCalledWith(
 			"godaddy-cli",
@@ -33,7 +34,7 @@ describe("Token Store", () => {
 			}),
 		);
 
-		const result = await getStoredToken("ote");
+		const result = await runEffect(getStoredTokenEffect("ote"));
 
 		expect(result?.accessToken).toBe("env-token");
 		expect(mockKeytar.getPassword).toHaveBeenCalledWith(
@@ -50,7 +51,7 @@ describe("Token Store", () => {
 			}),
 		);
 
-		const result = await getStoredToken("prod");
+		const result = await runEffect(getStoredTokenEffect("prod"));
 
 		expect(result?.accessToken).toBe("old-env-token");
 		expect(mockKeytar.setPassword).toHaveBeenCalledWith(
@@ -78,7 +79,7 @@ describe("Token Store", () => {
 			},
 		]);
 
-		const result = await getStoredToken("prod");
+		const result = await runEffect(getStoredTokenEffect("prod"));
 
 		expect(result?.accessToken).toBe("legacy-scoped-token");
 		expect(mockKeytar.setPassword).toHaveBeenCalledWith(
@@ -103,7 +104,7 @@ describe("Token Store", () => {
 				}),
 			);
 
-		const result = await getStoredToken("prod");
+		const result = await runEffect(getStoredTokenEffect("prod"));
 
 		expect(result?.accessToken).toBe("legacy-token");
 		expect(mockKeytar.setPassword).toHaveBeenCalledWith(
@@ -125,7 +126,7 @@ describe("Token Store", () => {
 			},
 		]);
 
-		await deleteStoredToken("prod");
+		await runEffect(deleteStoredTokenEffect("prod"));
 
 		expect(mockKeytar.deletePassword).toHaveBeenCalledWith(
 			"godaddy-cli",

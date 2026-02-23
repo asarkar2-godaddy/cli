@@ -2,17 +2,14 @@ import { join, resolve } from "node:path";
 import type { ArkErrors } from "arktype";
 import * as Effect from "effect/Effect";
 import type {
-	Application,
-	ApplicationInfo,
 	CreateApplicationInput,
 	DeployProgressEvent,
 	DeployResult,
-	ReleaseInfo,
-	ValidationResult,
 } from "../../core/applications";
 import {
 	applicationArchiveEffect,
 	applicationDeployEffect,
+	applicationDisableEffect,
 	applicationEnableEffect,
 	applicationInfoEffect,
 	applicationInitEffect,
@@ -20,9 +17,9 @@ import {
 	applicationReleaseEffect,
 	applicationUpdateEffect,
 	applicationValidateEffect,
-	applicationDisableEffect,
 } from "../../core/applications";
 import { type Environment, envGetEffect } from "../../core/environment";
+import { ValidationError } from "../../effect/errors";
 import {
 	type ActionConfig,
 	type BlocksExtensionConfig,
@@ -36,7 +33,6 @@ import {
 	getConfigFile,
 	getConfigFilePath,
 } from "../../services/config";
-import { ValidationError } from "../../shared/types";
 import { mapRuntimeError } from "../agent/errors";
 import { nextActionsFor } from "../agent/next-actions";
 import {
@@ -44,12 +40,7 @@ import {
 	findRegistryNodeById,
 	registryNodeToResult,
 } from "../agent/registry";
-import {
-	currentCommandString,
-	emitError,
-	emitSuccess,
-	unwrapResult,
-} from "../agent/respond";
+import { currentCommandString, emitError, emitSuccess } from "../agent/respond";
 import {
 	emitStreamError,
 	emitStreamProgress,
@@ -116,22 +107,8 @@ interface DeployOptions extends AddBaseOptions {
 
 type ConfigReadResult = ReturnType<typeof getConfigFile>;
 
-function resolveEnvironmentEffect(
-	environment?: string,
-): Effect.Effect<Environment, unknown, never> {
-	if (environment) {
-		return envGetEffect(environment).pipe(
-			Effect.map((result) =>
-				unwrapResult(result, "Failed to resolve environment"),
-			),
-			Effect.map((result) => result as Environment),
-		);
-	}
-
-	return envGetEffect().pipe(
-		Effect.map((result) => unwrapResult(result, "Failed to resolve environment")),
-		Effect.map((result) => result as Environment),
-	);
+function resolveEnvironmentEffect(environment?: string) {
+	return envGetEffect(environment);
 }
 
 function resolveConfigPath(
@@ -177,10 +154,10 @@ function emitRuntimeError(
 	);
 }
 
-function runApplicationCommand(
+function runApplicationCommand<R>(
 	commandId: keyof typeof commandIds,
-	effect: Effect.Effect<void, unknown, never>,
-): Effect.Effect<void, never, never> {
+	effect: Effect.Effect<void, unknown, R>,
+): Effect.Effect<void, never, R> {
 	return effect.pipe(
 		Effect.catchAll((error) =>
 			Effect.sync(() => {
@@ -300,36 +277,33 @@ export function createApplicationCommand(): Command {
 			runApplicationCommand(
 				"applicationGroup",
 				Effect.gen(function* () {
-				const appInfo = unwrapResult(
-					yield* applicationInfoEffect(name),
-					"Failed to get application info",
-				) as ApplicationInfo;
-				const latestRelease = appInfo.releases?.[0]
-					? {
-							id: appInfo.releases[0].id,
-							version: appInfo.releases[0].version,
-							description: appInfo.releases[0].description,
-							created_at: appInfo.releases[0].createdAt,
-						}
-					: null;
+					const appInfo = yield* applicationInfoEffect(name);
+					const latestRelease = appInfo.releases?.[0]
+						? {
+								id: appInfo.releases[0].id,
+								version: appInfo.releases[0].version,
+								description: appInfo.releases[0].description,
+								created_at: appInfo.releases[0].createdAt,
+							}
+						: null;
 
-				emitSuccess(
-					currentCommandString(),
-					{
-						id: appInfo.id,
-						label: appInfo.label,
-						name: appInfo.name,
-						description: appInfo.description,
-						status: appInfo.status,
-						url: appInfo.url,
-						proxy_url: appInfo.proxyUrl,
-						authorization_scopes: appInfo.authorizationScopes ?? [],
-						latest_release: latestRelease,
-					},
-					nextActionsFor(commandIds.applicationInfo, {
-						applicationName: name,
-					}),
-				);
+					emitSuccess(
+						currentCommandString(),
+						{
+							id: appInfo.id,
+							label: appInfo.label,
+							name: appInfo.name,
+							description: appInfo.description,
+							status: appInfo.status,
+							url: appInfo.url,
+							proxy_url: appInfo.proxyUrl,
+							authorization_scopes: appInfo.authorizationScopes ?? [],
+							latest_release: latestRelease,
+						},
+						nextActionsFor(commandIds.applicationInfo, {
+							applicationName: name,
+						}),
+					);
 				}),
 			),
 		);
@@ -342,24 +316,21 @@ export function createApplicationCommand(): Command {
 			runApplicationCommand(
 				"applicationGroup",
 				Effect.gen(function* () {
-				const applications = unwrapResult(
-					yield* applicationListEffect(),
-					"Failed to list applications",
-				) as Application[];
+					const applications = yield* applicationListEffect();
 
-				const truncated = truncateList(applications, "application-list");
+					const truncated = truncateList(applications, "application-list");
 
-				emitSuccess(
-					currentCommandString(),
-					{
-						applications: truncated.items,
-						total: truncated.metadata.total,
-						shown: truncated.metadata.shown,
-						truncated: truncated.metadata.truncated,
-						full_output: truncated.metadata.full_output,
-					},
-					nextActionsFor(commandIds.applicationList),
-				);
+					emitSuccess(
+						currentCommandString(),
+						{
+							applications: truncated.items,
+							total: truncated.metadata.total,
+							shown: truncated.metadata.shown,
+							truncated: truncated.metadata.truncated,
+							full_output: truncated.metadata.full_output,
+						},
+						nextActionsFor(commandIds.applicationList),
+					);
 				}),
 			),
 		);
@@ -372,36 +343,33 @@ export function createApplicationCommand(): Command {
 			runApplicationCommand(
 				"applicationGroup",
 				Effect.gen(function* () {
-				const validation = unwrapResult(
-					yield* applicationValidateEffect(name),
-					"Failed to validate application",
-				) as ValidationResult;
+					const validation = yield* applicationValidateEffect(name);
 
-				const protectedPayload = protectPayload(
-					{
-						valid: validation.valid,
-						errors: validation.errors,
-						warnings: validation.warnings,
-					},
-					`application-validate-${name}`,
-				);
+					const protectedPayload = protectPayload(
+						{
+							valid: validation.valid,
+							errors: validation.errors,
+							warnings: validation.warnings,
+						},
+						`application-validate-${name}`,
+					);
 
-				emitSuccess(
-					currentCommandString(),
-					{
-						valid: validation.valid,
-						error_count: validation.errors.length,
-						warning_count: validation.warnings.length,
-						details: protectedPayload.value,
-						truncated: protectedPayload.metadata?.truncated ?? false,
-						total: protectedPayload.metadata?.total,
-						shown: protectedPayload.metadata?.shown,
-						full_output: protectedPayload.metadata?.full_output,
-					},
-					nextActionsFor(commandIds.applicationValidate, {
-						applicationName: name,
-					}),
-				);
+					emitSuccess(
+						currentCommandString(),
+						{
+							valid: validation.valid,
+							error_count: validation.errors.length,
+							warning_count: validation.warnings.length,
+							details: protectedPayload.value,
+							truncated: protectedPayload.metadata?.truncated ?? false,
+							total: protectedPayload.metadata?.total,
+							shown: protectedPayload.metadata?.shown,
+							full_output: protectedPayload.metadata?.full_output,
+						},
+						nextActionsFor(commandIds.applicationValidate, {
+							applicationName: name,
+						}),
+					);
 				}),
 			),
 		);
@@ -417,51 +385,52 @@ export function createApplicationCommand(): Command {
 			runApplicationCommand(
 				"applicationGroup",
 				Effect.gen(function* () {
-				const config: {
-					label?: string;
-					description?: string;
-					status?: "ACTIVE" | "INACTIVE";
-				} = {};
+					const config: {
+						label?: string;
+						description?: string;
+						status?: "ACTIVE" | "INACTIVE";
+					} = {};
 
-				if (options.label) {
-					config.label = options.label;
-				}
-				if (options.description) {
-					config.description = options.description;
-				}
-				if (options.status) {
-					if (options.status !== "ACTIVE" && options.status !== "INACTIVE") {
-						throw new ValidationError(
-							"Status must be either ACTIVE or INACTIVE",
-							"Status must be either ACTIVE or INACTIVE",
+					if (options.label) {
+						config.label = options.label;
+					}
+					if (options.description) {
+						config.description = options.description;
+					}
+					if (options.status) {
+						if (options.status !== "ACTIVE" && options.status !== "INACTIVE") {
+							return yield* Effect.fail(
+								new ValidationError({
+									message: "Status must be either ACTIVE or INACTIVE",
+									userMessage: "Status must be either ACTIVE or INACTIVE",
+								}),
+							);
+						}
+						config.status = options.status;
+					}
+
+					if (Object.keys(config).length === 0) {
+						return yield* Effect.fail(
+							new ValidationError({
+								message: "At least one field must be specified for update",
+								userMessage: "Provide one of: --label, --description, --status",
+							}),
 						);
 					}
-					config.status = options.status;
-				}
 
-				if (Object.keys(config).length === 0) {
-					throw new ValidationError(
-						"At least one field must be specified for update",
-						"Provide one of: --label, --description, --status",
+					yield* applicationUpdateEffect(name, config);
+
+					emitSuccess(
+						currentCommandString(),
+						{
+							name,
+							updated_fields: Object.keys(config),
+							status: config.status,
+						},
+						nextActionsFor(commandIds.applicationUpdate, {
+							applicationName: name,
+						}),
 					);
-				}
-
-				unwrapResult(
-					yield* applicationUpdateEffect(name, config),
-					"Failed to update application",
-				);
-
-				emitSuccess(
-					currentCommandString(),
-					{
-						name,
-						updated_fields: Object.keys(config),
-						status: config.status,
-					},
-					nextActionsFor(commandIds.applicationUpdate, {
-						applicationName: name,
-					}),
-				);
 				}),
 			),
 		);
@@ -475,19 +444,16 @@ export function createApplicationCommand(): Command {
 			runApplicationCommand(
 				"applicationGroup",
 				Effect.gen(function* () {
-				unwrapResult(
-					yield* applicationEnableEffect(name, options.storeId),
-					"Failed to enable application",
-				);
+					yield* applicationEnableEffect(name, options.storeId);
 
-				emitSuccess(
-					currentCommandString(),
-					{ name, store_id: options.storeId, enabled: true },
-					nextActionsFor(commandIds.applicationEnable, {
-						applicationName: name,
-						storeId: options.storeId,
-					}),
-				);
+					emitSuccess(
+						currentCommandString(),
+						{ name, store_id: options.storeId, enabled: true },
+						nextActionsFor(commandIds.applicationEnable, {
+							applicationName: name,
+							storeId: options.storeId,
+						}),
+					);
 				}),
 			),
 		);
@@ -501,19 +467,16 @@ export function createApplicationCommand(): Command {
 			runApplicationCommand(
 				"applicationGroup",
 				Effect.gen(function* () {
-				unwrapResult(
-					yield* applicationDisableEffect(name, options.storeId),
-					"Failed to disable application",
-				);
+					yield* applicationDisableEffect(name, options.storeId);
 
-				emitSuccess(
-					currentCommandString(),
-					{ name, store_id: options.storeId, enabled: false },
-					nextActionsFor(commandIds.applicationDisable, {
-						applicationName: name,
-						storeId: options.storeId,
-					}),
-				);
+					emitSuccess(
+						currentCommandString(),
+						{ name, store_id: options.storeId, enabled: false },
+						nextActionsFor(commandIds.applicationDisable, {
+							applicationName: name,
+							storeId: options.storeId,
+						}),
+					);
 				}),
 			),
 		);
@@ -526,17 +489,14 @@ export function createApplicationCommand(): Command {
 			runApplicationCommand(
 				"applicationGroup",
 				Effect.gen(function* () {
-				unwrapResult(
-					yield* applicationArchiveEffect(name),
-					"Failed to archive application",
-				);
-				emitSuccess(
-					currentCommandString(),
-					{ name, archived: true },
-					nextActionsFor(commandIds.applicationArchive, {
-						applicationName: name,
-					}),
-				);
+					yield* applicationArchiveEffect(name);
+					emitSuccess(
+						currentCommandString(),
+						{ name, archived: true },
+						nextActionsFor(commandIds.applicationArchive, {
+							applicationName: name,
+						}),
+					);
 				}),
 			),
 		);
@@ -559,87 +519,101 @@ export function createApplicationCommand(): Command {
 			runApplicationCommand(
 				"applicationGroup",
 				Effect.gen(function* () {
-				let cfg: Config | undefined;
-				if (options.config || options.environment) {
-					const candidate = getConfigFile({
-						configPath: options.config,
-						env: options.environment as Environment | undefined,
-					});
-					if (isConfigValidationErrorResult(candidate)) {
-						const problems =
-							typeof candidate.summary === "string"
-								? candidate.summary
-								: "Config file validation failed";
-						throw new ValidationError(problems, problems);
+					let cfg: Config | undefined;
+					if (options.config || options.environment) {
+						const candidate = getConfigFile({
+							configPath: options.config,
+							env: options.environment as Environment | undefined,
+						});
+						if (isConfigValidationErrorResult(candidate)) {
+							const problems =
+								typeof candidate.summary === "string"
+									? candidate.summary
+									: "Config file validation failed";
+							return yield* Effect.fail(
+								new ValidationError({
+									message: problems,
+									userMessage: problems,
+								}),
+							);
+						}
+						cfg = candidate;
 					}
-					cfg = candidate;
-				}
 
-				const input: CreateApplicationInput = {
-					name: options.name ?? cfg?.name ?? "",
-					description: options.description ?? cfg?.description ?? "",
-					url: options.url ?? cfg?.url ?? "",
-					proxyUrl: options.proxyUrl ?? cfg?.proxy_url ?? "",
-					authorizationScopes:
-						options.scopes ?? cfg?.authorization_scopes ?? [],
-				};
+					const input: CreateApplicationInput = {
+						name: options.name ?? cfg?.name ?? "",
+						description: options.description ?? cfg?.description ?? "",
+						url: options.url ?? cfg?.url ?? "",
+						proxyUrl: options.proxyUrl ?? cfg?.proxy_url ?? "",
+						authorizationScopes:
+							options.scopes ?? cfg?.authorization_scopes ?? [],
+					};
 
-				if (!input.name) {
-					throw new ValidationError(
-						"Application name is required",
-						"Application name is required",
-					);
-				}
-				if (!input.description) {
-					throw new ValidationError(
-						"Application description is required",
-						"Application description is required",
-					);
-				}
-				if (!input.url) {
-					throw new ValidationError(
-						"Application URL is required",
-						"Application URL is required",
-					);
-				}
-				if (!input.proxyUrl) {
-					throw new ValidationError(
-						"Proxy URL is required",
-						"Proxy URL is required",
-					);
-				}
-				if (!input.authorizationScopes.length) {
-					throw new ValidationError(
-						"Authorization scopes are required",
-						"Authorization scopes are required",
-					);
-				}
+					if (!input.name) {
+						return yield* Effect.fail(
+							new ValidationError({
+								message: "Application name is required",
+								userMessage: "Application name is required",
+							}),
+						);
+					}
+					if (!input.description) {
+						return yield* Effect.fail(
+							new ValidationError({
+								message: "Application description is required",
+								userMessage: "Application description is required",
+							}),
+						);
+					}
+					if (!input.url) {
+						return yield* Effect.fail(
+							new ValidationError({
+								message: "Application URL is required",
+								userMessage: "Application URL is required",
+							}),
+						);
+					}
+					if (!input.proxyUrl) {
+						return yield* Effect.fail(
+							new ValidationError({
+								message: "Proxy URL is required",
+								userMessage: "Proxy URL is required",
+							}),
+						);
+					}
+					if (!input.authorizationScopes.length) {
+						return yield* Effect.fail(
+							new ValidationError({
+								message: "Authorization scopes are required",
+								userMessage: "Authorization scopes are required",
+							}),
+						);
+					}
 
-				const environment = yield* resolveEnvironmentEffect(options.environment);
-				const appData = unwrapResult(
-					yield* applicationInitEffect(input, environment),
-					"Failed to create application",
-				);
+					const environment = yield* resolveEnvironmentEffect(
+						options.environment,
+					);
+					const appData = yield* applicationInitEffect(input, environment);
 
-				emitSuccess(
-					currentCommandString(),
-					{
-						id: appData.id,
-						name: appData.name,
-						status: appData.status,
-						url: appData.url,
-						proxy_url: appData.proxyUrl,
-						authorization_scopes: appData.authorizationScopes,
-						client_id: appData.clientId,
-						files_written: {
-							config: getConfigFilePath(environment),
-							env: join(process.cwd(), `.env.${environment}`),
+					emitSuccess(
+						currentCommandString(),
+						{
+							id: appData.id,
+							name: appData.name,
+							status: appData.status,
+							url: appData.url,
+							proxy_url: appData.proxyUrl,
+							authorization_scopes: appData.authorizationScopes,
+							client_id: appData.clientId,
+							files_written: {
+								config: getConfigFilePath(environment),
+								env: join(process.cwd(), `.env.${environment}`),
+							},
 						},
-					},
-					nextActionsFor(commandIds.applicationInit, {
-						applicationName: appData.name,
-					}),
-				);
+						nextActionsFor(commandIds.applicationInit, {
+							applicationName: appData.name,
+						}),
+					);
 				}),
 			),
 		);
@@ -678,31 +652,32 @@ export function createApplicationCommand(): Command {
 			runApplicationCommand(
 				"applicationAddGroup",
 				Effect.gen(function* () {
-				if (options.name.length < 3) {
-					throw new ValidationError(
-						"Action name must be at least 3 characters long",
-						"Action name must be at least 3 characters long",
-					);
-				}
+					if (options.name.length < 3) {
+						return yield* Effect.fail(
+							new ValidationError({
+								message: "Action name must be at least 3 characters long",
+								userMessage: "Action name must be at least 3 characters long",
+							}),
+						);
+					}
 
-				const environment = yield* resolveEnvironmentEffect(options.environment);
-				const action: ActionConfig = { name: options.name, url: options.url };
-				unwrapResult(
+					const environment = yield* resolveEnvironmentEffect(
+						options.environment,
+					);
+					const action: ActionConfig = { name: options.name, url: options.url };
 					yield* addActionToConfigEffect(action, {
 						configPath: options.config,
 						env: environment,
-					}),
-					"Failed to add action",
-				);
+					});
 
-				emitSuccess(
-					currentCommandString(),
-					{
-						action,
-						config_path: resolveConfigPath(options.config, environment),
-					},
-					nextActionsFor(commandIds.applicationAddAction),
-				);
+					emitSuccess(
+						currentCommandString(),
+						{
+							action,
+							config_path: resolveConfigPath(options.config, environment),
+						},
+						nextActionsFor(commandIds.applicationAddAction),
+					);
 				}),
 			),
 		);
@@ -719,43 +694,47 @@ export function createApplicationCommand(): Command {
 			runApplicationCommand(
 				"applicationAddGroup",
 				Effect.gen(function* () {
-				if (options.name.length < 3) {
-					throw new ValidationError(
-						"Subscription name must be at least 3 characters long",
-						"Subscription name must be at least 3 characters long",
-					);
-				}
+					if (options.name.length < 3) {
+						return yield* Effect.fail(
+							new ValidationError({
+								message: "Subscription name must be at least 3 characters long",
+								userMessage:
+									"Subscription name must be at least 3 characters long",
+							}),
+						);
+					}
 
-				const eventList = parseCommaSeparated(options.events);
-				if (!eventList.length) {
-					throw new ValidationError(
-						"At least one event is required",
-						"At least one event is required",
-					);
-				}
+					const eventList = parseCommaSeparated(options.events);
+					if (!eventList.length) {
+						return yield* Effect.fail(
+							new ValidationError({
+								message: "At least one event is required",
+								userMessage: "At least one event is required",
+							}),
+						);
+					}
 
-				const environment = yield* resolveEnvironmentEffect(options.environment);
-				const subscription: SubscriptionConfig = {
-					name: options.name,
-					events: eventList,
-					url: options.url,
-				};
-				unwrapResult(
+					const environment = yield* resolveEnvironmentEffect(
+						options.environment,
+					);
+					const subscription: SubscriptionConfig = {
+						name: options.name,
+						events: eventList,
+						url: options.url,
+					};
 					yield* addSubscriptionToConfigEffect(subscription, {
 						configPath: options.config,
 						env: environment,
-					}),
-					"Failed to add subscription",
-				);
+					});
 
-				emitSuccess(
-					currentCommandString(),
-					{
-						subscription,
-						config_path: resolveConfigPath(options.config, environment),
-					},
-					nextActionsFor(commandIds.applicationAddSubscription),
-				);
+					emitSuccess(
+						currentCommandString(),
+						{
+							subscription,
+							config_path: resolveConfigPath(options.config, environment),
+						},
+						nextActionsFor(commandIds.applicationAddSubscription),
+					);
 				}),
 			),
 		);
@@ -766,7 +745,9 @@ export function createApplicationCommand(): Command {
 
 	extensionCommand.action(() =>
 		Effect.sync(() => {
-			const node = findRegistryNodeById(commandIds.applicationAddExtensionGroup);
+			const node = findRegistryNodeById(
+				commandIds.applicationAddExtensionGroup,
+			);
 			if (!node) {
 				emitRuntimeError(
 					"applicationAddGroup",
@@ -799,53 +780,60 @@ export function createApplicationCommand(): Command {
 			runApplicationCommand(
 				"applicationAddExtensionGroup",
 				Effect.gen(function* () {
-				if (options.name.length < 3) {
-					throw new ValidationError(
-						"Extension name must be at least 3 characters long",
-						"Extension name must be at least 3 characters long",
-					);
-				}
-				if (options.handle.length < 3) {
-					throw new ValidationError(
-						"Extension handle must be at least 3 characters long",
-						"Extension handle must be at least 3 characters long",
-					);
-				}
+					if (options.name.length < 3) {
+						return yield* Effect.fail(
+							new ValidationError({
+								message: "Extension name must be at least 3 characters long",
+								userMessage:
+									"Extension name must be at least 3 characters long",
+							}),
+						);
+					}
+					if (options.handle.length < 3) {
+						return yield* Effect.fail(
+							new ValidationError({
+								message: "Extension handle must be at least 3 characters long",
+								userMessage:
+									"Extension handle must be at least 3 characters long",
+							}),
+						);
+					}
 
-				const targets = parseCommaSeparated(options.target).map((target) => ({
-					target,
-				}));
-				if (!targets.length) {
-					throw new ValidationError(
-						"At least one valid target is required",
-						"At least one valid target is required",
-					);
-				}
+					const targets = parseCommaSeparated(options.target).map((target) => ({
+						target,
+					}));
+					if (!targets.length) {
+						return yield* Effect.fail(
+							new ValidationError({
+								message: "At least one valid target is required",
+								userMessage: "At least one valid target is required",
+							}),
+						);
+					}
 
-				const extension: EmbedExtensionConfig = {
-					name: options.name,
-					handle: options.handle,
-					source: options.source,
-					targets,
-				};
-				const environment = yield* resolveEnvironmentEffect(options.environment);
-				unwrapResult(
+					const extension: EmbedExtensionConfig = {
+						name: options.name,
+						handle: options.handle,
+						source: options.source,
+						targets,
+					};
+					const environment = yield* resolveEnvironmentEffect(
+						options.environment,
+					);
 					yield* addExtensionToConfigEffect("embed", extension, {
 						configPath: options.config,
 						env: environment,
-					}),
-					"Failed to add extension",
-				);
+					});
 
-				emitSuccess(
-					currentCommandString(),
-					{
-						extension_type: "embed",
-						extension,
-						config_path: resolveConfigPath(options.config, environment),
-					},
-					nextActionsFor(commandIds.applicationAddExtensionEmbed),
-				);
+					emitSuccess(
+						currentCommandString(),
+						{
+							extension_type: "embed",
+							extension,
+							config_path: resolveConfigPath(options.config, environment),
+						},
+						nextActionsFor(commandIds.applicationAddExtensionEmbed),
+					);
 				}),
 			),
 		);
@@ -866,53 +854,60 @@ export function createApplicationCommand(): Command {
 			runApplicationCommand(
 				"applicationAddExtensionGroup",
 				Effect.gen(function* () {
-				if (options.name.length < 3) {
-					throw new ValidationError(
-						"Extension name must be at least 3 characters long",
-						"Extension name must be at least 3 characters long",
-					);
-				}
-				if (options.handle.length < 3) {
-					throw new ValidationError(
-						"Extension handle must be at least 3 characters long",
-						"Extension handle must be at least 3 characters long",
-					);
-				}
+					if (options.name.length < 3) {
+						return yield* Effect.fail(
+							new ValidationError({
+								message: "Extension name must be at least 3 characters long",
+								userMessage:
+									"Extension name must be at least 3 characters long",
+							}),
+						);
+					}
+					if (options.handle.length < 3) {
+						return yield* Effect.fail(
+							new ValidationError({
+								message: "Extension handle must be at least 3 characters long",
+								userMessage:
+									"Extension handle must be at least 3 characters long",
+							}),
+						);
+					}
 
-				const targets = parseCommaSeparated(options.target).map((target) => ({
-					target,
-				}));
-				if (!targets.length) {
-					throw new ValidationError(
-						"At least one valid target is required",
-						"At least one valid target is required",
-					);
-				}
+					const targets = parseCommaSeparated(options.target).map((target) => ({
+						target,
+					}));
+					if (!targets.length) {
+						return yield* Effect.fail(
+							new ValidationError({
+								message: "At least one valid target is required",
+								userMessage: "At least one valid target is required",
+							}),
+						);
+					}
 
-				const extension: CheckoutExtensionConfig = {
-					name: options.name,
-					handle: options.handle,
-					source: options.source,
-					targets,
-				};
-				const environment = yield* resolveEnvironmentEffect(options.environment);
-				unwrapResult(
+					const extension: CheckoutExtensionConfig = {
+						name: options.name,
+						handle: options.handle,
+						source: options.source,
+						targets,
+					};
+					const environment = yield* resolveEnvironmentEffect(
+						options.environment,
+					);
 					yield* addExtensionToConfigEffect("checkout", extension, {
 						configPath: options.config,
 						env: environment,
-					}),
-					"Failed to add extension",
-				);
+					});
 
-				emitSuccess(
-					currentCommandString(),
-					{
-						extension_type: "checkout",
-						extension,
-						config_path: resolveConfigPath(options.config, environment),
-					},
-					nextActionsFor(commandIds.applicationAddExtensionCheckout),
-				);
+					emitSuccess(
+						currentCommandString(),
+						{
+							extension_type: "checkout",
+							extension,
+							config_path: resolveConfigPath(options.config, environment),
+						},
+						nextActionsFor(commandIds.applicationAddExtensionCheckout),
+					);
 				}),
 			),
 		);
@@ -927,27 +922,26 @@ export function createApplicationCommand(): Command {
 			runApplicationCommand(
 				"applicationAddExtensionGroup",
 				Effect.gen(function* () {
-				const extension: BlocksExtensionConfig = {
-					source: options.source,
-				};
-				const environment = yield* resolveEnvironmentEffect(options.environment);
-				unwrapResult(
+					const extension: BlocksExtensionConfig = {
+						source: options.source,
+					};
+					const environment = yield* resolveEnvironmentEffect(
+						options.environment,
+					);
 					yield* addExtensionToConfigEffect("blocks", extension, {
 						configPath: options.config,
 						env: environment,
-					}),
-					"Failed to add extension",
-				);
+					});
 
-				emitSuccess(
-					currentCommandString(),
-					{
-						extension_type: "blocks",
-						extension,
-						config_path: resolveConfigPath(options.config, environment),
-					},
-					nextActionsFor(commandIds.applicationAddExtensionBlocks),
-				);
+					emitSuccess(
+						currentCommandString(),
+						{
+							extension_type: "blocks",
+							extension,
+							config_path: resolveConfigPath(options.config, environment),
+						},
+						nextActionsFor(commandIds.applicationAddExtensionBlocks),
+					);
 				}),
 			),
 		);
@@ -966,30 +960,29 @@ export function createApplicationCommand(): Command {
 			runApplicationCommand(
 				"applicationGroup",
 				Effect.gen(function* () {
-				const environment = yield* resolveEnvironmentEffect(options.environment);
-				const releaseInfo = unwrapResult(
-					yield* applicationReleaseEffect({
+					const environment = yield* resolveEnvironmentEffect(
+						options.environment,
+					);
+					const releaseInfo = yield* applicationReleaseEffect({
 						applicationName: name,
 						version: options.releaseVersion,
 						description: options.description,
 						configPath: options.config,
 						env: environment,
-					}),
-					"Failed to create release",
-				) as ReleaseInfo;
+					});
 
-				emitSuccess(
-					currentCommandString(),
-					{
-						id: releaseInfo.id,
-						version: releaseInfo.version,
-						description: releaseInfo.description,
-						created_at: releaseInfo.createdAt,
-					},
-					nextActionsFor(commandIds.applicationRelease, {
-						applicationName: name,
-					}),
-				);
+					emitSuccess(
+						currentCommandString(),
+						{
+							id: releaseInfo.id,
+							version: releaseInfo.version,
+							description: releaseInfo.description,
+							created_at: releaseInfo.createdAt,
+						},
+						nextActionsFor(commandIds.applicationRelease, {
+							applicationName: name,
+						}),
+					);
 				}),
 			),
 		);
@@ -1009,17 +1002,22 @@ export function createApplicationCommand(): Command {
 			});
 
 			return Effect.gen(function* () {
-				const environment = yield* resolveEnvironmentEffect(options.environment);
+				const environment = yield* resolveEnvironmentEffect(
+					options.environment,
+				);
 
 				if (follow) {
 					yield* Effect.sync(() => emitStreamStart(command));
 				}
 
-				const deployResult: DeployResult = yield* applicationDeployEffect(name, {
-					configPath: options.config,
-					env: environment,
-					onProgress: follow ? emitDeployProgressAsStream : undefined,
-				});
+				const deployResult: DeployResult = yield* applicationDeployEffect(
+					name,
+					{
+						configPath: options.config,
+						env: environment,
+						onProgress: follow ? emitDeployProgressAsStream : undefined,
+					},
+				);
 				const payload = buildDeployPayload(name, deployResult);
 
 				yield* Effect.sync(() => {

@@ -1,12 +1,6 @@
 import * as HelpDoc from "@effect/cli/HelpDoc";
 import type { ValidationError as EffectValidationError } from "@effect/cli/ValidationError";
-import {
-	AuthenticationError,
-	CliError,
-	ConfigurationError,
-	NetworkError,
-	ValidationError,
-} from "../../shared/types";
+import { type CliError, errorCode } from "../../effect/errors";
 
 export interface AgentErrorDetails {
 	message: string;
@@ -34,44 +28,42 @@ function formatValidationMessage(error: EffectValidationError): string {
 	return "Invalid command input";
 }
 
-function fromCliError(error: CliError): AgentErrorDetails {
-	if (error instanceof ValidationError) {
-		return {
-			message: error.userMessage || error.message,
-			code: "VALIDATION_ERROR",
-			fix: "Review command arguments and try again with valid values.",
-		};
-	}
+function fromTaggedError(error: CliError): AgentErrorDetails {
+	const code = errorCode(error);
+	const message = error.userMessage || error.message;
 
-	if (error instanceof AuthenticationError) {
-		return {
-			message: error.userMessage || "Authentication required",
-			code: "AUTH_REQUIRED",
-			fix: "Run: godaddy auth login",
-		};
+	switch (error._tag) {
+		case "ValidationError":
+			return {
+				message,
+				code,
+				fix: "Review command arguments and try again with valid values.",
+			};
+		case "AuthenticationError":
+			return {
+				message,
+				code: "AUTH_REQUIRED",
+				fix: "Run: godaddy auth login",
+			};
+		case "ConfigurationError":
+			return {
+				message,
+				code,
+				fix: "Check your config with: godaddy env info [environment]",
+			};
+		case "NetworkError":
+			return {
+				message,
+				code,
+				fix: "Verify environment connectivity with: godaddy env get and retry.",
+			};
+		case "SecurityError":
+			return {
+				message,
+				code,
+				fix: "Resolve security findings and rerun: godaddy application deploy <name>",
+			};
 	}
-
-	if (error instanceof ConfigurationError) {
-		return {
-			message: error.userMessage || error.message,
-			code: "CONFIG_ERROR",
-			fix: "Check your config with: godaddy env info [environment]",
-		};
-	}
-
-	if (error instanceof NetworkError) {
-		return {
-			message: error.userMessage || error.message,
-			code: "NETWORK_ERROR",
-			fix: "Verify environment connectivity with: godaddy env get and retry.",
-		};
-	}
-
-	return {
-		message: error.userMessage || error.message,
-		code: error.code || "UNEXPECTED_ERROR",
-		fix: "Run: godaddy for command discovery.",
-	};
 }
 
 function inferFromMessage(message: string): AgentErrorDetails {
@@ -116,9 +108,25 @@ function inferFromMessage(message: string): AgentErrorDetails {
 	};
 }
 
+function isTaggedError(error: unknown): error is CliError {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"_tag" in error &&
+		typeof (error as { _tag: unknown })._tag === "string" &&
+		[
+			"ValidationError",
+			"NetworkError",
+			"AuthenticationError",
+			"ConfigurationError",
+			"SecurityError",
+		].includes((error as { _tag: string })._tag)
+	);
+}
+
 export function mapRuntimeError(error: unknown): AgentErrorDetails {
-	if (error instanceof CliError) {
-		return fromCliError(error);
+	if (isTaggedError(error)) {
+		return fromTaggedError(error);
 	}
 
 	if (error instanceof Error) {
