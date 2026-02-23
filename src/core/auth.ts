@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import http from "node:http";
 import { URL } from "node:url";
 import openBrowser from "open";
+import { loggedFetch } from "../services/logger";
 import {
 	AuthenticationError,
 	type CmdResult,
@@ -14,7 +15,6 @@ import {
 	getApiUrl,
 	getClientId,
 } from "./environment";
-import { loggedFetch } from "../services/logger";
 
 const KEYCHAIN_SERVICE = "godaddy-cli";
 const PORT = 7443;
@@ -98,19 +98,26 @@ export async function authLogin(): Promise<CmdResult<AuthResult>> {
 							);
 						}
 
-						const tokenResponse = await loggedFetch(oauthTokenUrl, {
-							method: "POST",
-							headers: {
-								"Content-Type": "application/x-www-form-urlencoded",
+						const tokenResponse = await loggedFetch(
+							oauthTokenUrl,
+							{
+								method: "POST",
+								headers: {
+									"Content-Type": "application/x-www-form-urlencoded",
+								},
+								body: new URLSearchParams({
+									client_id: clientId,
+									code,
+									grant_type: "authorization_code",
+									redirect_uri: `http://localhost:${actualPort}/callback`,
+									code_verifier: codeVerifier,
+								}),
 							},
-							body: new URLSearchParams({
-								client_id: clientId,
-								code,
-								grant_type: "authorization_code",
-								redirect_uri: `http://localhost:${actualPort}/callback`,
-								code_verifier: codeVerifier,
-							}),
-						});
+							{
+								includeRequestBody: false,
+								includeResponseBody: false,
+							},
+						);
 
 						if (!tokenResponse.ok) {
 							throw new Error(`Token request failed: ${tokenResponse.status}`);

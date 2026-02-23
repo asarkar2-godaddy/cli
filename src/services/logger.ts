@@ -3,6 +3,21 @@ import pinoPretty from "pino-pretty";
 
 // Global verbosity level: 0 = none, 1 = basic, 2 = full
 let verbosityLevel = 0;
+const SENSITIVE_LOG_VALUE = "[REDACTED]";
+const SENSITIVE_KEY_PARTS = [
+	"token",
+	"secret",
+	"password",
+	"authorization",
+	"api_key",
+	"apikey",
+	"code_verifier",
+] as const;
+
+interface LoggedFetchOptions {
+	includeRequestBody?: boolean;
+	includeResponseBody?: boolean;
+}
 
 // Configure logger based on environment and verbosity level
 const createLogger = () => {
@@ -122,8 +137,11 @@ const redactSensitiveFields = (obj: unknown): unknown => {
 
 	const result: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(obj)) {
-		if (key === "access_token" || key === "accessToken") {
-			result[key] = "[REDACTED]";
+		const lowerKey = key.toLowerCase();
+		if (
+			SENSITIVE_KEY_PARTS.some((part) => lowerKey.includes(part.toLowerCase()))
+		) {
+			result[key] = SENSITIVE_LOG_VALUE;
 		} else if (typeof value === "object" && value !== null) {
 			result[key] = redactSensitiveFields(value);
 		} else {
@@ -133,22 +151,47 @@ const redactSensitiveFields = (obj: unknown): unknown => {
 	return result;
 };
 
+function isSensitiveEndpoint(url: string): boolean {
+	try {
+		const path = new URL(url).pathname.toLowerCase();
+		return path.includes("/oauth/token") || path.includes("/oauth2/token");
+	} catch {
+		const normalized = url.toLowerCase();
+		return (
+			normalized.includes("/oauth/token") ||
+			normalized.includes("/oauth2/token")
+		);
+	}
+}
+
+function normalizeRequestBodyForLogs(body: RequestInit["body"]): unknown {
+	if (body instanceof URLSearchParams) {
+		return Object.fromEntries(body.entries());
+	}
+	return body;
+}
+
 export const loggedFetch = async (
 	url: string,
 	init?: RequestInit,
+	options?: LoggedFetchOptions,
 ): Promise<Response> => {
 	const method = init?.method ?? "(unknown)";
 	const headers = init?.headers;
 	const body = init?.body;
+	const endpointSensitive = isSensitiveEndpoint(url);
+	const includeRequestBody =
+		(options?.includeRequestBody ?? true) && !endpointSensitive;
+	const includeResponseBody =
+		(options?.includeResponseBody ?? true) && !endpointSensitive;
 
 	logHttpRequest({
 		method,
 		url,
 		headers: headers as Record<string, string>,
-		body:
-			body instanceof URLSearchParams
-				? Object.fromEntries(body.entries())
-				: body,
+		body: includeRequestBody
+			? redactSensitiveFields(normalizeRequestBodyForLogs(body))
+			: SENSITIVE_LOG_VALUE,
 	});
 
 	const startTime = Date.now();
@@ -156,7 +199,7 @@ export const loggedFetch = async (
 	const duration = Date.now() - startTime;
 
 	let responseBody: unknown;
-	if (verbosityLevel >= 2 && response.ok) {
+	if (verbosityLevel >= 2 && response.ok && includeResponseBody) {
 		const contentType = response.headers.get("content-type");
 		if (contentType?.includes("application/json")) {
 			const clonedResponse = response.clone();
@@ -167,6 +210,8 @@ export const loggedFetch = async (
 				responseBody = undefined;
 			}
 		}
+	} else if (!includeResponseBody) {
+		responseBody = SENSITIVE_LOG_VALUE;
 	}
 
 	logHttpResponse({
