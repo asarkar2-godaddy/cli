@@ -75,7 +75,6 @@ export const getLogger = () => logger;
 // HTTP request logging utilities
 export const logHttpRequest = (options: {
 	method: string;
-	url: string;
 	headers?: Record<string, string>;
 	body?: unknown;
 }) => {
@@ -84,20 +83,18 @@ export const logHttpRequest = (options: {
 			{
 				type: "http_request",
 				method: options.method,
-				url: options.url,
 				headers: options.headers,
 				body: options.body,
 			},
-			`→ ${options.method} ${options.url}`,
+			`→ ${options.method}`,
 		);
 	} else if (verbosityLevel === 1) {
-		logger.debug(`→ ${options.method} ${options.url}`);
+		logger.debug(`→ ${options.method}`);
 	}
 };
 
 export const logHttpResponse = (options: {
 	method: string;
-	url: string;
 	status: number;
 	statusText?: string;
 	headers?: Record<string, string>;
@@ -109,20 +106,19 @@ export const logHttpResponse = (options: {
 			{
 				type: "http_response",
 				method: options.method,
-				url: options.url,
 				status: options.status,
 				statusText: options.statusText,
 				headers: options.headers,
 				body: options.body,
 				duration: options.duration,
 			},
-			`← ${options.status} ${options.method} ${options.url} ${
+			`← ${options.status} ${options.method} ${
 				options.duration ? `(${options.duration}ms)` : ""
 			}`,
 		);
 	} else if (verbosityLevel === 1) {
 		logger.debug(
-			`← ${options.status} ${options.method} ${options.url} ${
+			`← ${options.status} ${options.method} ${
 				options.duration ? `(${options.duration}ms)` : ""
 			}`,
 		);
@@ -200,24 +196,6 @@ function sanitizeHeadersForLogs(
 	return sanitized;
 }
 
-function sanitizeUrlForLogs(url: string, sensitiveEndpoint: boolean): string {
-	if (sensitiveEndpoint) {
-		return SENSITIVE_LOG_VALUE;
-	}
-
-	try {
-		const parsed = new URL(url);
-		for (const key of Array.from(parsed.searchParams.keys())) {
-			if (isSensitiveKey(key)) {
-				parsed.searchParams.set(key, SENSITIVE_LOG_VALUE);
-			}
-		}
-		return parsed.toString();
-	} catch {
-		return url;
-	}
-}
-
 function isSensitiveEndpoint(url: string): boolean {
 	try {
 		const path = new URL(url).pathname.toLowerCase();
@@ -247,7 +225,6 @@ export const loggedFetch = async (
 	const headers = init?.headers;
 	const body = init?.body;
 	const endpointSensitive = isSensitiveEndpoint(url);
-	const safeUrl = sanitizeUrlForLogs(url, endpointSensitive);
 	const includeRequestBody =
 		(options?.includeRequestBody ?? true) && !endpointSensitive;
 	const includeResponseBody =
@@ -255,7 +232,6 @@ export const loggedFetch = async (
 
 	logHttpRequest({
 		method,
-		url: safeUrl,
 		headers: sanitizeHeadersForLogs(headers),
 		body: includeRequestBody
 			? redactSensitiveFields(normalizeRequestBodyForLogs(body))
@@ -287,7 +263,6 @@ export const loggedFetch = async (
 
 	logHttpResponse({
 		method,
-		url: safeUrl,
 		status: response.status,
 		statusText: response.statusText,
 		headers: responseHeadersForLogs,

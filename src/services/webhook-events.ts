@@ -34,7 +34,6 @@ export async function getWebhookEventsTypes({
 	// Log HTTP request
 	logHttpRequest({
 		method: "GET",
-		url,
 		headers,
 	});
 
@@ -46,7 +45,6 @@ export async function getWebhookEventsTypes({
 	// Log HTTP response
 	logHttpResponse({
 		method: "GET",
-		url,
 		status: response.status,
 		statusText: response.statusText,
 		headers: response.headers ? {} : undefined,
