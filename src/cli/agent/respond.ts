@@ -7,18 +7,30 @@ import type {
 } from "./types";
 
 let envelopeWritten = false;
+let prettyPrintEnabled = false;
+
+function serializeEnvelope(envelope: AgentEnvelope): string {
+	return prettyPrintEnabled
+		? JSON.stringify(envelope, null, 2)
+		: JSON.stringify(envelope);
+}
 
 function writeEnvelope(envelope: AgentEnvelope): void {
 	if (envelopeWritten) {
 		return;
 	}
 
-	process.stdout.write(`${JSON.stringify(envelope)}\n`);
+	process.stdout.write(`${serializeEnvelope(envelope)}\n`);
 	envelopeWritten = true;
 }
 
 export function resetEnvelopeWriter(): void {
 	envelopeWritten = false;
+	prettyPrintEnabled = false;
+}
+
+export function setEnvelopePrettyPrint(enabled: boolean): void {
+	prettyPrintEnabled = enabled;
 }
 
 export function hasWrittenEnvelope(): boolean {

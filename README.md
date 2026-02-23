@@ -23,6 +23,7 @@ All executable commands emit JSON envelopes:
 
 `--help` remains standard CLI help text.
 `--output` has been removed; all executable command paths return JSON envelopes.
+Use `--pretty` to format envelopes with 2-space indentation for human readability.
 
 ## Root Discovery
 
@@ -36,6 +37,7 @@ Returns environment/auth snapshots and the full command tree.
 
 - `-e, --env <environment>`: validate target environment (`ote`, `prod`)
 - `--debug`: enable debug logging (stderr only)
+- `--pretty`: pretty-print JSON envelopes (2-space indentation)
 
 ## Commands
 

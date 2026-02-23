@@ -23,6 +23,7 @@ import {
 	currentCommandString,
 	emitError,
 	emitSuccess,
+	setEnvelopePrettyPrint,
 } from "./cli/agent/respond";
 import { Command, getCanonicalPath } from "./cli/command-model";
 import { createActionsCommand } from "./cli/commands/actions";
@@ -90,6 +91,30 @@ function normalizeVerbosityArgs(argv: ReadonlyArray<string>): string[] {
 	}
 
 	return retained;
+}
+
+function normalizePrettyArgs(argv: ReadonlyArray<string>): string[] {
+	const retained: string[] = [];
+	let pretty = false;
+
+	for (const token of argv) {
+		if (token === "--pretty") {
+			pretty = true;
+			continue;
+		}
+
+		retained.push(token);
+	}
+
+	if (pretty) {
+		return ["--pretty", ...retained];
+	}
+
+	return retained;
+}
+
+function normalizeGlobalArgs(argv: ReadonlyArray<string>): string[] {
+	return normalizePrettyArgs(normalizeVerbosityArgs(argv));
 }
 
 function buildOptionsParser(
@@ -354,6 +379,7 @@ function applyGlobalOptions(
 	parsedRootValue: ParsedCommandValue,
 ): void {
 	const options = extractCommandOptions(rootCommand, parsedRootValue);
+	setEnvelopePrettyPrint(options.pretty === true);
 
 	let verbosity = 0;
 	if (options.verbose === true || options.info === true) {
@@ -419,6 +445,10 @@ export function createCliProgram(): Command {
 		)
 		.option("--info", "Enable basic verbose output (same as -v)")
 		.option("--debug", "Enable full verbose output (same as -vv)")
+		.option(
+			"--pretty",
+			"Pretty-print JSON envelopes with 2-space indentation",
+		)
 		.action(async () => {
 			const envResult = await envGet();
 			const commandTree = getRootCommandTree();
@@ -466,7 +496,8 @@ export function createCliProgram(): Command {
 export async function runCli(argv: ReadonlyArray<string>): Promise<void> {
 	const rootCommand = createCliProgram();
 	const descriptor = buildDescriptor(rootCommand);
-	const normalizedArgv = normalizeVerbosityArgs(argv);
+	const normalizedArgv = normalizeGlobalArgs(argv);
+	setEnvelopePrettyPrint(normalizedArgv.includes("--pretty"));
 
 	const parseEffect = CommandDescriptor.parse(
 		descriptor,

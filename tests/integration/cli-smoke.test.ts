@@ -34,6 +34,16 @@ describe("CLI Smoke Tests", () => {
 		expect(Array.isArray(payload.next_actions)).toBe(true);
 	});
 
+	it("--pretty formats success envelopes with indentation", () => {
+		const result = runCli(["--pretty"]);
+		expect(result.status).toBe(0);
+		expect(result.stdout).toContain('\n  "ok": true');
+		expect(result.stdout).toContain('\n  "result": {');
+
+		const payload = JSON.parse(result.stdout);
+		expect(payload.ok).toBe(true);
+	});
+
 	it("application parent command returns subtree discovery envelope", () => {
 		const result = runCli(["application"]);
 		expect(result.status).toBe(0);
@@ -52,6 +62,16 @@ describe("CLI Smoke Tests", () => {
 		expect(payload.ok).toBe(false);
 		expect(payload.error.code).toBe("COMMAND_NOT_FOUND");
 		expect(payload.fix).toContain("godaddy");
+	});
+
+	it("--pretty formats structured error envelopes with indentation", () => {
+		const result = runCli(["--pretty", "nonexistent-command"]);
+		expect(result.status).toBe(1);
+		expect(result.stdout).toContain('\n  "ok": false');
+		expect(result.stdout).toContain('\n  "error": {');
+
+		const payload = JSON.parse(result.stdout);
+		expect(payload.error.code).toBe("COMMAND_NOT_FOUND");
 	});
 
 	it("unsupported --output option returns structured error envelope", () => {
