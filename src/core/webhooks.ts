@@ -1,4 +1,5 @@
 import { getWebhookEventsTypes } from "../services/webhook-events";
+import * as Effect from "effect/Effect";
 import {
 	AuthenticationError,
 	type CmdResult,
@@ -15,7 +16,7 @@ export interface WebhookEvent {
 /**
  * Get list of available webhook event types
  */
-export async function webhookEvents(): Promise<CmdResult<WebhookEvent[]>> {
+async function webhookEventsPromise(): Promise<CmdResult<WebhookEvent[]>> {
 	try {
 		const accessToken = await getFromKeychain("token");
 		if (!accessToken) {
@@ -48,4 +49,17 @@ export async function webhookEvents(): Promise<CmdResult<WebhookEvent[]>> {
 			),
 		};
 	}
+}
+
+export function webhookEventsEffect(...args: Parameters<typeof webhookEventsPromise>): Effect.Effect<Awaited<ReturnType<typeof webhookEventsPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => webhookEventsPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function webhookEvents(
+	...args: Parameters<typeof webhookEventsPromise>
+): Promise<Awaited<ReturnType<typeof webhookEventsPromise>>> {
+	return Effect.runPromise(webhookEventsEffect(...args));
 }

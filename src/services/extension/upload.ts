@@ -4,6 +4,7 @@
  */
 
 import { promises as fs } from "node:fs";
+import * as Effect from "effect/Effect";
 import { getLogger } from "@/services/logger";
 import type { UploadTarget } from "./presigned-url";
 
@@ -43,7 +44,7 @@ export interface UploadOptions {
  * Implements retry logic with exponential backoff for transient errors (5xx, network).
  * Retries: 250ms, 750ms, 1500ms (by default)
  */
-export async function uploadArtifact(
+async function uploadArtifactPromise(
 	target: UploadTarget,
 	filePath: string,
 	options: UploadOptions = {},
@@ -184,4 +185,17 @@ export async function uploadArtifact(
 	throw new Error(
 		`Upload failed after ${maxRetries} attempts: ${lastError?.message ?? "unknown error"}`,
 	);
+}
+
+export function uploadArtifactEffect(...args: Parameters<typeof uploadArtifactPromise>): Effect.Effect<Awaited<ReturnType<typeof uploadArtifactPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => uploadArtifactPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function uploadArtifact(
+	...args: Parameters<typeof uploadArtifactPromise>
+): Promise<Awaited<ReturnType<typeof uploadArtifactPromise>>> {
+	return Effect.runPromise(uploadArtifactEffect(...args));
 }

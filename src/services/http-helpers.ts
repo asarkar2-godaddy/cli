@@ -3,6 +3,7 @@
  */
 
 import { v7 as uuid } from "uuid";
+import * as Effect from "effect/Effect";
 import { type Environment, envGet, getApiUrl } from "../core/environment";
 
 // Cached API base URL
@@ -11,7 +12,7 @@ let apiBaseUrl: string | null = null;
 /**
  * Get or initialize the API base URL based on the environment
  */
-export async function initApiBaseUrl(): Promise<string> {
+async function initApiBaseUrlPromise(): Promise<string> {
 	if (apiBaseUrl) return apiBaseUrl;
 
 	// Use environment variable if set, otherwise determine from active environment
@@ -37,4 +38,17 @@ export function getRequestHeaders(accessToken: string): Record<string, string> {
 		Authorization: `Bearer ${accessToken}`,
 		"X-Request-ID": uuid(),
 	};
+}
+
+export function initApiBaseUrlEffect(...args: Parameters<typeof initApiBaseUrlPromise>): Effect.Effect<Awaited<ReturnType<typeof initApiBaseUrlPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => initApiBaseUrlPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function initApiBaseUrl(
+	...args: Parameters<typeof initApiBaseUrlPromise>
+): Promise<Awaited<ReturnType<typeof initApiBaseUrlPromise>>> {
+	return Effect.runPromise(initApiBaseUrlEffect(...args));
 }

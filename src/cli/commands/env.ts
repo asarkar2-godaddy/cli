@@ -1,9 +1,10 @@
+import * as Effect from "effect/Effect";
 import {
 	type Environment,
-	envGet,
-	envInfo,
-	envList,
-	envSet,
+	envGetEffect,
+	envInfoEffect,
+	envListEffect,
+	envSetEffect,
 	getEnvironmentDisplay,
 } from "../../core/environment";
 import { mapRuntimeError } from "../agent/errors";
@@ -21,40 +22,52 @@ import {
 } from "../agent/respond";
 import { Command } from "../command-model";
 
+function emitEnvError(error: unknown): void {
+	const mapped = mapRuntimeError(error);
+	emitError(
+		currentCommandString(),
+		{ message: mapped.message, code: mapped.code },
+		mapped.fix,
+		nextActionsFor(commandIds.envGroup),
+	);
+}
+
 export function createEnvCommand(): Command {
 	const env = new Command("env").description(
 		"Manage GoDaddy environments (ote, prod)",
 	);
 
-	env.action(async () => {
-		const node = findRegistryNodeById(commandIds.envGroup);
-		if (!node) {
-			const mapped = mapRuntimeError(
-				new Error("Environment command registry metadata is missing"),
-			);
-			emitError(
-				currentCommandString(),
-				{ message: mapped.message, code: mapped.code },
-				mapped.fix,
-				nextActionsFor(commandIds.root),
-			);
-			return;
-		}
+	env.action(() =>
+		Effect.sync(() => {
+			const node = findRegistryNodeById(commandIds.envGroup);
+			if (!node) {
+				const mapped = mapRuntimeError(
+					new Error("Environment command registry metadata is missing"),
+				);
+				emitError(
+					currentCommandString(),
+					{ message: mapped.message, code: mapped.code },
+					mapped.fix,
+					nextActionsFor(commandIds.root),
+				);
+				return;
+			}
 
-		emitSuccess(
-			currentCommandString(),
-			registryNodeToResult(node),
-			nextActionsFor(commandIds.envGroup),
-		);
-	});
+			emitSuccess(
+				currentCommandString(),
+				registryNodeToResult(node),
+				nextActionsFor(commandIds.envGroup),
+			);
+		}),
+	);
 
 	env
 		.command("list")
 		.description("List all available environments")
-		.action(async () => {
-			try {
+		.action(() =>
+			Effect.gen(function* () {
 				const environments = unwrapResult(
-					await envList(),
+					yield* envListEffect(),
 					"Failed to list environments",
 				);
 				const activeEnvironment = environments[0];
@@ -70,24 +83,16 @@ export function createEnvCommand(): Command {
 					},
 					nextActionsFor(commandIds.envList),
 				);
-			} catch (error) {
-				const mapped = mapRuntimeError(error);
-				emitError(
-					currentCommandString(),
-					{ message: mapped.message, code: mapped.code },
-					mapped.fix,
-					nextActionsFor(commandIds.envGroup),
-				);
-			}
-		});
+			}).pipe(Effect.catchAll((error) => Effect.sync(() => emitEnvError(error)))),
+		);
 
 	env
 		.command("get")
 		.description("Get current active environment")
-		.action(async () => {
-			try {
+		.action(() =>
+			Effect.gen(function* () {
 				const environment = unwrapResult(
-					await envGet(),
+					yield* envGetEffect(),
 					"Failed to get environment",
 				) as Environment;
 
@@ -96,28 +101,20 @@ export function createEnvCommand(): Command {
 					{ environment },
 					nextActionsFor(commandIds.envGet),
 				);
-			} catch (error) {
-				const mapped = mapRuntimeError(error);
-				emitError(
-					currentCommandString(),
-					{ message: mapped.message, code: mapped.code },
-					mapped.fix,
-					nextActionsFor(commandIds.envGroup),
-				);
-			}
-		});
+			}).pipe(Effect.catchAll((error) => Effect.sync(() => emitEnvError(error)))),
+		);
 
 	env
 		.command("set")
 		.description("Set active environment")
 		.argument("<environment>", "Environment to set (ote|prod)")
-		.action(async (environment: string) => {
-			try {
+		.action((environment: string) =>
+			Effect.gen(function* () {
 				const previousEnvironment = unwrapResult(
-					await envGet(),
+					yield* envGetEffect(),
 					"Failed to get current environment",
 				) as Environment;
-				unwrapResult(await envSet(environment), "Failed to set environment");
+				unwrapResult(yield* envSetEffect(environment), "Failed to set environment");
 
 				emitSuccess(
 					currentCommandString(),
@@ -127,25 +124,17 @@ export function createEnvCommand(): Command {
 					},
 					nextActionsFor(commandIds.envSet),
 				);
-			} catch (error) {
-				const mapped = mapRuntimeError(error);
-				emitError(
-					currentCommandString(),
-					{ message: mapped.message, code: mapped.code },
-					mapped.fix,
-					nextActionsFor(commandIds.envGroup),
-				);
-			}
-		});
+			}).pipe(Effect.catchAll((error) => Effect.sync(() => emitEnvError(error)))),
+		);
 
 	env
 		.command("info")
 		.description("Show detailed information about an environment")
 		.argument("[environment]", "Environment to show info for")
-		.action(async (environment: string | undefined) => {
-			try {
+		.action((environment: string | undefined) =>
+			Effect.gen(function* () {
 				const info = unwrapResult(
-					await envInfo(environment),
+					yield* envInfoEffect(environment),
 					"Failed to get environment info",
 				);
 
@@ -170,16 +159,8 @@ export function createEnvCommand(): Command {
 						environment: info.environment,
 					}),
 				);
-			} catch (error) {
-				const mapped = mapRuntimeError(error);
-				emitError(
-					currentCommandString(),
-					{ message: mapped.message, code: mapped.code },
-					mapped.fix,
-					nextActionsFor(commandIds.envGroup),
-				);
-			}
-		});
+			}).pipe(Effect.catchAll((error) => Effect.sync(() => emitEnvError(error)))),
+		);
 
 	return env;
 }

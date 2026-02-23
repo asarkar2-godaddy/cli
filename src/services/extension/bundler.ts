@@ -4,6 +4,7 @@
  */
 
 import { existsSync } from "node:fs";
+import * as Effect from "effect/Effect";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -98,7 +99,7 @@ export function createTempDirectory(
  *
  * @param tempDir - Directory to remove
  */
-export async function cleanupTempDirectory(tempDir: string): Promise<void> {
+async function cleanupTempDirectoryPromise(tempDir: string): Promise<void> {
 	if (existsSync(tempDir)) {
 		await rm(tempDir, { recursive: true, force: true });
 	}
@@ -126,7 +127,7 @@ export async function cleanupTempDirectory(tempDir: string): Promise<void> {
  * }
  * ```
  */
-export async function bundleExtensionFromDir(
+async function bundleExtensionFromDirPromise(
 	extensionDir: string,
 	options: BundleOptions,
 ): Promise<Result<BundleResult>> {
@@ -192,7 +193,7 @@ export async function bundleExtensionFromDir(
  * @param options - Bundle options
  * @returns Result with BundleResult or error
  */
-export async function bundleExtension(
+async function bundleExtensionPromise(
 	pkg: ExtensionPackage,
 	entryPath: string,
 	options: BundleOptions,
@@ -327,4 +328,43 @@ export async function bundleExtension(
 	}
 	// Note: Cleanup is not performed here to keep artifactPath valid for downstream phases.
 	// The orchestrator/deploy command should call cleanupTempDirectory after artifacts are consumed.
+}
+
+export function cleanupTempDirectoryEffect(...args: Parameters<typeof cleanupTempDirectoryPromise>): Effect.Effect<Awaited<ReturnType<typeof cleanupTempDirectoryPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => cleanupTempDirectoryPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function bundleExtensionFromDirEffect(...args: Parameters<typeof bundleExtensionFromDirPromise>): Effect.Effect<Awaited<ReturnType<typeof bundleExtensionFromDirPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => bundleExtensionFromDirPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function bundleExtensionEffect(...args: Parameters<typeof bundleExtensionPromise>): Effect.Effect<Awaited<ReturnType<typeof bundleExtensionPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => bundleExtensionPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function cleanupTempDirectory(
+	...args: Parameters<typeof cleanupTempDirectoryPromise>
+): Promise<Awaited<ReturnType<typeof cleanupTempDirectoryPromise>>> {
+	return Effect.runPromise(cleanupTempDirectoryEffect(...args));
+}
+
+export function bundleExtensionFromDir(
+	...args: Parameters<typeof bundleExtensionFromDirPromise>
+): Promise<Awaited<ReturnType<typeof bundleExtensionFromDirPromise>>> {
+	return Effect.runPromise(bundleExtensionFromDirEffect(...args));
+}
+
+export function bundleExtension(
+	...args: Parameters<typeof bundleExtensionPromise>
+): Promise<Awaited<ReturnType<typeof bundleExtensionPromise>>> {
+	return Effect.runPromise(bundleExtensionEffect(...args));
 }

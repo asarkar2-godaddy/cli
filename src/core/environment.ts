@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import * as Effect from "effect/Effect";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ArkErrors } from "arktype";
@@ -49,7 +50,7 @@ export function setRuntimeEnvironmentOverride(env: Environment | null): void {
 /**
  * Get all available environments
  */
-export async function envList(): Promise<CmdResult<Environment[]>> {
+async function envListPromise(): Promise<CmdResult<Environment[]>> {
 	try {
 		const activeEnv = await getActiveEnvironmentInternal();
 		// Return environments with active one first
@@ -72,7 +73,7 @@ export async function envList(): Promise<CmdResult<Environment[]>> {
 /**
  * Get current active environment or specific environment info
  */
-export async function envGet(
+async function envGetPromise(
 	name?: string,
 ): Promise<CmdResult<Environment | Environment[]>> {
 	try {
@@ -100,7 +101,7 @@ export async function envGet(
 /**
  * Set active environment
  */
-export async function envSet(name: string): Promise<CmdResult<void>> {
+async function envSetPromise(name: string): Promise<CmdResult<void>> {
 	try {
 		const validEnv = validateEnvironment(name);
 		fs.writeFileSync(ENV_PATH, validEnv);
@@ -122,7 +123,7 @@ export async function envSet(name: string): Promise<CmdResult<void>> {
 /**
  * Get detailed environment information
  */
-export async function envInfo(
+async function envInfoPromise(
 	name?: string,
 ): Promise<CmdResult<EnvironmentInfo>> {
 	try {
@@ -261,4 +262,56 @@ export function requiresConfirmation(
 	}
 
 	return false;
+}
+
+export function envListEffect(...args: Parameters<typeof envListPromise>): Effect.Effect<Awaited<ReturnType<typeof envListPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => envListPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function envGetEffect(...args: Parameters<typeof envGetPromise>): Effect.Effect<Awaited<ReturnType<typeof envGetPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => envGetPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function envSetEffect(...args: Parameters<typeof envSetPromise>): Effect.Effect<Awaited<ReturnType<typeof envSetPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => envSetPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function envInfoEffect(...args: Parameters<typeof envInfoPromise>): Effect.Effect<Awaited<ReturnType<typeof envInfoPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => envInfoPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function envList(
+	...args: Parameters<typeof envListPromise>
+): Promise<Awaited<ReturnType<typeof envListPromise>>> {
+	return Effect.runPromise(envListEffect(...args));
+}
+
+export function envGet(
+	...args: Parameters<typeof envGetPromise>
+): Promise<Awaited<ReturnType<typeof envGetPromise>>> {
+	return Effect.runPromise(envGetEffect(...args));
+}
+
+export function envSet(
+	...args: Parameters<typeof envSetPromise>
+): Promise<Awaited<ReturnType<typeof envSetPromise>>> {
+	return Effect.runPromise(envSetEffect(...args));
+}
+
+export function envInfo(
+	...args: Parameters<typeof envInfoPromise>
+): Promise<Awaited<ReturnType<typeof envInfoPromise>>> {
+	return Effect.runPromise(envInfoEffect(...args));
 }

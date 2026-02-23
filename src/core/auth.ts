@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import * as Effect from "effect/Effect";
 import http from "node:http";
 import { URL } from "node:url";
 import openBrowser from "open";
@@ -37,7 +38,7 @@ let server: http.Server | null = null;
 /**
  * Authenticate with GoDaddy OAuth
  */
-export async function authLogin(): Promise<CmdResult<AuthResult>> {
+async function authLoginPromise(): Promise<CmdResult<AuthResult>> {
 	try {
 		const state = crypto.randomUUID();
 		const codeVerifier = crypto.randomBytes(32).toString("base64url");
@@ -196,7 +197,7 @@ export async function authLogin(): Promise<CmdResult<AuthResult>> {
 /**
  * Logout and clear stored credentials
  */
-export async function authLogout(): Promise<CmdResult<void>> {
+async function authLogoutPromise(): Promise<CmdResult<void>> {
 	try {
 		await deleteStoredToken();
 		return { success: true };
@@ -222,7 +223,7 @@ async function getEnvironment(): Promise<Environment> {
 /**
  * Get authentication status
  */
-export async function authStatus(): Promise<CmdResult<AuthStatus>> {
+async function authStatusPromise(): Promise<CmdResult<AuthStatus>> {
 	try {
 		const environment = await getEnvironment();
 		const tokenInfo = await getTokenInfo();
@@ -260,7 +261,7 @@ export async function authStatus(): Promise<CmdResult<AuthStatus>> {
 /**
  * Get access token, authenticating if necessary (legacy compatibility)
  */
-export async function getAccessToken(): Promise<string | null> {
+async function getAccessTokenPromise(): Promise<string | null> {
 	const existingToken = await getFromKeychain("token");
 	if (existingToken) {
 		return existingToken;
@@ -322,7 +323,7 @@ export interface TokenInfo {
  * Get token info including expiry details
  * Returns null if no token or token is expired
  */
-export async function getTokenInfo(): Promise<TokenInfo | null> {
+async function getTokenInfoPromise(): Promise<TokenInfo | null> {
 	const storedToken = await getStoredToken();
 	if (!storedToken) return null;
 
@@ -337,7 +338,7 @@ export async function getTokenInfo(): Promise<TokenInfo | null> {
 	};
 }
 
-export async function getFromKeychain(key: string): Promise<string | null> {
+async function getFromKeychainPromise(key: string): Promise<string | null> {
 	if (key !== "token") {
 		return null;
 	}
@@ -347,12 +348,116 @@ export async function getFromKeychain(key: string): Promise<string | null> {
 }
 
 // Legacy compatibility function - use authLogin() instead
-export async function authenticate(): Promise<{ success: boolean }> {
+async function authenticatePromise(): Promise<{ success: boolean }> {
 	const result = await authLogin();
 	return { success: result.success };
 }
 
 // Legacy compatibility function - use authLogout() instead
-export async function logout(): Promise<void> {
+async function logoutPromise(): Promise<void> {
 	await authLogout();
+}
+
+export function authLoginEffect(...args: Parameters<typeof authLoginPromise>): Effect.Effect<Awaited<ReturnType<typeof authLoginPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => authLoginPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function authLogoutEffect(...args: Parameters<typeof authLogoutPromise>): Effect.Effect<Awaited<ReturnType<typeof authLogoutPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => authLogoutPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function authStatusEffect(...args: Parameters<typeof authStatusPromise>): Effect.Effect<Awaited<ReturnType<typeof authStatusPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => authStatusPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function getAccessTokenEffect(...args: Parameters<typeof getAccessTokenPromise>): Effect.Effect<Awaited<ReturnType<typeof getAccessTokenPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => getAccessTokenPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function getTokenInfoEffect(...args: Parameters<typeof getTokenInfoPromise>): Effect.Effect<Awaited<ReturnType<typeof getTokenInfoPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => getTokenInfoPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function getFromKeychainEffect(...args: Parameters<typeof getFromKeychainPromise>): Effect.Effect<Awaited<ReturnType<typeof getFromKeychainPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => getFromKeychainPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function authenticateEffect(...args: Parameters<typeof authenticatePromise>): Effect.Effect<Awaited<ReturnType<typeof authenticatePromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => authenticatePromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function logoutEffect(...args: Parameters<typeof logoutPromise>): Effect.Effect<Awaited<ReturnType<typeof logoutPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => logoutPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function authLogin(
+	...args: Parameters<typeof authLoginPromise>
+): Promise<Awaited<ReturnType<typeof authLoginPromise>>> {
+	return Effect.runPromise(authLoginEffect(...args));
+}
+
+export function authLogout(
+	...args: Parameters<typeof authLogoutPromise>
+): Promise<Awaited<ReturnType<typeof authLogoutPromise>>> {
+	return Effect.runPromise(authLogoutEffect(...args));
+}
+
+export function authStatus(
+	...args: Parameters<typeof authStatusPromise>
+): Promise<Awaited<ReturnType<typeof authStatusPromise>>> {
+	return Effect.runPromise(authStatusEffect(...args));
+}
+
+export function getAccessToken(
+	...args: Parameters<typeof getAccessTokenPromise>
+): Promise<Awaited<ReturnType<typeof getAccessTokenPromise>>> {
+	return Effect.runPromise(getAccessTokenEffect(...args));
+}
+
+export function getTokenInfo(
+	...args: Parameters<typeof getTokenInfoPromise>
+): Promise<Awaited<ReturnType<typeof getTokenInfoPromise>>> {
+	return Effect.runPromise(getTokenInfoEffect(...args));
+}
+
+export function getFromKeychain(
+	...args: Parameters<typeof getFromKeychainPromise>
+): Promise<Awaited<ReturnType<typeof getFromKeychainPromise>>> {
+	return Effect.runPromise(getFromKeychainEffect(...args));
+}
+
+export function authenticate(
+	...args: Parameters<typeof authenticatePromise>
+): Promise<Awaited<ReturnType<typeof authenticatePromise>>> {
+	return Effect.runPromise(authenticateEffect(...args));
+}
+
+export function logout(
+	...args: Parameters<typeof logoutPromise>
+): Promise<Awaited<ReturnType<typeof logoutPromise>>> {
+	return Effect.runPromise(logoutEffect(...args));
 }

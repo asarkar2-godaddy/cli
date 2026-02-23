@@ -280,10 +280,10 @@ const applicationNode: CommandRegistryNode = {
 		{
 			id: commandIds.applicationDeploy,
 			command:
-				"godaddy application deploy <name> [--config <path>] [--environment <env>]",
+				"godaddy application deploy <name> [--config <path>] [--environment <env>] [--follow]",
 			description: "Deploy application (change status to ACTIVE)",
 			usage:
-				"godaddy application deploy <name> [--config <path>] [--environment <env>]",
+				"godaddy application deploy <name> [--config <path>] [--environment <env>] [--follow]",
 		},
 	],
 };

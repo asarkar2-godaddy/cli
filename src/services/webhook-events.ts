@@ -1,4 +1,5 @@
 import { type Environment, envGet, getApiUrl } from "../core/environment";
+import * as Effect from "effect/Effect";
 import { logHttpRequest, logHttpResponse } from "./logger";
 
 export type WebhookEventType = {
@@ -6,7 +7,7 @@ export type WebhookEventType = {
 	description: string;
 };
 
-export async function getWebhookEventsTypes({
+async function getWebhookEventsTypesPromise({
 	accessToken,
 }: {
 	accessToken: string | null;
@@ -56,4 +57,17 @@ export async function getWebhookEventsTypes({
 	}
 
 	return json;
+}
+
+export function getWebhookEventsTypesEffect(...args: Parameters<typeof getWebhookEventsTypesPromise>): Effect.Effect<Awaited<ReturnType<typeof getWebhookEventsTypesPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => getWebhookEventsTypesPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function getWebhookEventsTypes(
+	...args: Parameters<typeof getWebhookEventsTypesPromise>
+): Promise<Awaited<ReturnType<typeof getWebhookEventsTypesPromise>>> {
+	return Effect.runPromise(getWebhookEventsTypesEffect(...args));
 }

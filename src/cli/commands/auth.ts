@@ -1,4 +1,10 @@
-import { envGet } from "../../core/environment";
+import * as Effect from "effect/Effect";
+import {
+	authLoginEffect,
+	authLogoutEffect,
+	authStatusEffect,
+} from "../../core/auth";
+import { envGetEffect } from "../../core/environment";
 import { mapRuntimeError } from "../agent/errors";
 import { nextActionsFor } from "../agent/next-actions";
 import {
@@ -14,8 +20,14 @@ import {
 } from "../agent/respond";
 import { Command } from "../command-model";
 
-async function loadAuthModule() {
-	return import("../../core/auth");
+function emitAuthError(error: unknown): void {
+	const mapped = mapRuntimeError(error);
+	emitError(
+		currentCommandString(),
+		{ message: mapped.message, code: mapped.code },
+		mapped.fix,
+		nextActionsFor(commandIds.authGroup),
+	);
 }
 
 export function createAuthCommand(): Command {
@@ -23,39 +35,40 @@ export function createAuthCommand(): Command {
 		"Manage authentication with GoDaddy Developer Platform",
 	);
 
-	auth.action(async () => {
-		const node = findRegistryNodeById(commandIds.authGroup);
-		if (!node) {
-			const mapped = mapRuntimeError(
-				new Error("Auth command registry metadata is missing"),
-			);
-			emitError(
-				currentCommandString(),
-				mapped,
-				mapped.fix,
-				nextActionsFor(commandIds.root),
-			);
-			return;
-		}
+	auth.action(() =>
+		Effect.sync(() => {
+			const node = findRegistryNodeById(commandIds.authGroup);
+			if (!node) {
+				const mapped = mapRuntimeError(
+					new Error("Auth command registry metadata is missing"),
+				);
+				emitError(
+					currentCommandString(),
+					{ message: mapped.message, code: mapped.code },
+					mapped.fix,
+					nextActionsFor(commandIds.root),
+				);
+				return;
+			}
 
-		emitSuccess(
-			currentCommandString(),
-			registryNodeToResult(node),
-			nextActionsFor(commandIds.authGroup),
-		);
-	});
+			emitSuccess(
+				currentCommandString(),
+				registryNodeToResult(node),
+				nextActionsFor(commandIds.authGroup),
+			);
+		}),
+	);
 
 	auth
 		.command("login")
 		.description("Login to GoDaddy Developer Platform")
-		.action(async () => {
-			try {
-				const { authLogin } = await loadAuthModule();
+		.action(() =>
+			Effect.gen(function* () {
 				const loginResult = unwrapResult(
-					await authLogin(),
+					yield* authLoginEffect(),
 					"Authentication failed",
 				);
-				const environmentResult = await envGet();
+				const environmentResult = yield* envGetEffect();
 				const environment = environmentResult.success
 					? String(environmentResult.data)
 					: "unknown";
@@ -69,25 +82,16 @@ export function createAuthCommand(): Command {
 					},
 					nextActionsFor(commandIds.authLogin),
 				);
-			} catch (error) {
-				const mapped = mapRuntimeError(error);
-				emitError(
-					currentCommandString(),
-					{ message: mapped.message, code: mapped.code },
-					mapped.fix,
-					nextActionsFor(commandIds.authGroup),
-				);
-			}
-		});
+			}).pipe(Effect.catchAll((error) => Effect.sync(() => emitAuthError(error)))),
+		);
 
 	auth
 		.command("logout")
 		.description("Logout and clear stored credentials")
-		.action(async () => {
-			try {
-				const { authLogout } = await loadAuthModule();
-				unwrapResult(await authLogout(), "Logout failed");
-				const environmentResult = await envGet();
+		.action(() =>
+			Effect.gen(function* () {
+				unwrapResult(yield* authLogoutEffect(), "Logout failed");
+				const environmentResult = yield* envGetEffect();
 				const environment = environmentResult.success
 					? String(environmentResult.data)
 					: "unknown";
@@ -97,25 +101,16 @@ export function createAuthCommand(): Command {
 					{ authenticated: false, environment },
 					nextActionsFor(commandIds.authLogout),
 				);
-			} catch (error) {
-				const mapped = mapRuntimeError(error);
-				emitError(
-					currentCommandString(),
-					{ message: mapped.message, code: mapped.code },
-					mapped.fix,
-					nextActionsFor(commandIds.authGroup),
-				);
-			}
-		});
+			}).pipe(Effect.catchAll((error) => Effect.sync(() => emitAuthError(error)))),
+		);
 
 	auth
 		.command("status")
 		.description("Check authentication status")
-		.action(async () => {
-			try {
-				const { authStatus } = await loadAuthModule();
+		.action(() =>
+			Effect.gen(function* () {
 				const status = unwrapResult(
-					await authStatus(),
+					yield* authStatusEffect(),
 					"Failed to check authentication status",
 				);
 
@@ -131,16 +126,8 @@ export function createAuthCommand(): Command {
 						authenticated: status.authenticated,
 					}),
 				);
-			} catch (error) {
-				const mapped = mapRuntimeError(error);
-				emitError(
-					currentCommandString(),
-					{ message: mapped.message, code: mapped.code },
-					mapped.fix,
-					nextActionsFor(commandIds.authGroup),
-				);
-			}
-		});
+			}).pipe(Effect.catchAll((error) => Effect.sync(() => emitAuthError(error)))),
+		);
 
 	return auth;
 }

@@ -1,4 +1,5 @@
-import { webhookEvents } from "../../core/webhooks";
+import * as Effect from "effect/Effect";
+import { webhookEventsEffect } from "../../core/webhooks";
 import { mapRuntimeError } from "../agent/errors";
 import { nextActionsFor } from "../agent/next-actions";
 import {
@@ -15,40 +16,52 @@ import {
 import { truncateList } from "../agent/truncation";
 import { Command } from "../command-model";
 
+function emitWebhookError(error: unknown): void {
+	const mapped = mapRuntimeError(error);
+	emitError(
+		currentCommandString(),
+		{ message: mapped.message, code: mapped.code },
+		mapped.fix,
+		nextActionsFor(commandIds.webhookGroup),
+	);
+}
+
 export function createWebhookCommand(): Command {
 	const webhook = new Command("webhook").description(
 		"Manage webhook integrations",
 	);
 
-	webhook.action(async () => {
-		const node = findRegistryNodeById(commandIds.webhookGroup);
-		if (!node) {
-			const mapped = mapRuntimeError(
-				new Error("Webhook command registry metadata is missing"),
-			);
-			emitError(
-				currentCommandString(),
-				{ message: mapped.message, code: mapped.code },
-				mapped.fix,
-				nextActionsFor(commandIds.root),
-			);
-			return;
-		}
+	webhook.action(() =>
+		Effect.sync(() => {
+			const node = findRegistryNodeById(commandIds.webhookGroup);
+			if (!node) {
+				const mapped = mapRuntimeError(
+					new Error("Webhook command registry metadata is missing"),
+				);
+				emitError(
+					currentCommandString(),
+					{ message: mapped.message, code: mapped.code },
+					mapped.fix,
+					nextActionsFor(commandIds.root),
+				);
+				return;
+			}
 
-		emitSuccess(
-			currentCommandString(),
-			registryNodeToResult(node),
-			nextActionsFor(commandIds.webhookGroup),
-		);
-	});
+			emitSuccess(
+				currentCommandString(),
+				registryNodeToResult(node),
+				nextActionsFor(commandIds.webhookGroup),
+			);
+		}),
+	);
 
 	webhook
 		.command("events")
 		.description("List available webhook event types")
-		.action(async () => {
-			try {
+		.action(() =>
+			Effect.gen(function* () {
 				const events = unwrapResult(
-					await webhookEvents(),
+					yield* webhookEventsEffect(),
 					"Failed to get webhook events",
 				);
 				const truncated = truncateList(events, "webhook-events");
@@ -64,16 +77,10 @@ export function createWebhookCommand(): Command {
 					},
 					nextActionsFor(commandIds.webhookEvents),
 				);
-			} catch (error) {
-				const mapped = mapRuntimeError(error);
-				emitError(
-					currentCommandString(),
-					{ message: mapped.message, code: mapped.code },
-					mapped.fix,
-					nextActionsFor(commandIds.webhookGroup),
-				);
-			}
-		});
+			}).pipe(
+				Effect.catchAll((error) => Effect.sync(() => emitWebhookError(error))),
+			),
+		);
 
 	return webhook;
 }

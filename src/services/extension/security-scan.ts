@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import * as Effect from "effect/Effect";
 import { join } from "node:path";
 import * as ts from "typescript";
 import { buildAliasMaps } from "../../core/security/alias-builder";
@@ -50,7 +51,7 @@ export type ScanOutputFormat = "text" | "json";
  * }
  * ```
  */
-export async function scanExtension(
+async function scanExtensionPromise(
 	packageDir: string,
 ): Promise<Result<ScanReport>> {
 	try {
@@ -298,7 +299,7 @@ export function formatSecurityFindings(report: ScanReport): string {
  * ], securityConfig);
  * ```
  */
-export async function scanBundle(
+async function scanBundlePromise(
 	artifactPaths: string | string[],
 ): Promise<Result<ScanReport>> {
 	try {
@@ -344,4 +345,30 @@ export async function scanBundle(
 			error: error instanceof Error ? error : new Error(String(error)),
 		};
 	}
+}
+
+export function scanExtensionEffect(...args: Parameters<typeof scanExtensionPromise>): Effect.Effect<Awaited<ReturnType<typeof scanExtensionPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => scanExtensionPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function scanBundleEffect(...args: Parameters<typeof scanBundlePromise>): Effect.Effect<Awaited<ReturnType<typeof scanBundlePromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => scanBundlePromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function scanExtension(
+	...args: Parameters<typeof scanExtensionPromise>
+): Promise<Awaited<ReturnType<typeof scanExtensionPromise>>> {
+	return Effect.runPromise(scanExtensionEffect(...args));
+}
+
+export function scanBundle(
+	...args: Parameters<typeof scanBundlePromise>
+): Promise<Awaited<ReturnType<typeof scanBundlePromise>>> {
+	return Effect.runPromise(scanBundleEffect(...args));
 }

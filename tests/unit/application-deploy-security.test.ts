@@ -1,7 +1,10 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { applicationDeploy } from "../../src/core/applications";
+import {
+	type DeployProgressEvent,
+	applicationDeploy,
+} from "../../src/core/applications";
 import * as authModule from "../../src/core/auth";
 import * as applicationsService from "../../src/services/applications";
 import * as configService from "../../src/services/config";
@@ -142,6 +145,8 @@ exec('rm -rf /'); // SEC001 violation
 		process.chdir(testDir);
 
 		try {
+			const progressEvents: DeployProgressEvent[] = [];
+
 			// Create two clean extensions
 			const ext1Dir = join(extensionsDir, "extension-1");
 			const ext2Dir = join(extensionsDir, "extension-2");
@@ -186,12 +191,45 @@ export function greet(name: string) {
 			];
 			getExtensionsFromConfigSpy.mockReturnValue(extensions);
 
-			const result = await applicationDeploy("test-app");
+			const result = await applicationDeploy("test-app", {
+				onProgress: (event) => {
+					progressEvents.push(event);
+				},
+			});
 
 			expect(result.success).toBe(true);
 			expect(result.data?.totalExtensions).toBe(2);
 			expect(result.data?.blockedExtensions).toBe(0);
 			expect(result.data?.securityReports).toHaveLength(2);
+			expect(result.data?.securityReports[0].preBundleReport).toBeDefined();
+			expect(result.data?.securityReports[0].postBundleReport).toBeDefined();
+			expect(result.data?.securityReports[0].postBundleReport?.blocked).toBe(
+				false,
+			);
+			expect(
+				progressEvents.some(
+					(event) =>
+						event.type === "step" &&
+						event.name === "scan.prebundle" &&
+						event.status === "started",
+				),
+			).toBe(true);
+			expect(
+				progressEvents.some(
+					(event) =>
+						event.type === "step" &&
+						event.name === "scan.postbundle" &&
+						event.status === "completed",
+				),
+			).toBe(true);
+			expect(
+				progressEvents.some(
+					(event) =>
+						event.type === "step" &&
+						event.name === "deploy" &&
+						event.status === "completed",
+				),
+			).toBe(true);
 			expect(applicationsService.updateApplication).toHaveBeenCalledWith(
 				"app-123",
 				{ status: "ACTIVE" },

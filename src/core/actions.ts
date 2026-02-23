@@ -2,6 +2,7 @@
  * Core actions functionality
  */
 
+import * as Effect from "effect/Effect";
 import {
 	type CmdResult,
 	ConfigurationError,
@@ -41,7 +42,7 @@ import { ACTION_INTERFACES } from "../cli/commands/actions";
 /**
  * Get list of all available actions
  */
-export async function actionsList(): Promise<CmdResult<string[]>> {
+async function actionsListPromise(): Promise<CmdResult<string[]>> {
 	try {
 		return {
 			success: true,
@@ -66,7 +67,7 @@ export async function actionsList(): Promise<CmdResult<string[]>> {
 /**
  * Get detailed interface information for a specific action
  */
-export async function actionsDescribe(
+async function actionsDescribePromise(
 	actionName: string,
 ): Promise<CmdResult<ActionInterface>> {
 	try {
@@ -110,4 +111,30 @@ export async function actionsDescribe(
 						),
 		};
 	}
+}
+
+export function actionsListEffect(...args: Parameters<typeof actionsListPromise>): Effect.Effect<Awaited<ReturnType<typeof actionsListPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => actionsListPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function actionsDescribeEffect(...args: Parameters<typeof actionsDescribePromise>): Effect.Effect<Awaited<ReturnType<typeof actionsDescribePromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => actionsDescribePromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function actionsList(
+	...args: Parameters<typeof actionsListPromise>
+): Promise<Awaited<ReturnType<typeof actionsListPromise>>> {
+	return Effect.runPromise(actionsListEffect(...args));
+}
+
+export function actionsDescribe(
+	...args: Parameters<typeof actionsDescribePromise>
+): Promise<Awaited<ReturnType<typeof actionsDescribePromise>>> {
+	return Effect.runPromise(actionsDescribeEffect(...args));
 }

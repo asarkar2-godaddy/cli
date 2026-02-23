@@ -1,6 +1,7 @@
+import * as Effect from "effect/Effect";
 import {
 	type HttpMethod,
-	apiRequest,
+	apiRequestEffect,
 	parseFields,
 	parseHeaders,
 	readBodyFromFile,
@@ -123,15 +124,17 @@ export function createApiCommand(): Command {
 			"Extract a value from response JSON (for example: .data[0].id)",
 		)
 		.option("-i, --include", "Include response headers in result")
-		.action(async (endpoint: string, rawOptions: unknown) => {
-			try {
+		.action((endpoint: string, rawOptions: unknown) =>
+			Effect.gen(function* () {
 				const options = (rawOptions ?? {}) as ApiCommandOptions;
 				const methodInput = (options.method ?? "GET").toUpperCase();
 
 				if (!VALID_METHODS.includes(methodInput as HttpMethod)) {
-					throw new ValidationError(
-						`Invalid HTTP method: ${options.method ?? ""}`,
-						`Method must be one of: ${VALID_METHODS.join(", ")}`,
+					return yield* Effect.fail(
+						new ValidationError(
+							`Invalid HTTP method: ${options.method ?? ""}`,
+							`Method must be one of: ${VALID_METHODS.join(", ")}`,
+						),
 					);
 				}
 
@@ -154,7 +157,7 @@ export function createApiCommand(): Command {
 				}
 
 				const response = unwrapResult(
-					await apiRequest({
+					yield* apiRequestEffect({
 						endpoint,
 						method,
 						fields: Object.keys(fields).length > 0 ? fields : undefined,
@@ -172,9 +175,11 @@ export function createApiCommand(): Command {
 					} catch (error) {
 						const message =
 							error instanceof Error ? error.message : String(error);
-						throw new ValidationError(
-							`Invalid query path: ${options.query}`,
-							`Query error: ${message}`,
+						return yield* Effect.fail(
+							new ValidationError(
+								`Invalid query path: ${options.query}`,
+								`Query error: ${message}`,
+							),
 						);
 					}
 				}
@@ -191,14 +196,18 @@ export function createApiCommand(): Command {
 					},
 					nextActionsFor(commandIds.apiRequest),
 				);
-			} catch (error) {
-				const mapped = mapRuntimeError(error);
-				emitError(
-					currentCommandString(),
-					{ message: mapped.message, code: mapped.code },
-					mapped.fix,
-					nextActionsFor(commandIds.apiRequest),
-				);
-			}
-		});
+			}).pipe(
+				Effect.catchAll((error) =>
+					Effect.sync(() => {
+						const mapped = mapRuntimeError(error);
+						emitError(
+							currentCommandString(),
+							{ message: mapped.message, code: mapped.code },
+							mapped.fix,
+							nextActionsFor(commandIds.apiRequest),
+						);
+					}),
+				),
+			),
+		);
 }

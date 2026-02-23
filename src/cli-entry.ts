@@ -30,7 +30,8 @@ import { createActionsCommand } from "./cli/commands/actions";
 import { createApiCommand } from "./cli/commands/api";
 import { createApplicationCommand } from "./cli/commands/application";
 import { createWebhookCommand } from "./cli/commands/webhook";
-import { envGet, validateEnvironment } from "./core/environment";
+import { authStatusEffect } from "./core/auth";
+import { envGetEffect, validateEnvironment } from "./core/environment";
 import { setVerbosityLevel } from "./services/logger";
 
 type Descriptor = CommandDescriptor.Command<unknown>;
@@ -341,10 +342,10 @@ function resolveParsedCommand(
 	return { command: currentCommand, parsedValue: currentValue };
 }
 
-async function invokeCommandAction(
+function invokeCommandAction(
 	command: Command,
 	parsedValue: ParsedCommandValue,
-): Promise<void> {
+): Effect.Effect<void, unknown, never> {
 	const action = command.getAction();
 
 	if (!action) {
@@ -357,21 +358,18 @@ async function invokeCommandAction(
 	const options = extractCommandOptions(command, parsedValue);
 
 	if (argumentsList.length > 0 && command.options.length > 0) {
-		await action(...argumentsList, options);
-		return;
+		return action(...argumentsList, options).pipe(Effect.asVoid);
 	}
 
 	if (argumentsList.length > 0) {
-		await action(...argumentsList);
-		return;
+		return action(...argumentsList).pipe(Effect.asVoid);
 	}
 
 	if (command.options.length > 0) {
-		await action(options);
-		return;
+		return action(options).pipe(Effect.asVoid);
 	}
 
-	await action();
+	return action().pipe(Effect.asVoid);
 }
 
 function applyGlobalOptions(
@@ -449,39 +447,40 @@ export function createCliProgram(): Command {
 			"--pretty",
 			"Pretty-print JSON envelopes with 2-space indentation",
 		)
-		.action(async () => {
-			const envResult = await envGet();
-			const commandTree = getRootCommandTree();
-			let authSnapshot: { error: string } | Record<string, unknown> | undefined;
-			try {
-				const authModule = await import("./core/auth");
-				const authResult = await authModule.authStatus();
-				authSnapshot = authResult.success
-					? { ...(authResult.data ?? {}) }
-					: { error: authResult.error?.message ?? "unknown" };
-			} catch (error) {
-				authSnapshot = {
-					error:
-						error instanceof Error
-							? error.message
-							: "Failed to load auth module",
-				};
-			}
+		.action(() =>
+			Effect.gen(function* () {
+				const envResult = yield* envGetEffect();
+				const commandTree = getRootCommandTree();
+				let authSnapshot: { error: string } | Record<string, unknown> | undefined;
+				try {
+					const authResult = yield* authStatusEffect();
+					authSnapshot = authResult.success
+						? { ...(authResult.data ?? {}) }
+						: { error: authResult.error?.message ?? "unknown" };
+				} catch (error) {
+					authSnapshot = {
+						error:
+							error instanceof Error
+								? error.message
+								: "Failed to load auth module",
+					};
+				}
 
-			emitSuccess(
-				currentCommandString(),
-				{
-					description: commandTree.description,
-					version: packageJson.version,
-					environment: envResult.success
-						? { active: envResult.data }
-						: { error: envResult.error?.message ?? "unknown" },
-					authentication: authSnapshot,
-					command_tree: commandTree,
-				},
-				nextActionsFor(commandIds.root),
-			);
-		});
+				emitSuccess(
+					currentCommandString(),
+					{
+						description: commandTree.description,
+						version: packageJson.version,
+						environment: envResult.success
+							? { active: envResult.data }
+							: { error: envResult.error?.message ?? "unknown" },
+						authentication: authSnapshot,
+						command_tree: commandTree,
+					},
+					nextActionsFor(commandIds.root),
+				);
+			}),
+		);
 
 	program.addCommand(createEnvCommand());
 	program.addCommand(createAuthCommand());
@@ -493,69 +492,77 @@ export function createCliProgram(): Command {
 	return program;
 }
 
-export async function runCli(argv: ReadonlyArray<string>): Promise<void> {
-	const rootCommand = createCliProgram();
-	const descriptor = buildDescriptor(rootCommand);
-	const normalizedArgv = normalizeGlobalArgs(argv);
-	setEnvelopePrettyPrint(normalizedArgv.includes("--pretty"));
+export function runCliEffect(
+	argv: ReadonlyArray<string>,
+): Effect.Effect<void, unknown, never> {
+	return Effect.gen(function* () {
+		const rootCommand = createCliProgram();
+		const descriptor = buildDescriptor(rootCommand);
+		const normalizedArgv = normalizeGlobalArgs(argv);
+		setEnvelopePrettyPrint(normalizedArgv.includes("--pretty"));
 
-	const parseEffect = CommandDescriptor.parse(
-		descriptor,
-		[rootCommand.name, ...normalizedArgv],
-		EFFECT_CLI_CONFIG,
-	).pipe(Effect.provide(NodeContext.layer));
+		const parseEffect = CommandDescriptor.parse(
+			descriptor,
+			[rootCommand.name, ...normalizedArgv],
+			EFFECT_CLI_CONFIG,
+		).pipe(Effect.provide(NodeContext.layer));
 
-	const parseExit = await Effect.runPromiseExit(parseEffect);
+		const parseExit = yield* Effect.exit(parseEffect);
 
-	if (Exit.isFailure(parseExit)) {
-		const validationError = Option.getOrUndefined(
-			Cause.failureOption(parseExit.cause),
-		);
+		if (Exit.isFailure(parseExit)) {
+			const validationError = Option.getOrUndefined(
+				Cause.failureOption(parseExit.cause),
+			);
 
-		if (validationError) {
-			emitRootError(mapValidationError(validationError));
-			return;
+			if (validationError) {
+				emitRootError(mapValidationError(validationError));
+				return;
+			}
+
+			return yield* Effect.fail(Cause.squash(parseExit.cause));
 		}
 
-		throw Cause.squash(parseExit.cause);
-	}
+		const directive = parseExit.value;
 
-	const directive = parseExit.value;
+		if (directive._tag === "BuiltIn") {
+			if (directive.option._tag === "ShowHelp") {
+				writeHelp(directive.option.helpDoc);
+				return;
+			}
 
-	if (directive._tag === "BuiltIn") {
-		if (directive.option._tag === "ShowHelp") {
-			writeHelp(directive.option.helpDoc);
-			return;
-		}
+			if (directive.option._tag === "ShowVersion") {
+				process.stdout.write(`${packageJson.version}\n`);
+				return;
+			}
 
-		if (directive.option._tag === "ShowVersion") {
-			process.stdout.write(`${packageJson.version}\n`);
-			return;
-		}
-
-		emitRootError(
-			mapRuntimeError(
-				new Error(
-					`Built-in option '${directive.option._tag}' is not supported in this runtime`,
+			emitRootError(
+				mapRuntimeError(
+					new Error(
+						`Built-in option '${directive.option._tag}' is not supported in this runtime`,
+					),
 				),
-			),
+			);
+			return;
+		}
+
+		const parsedRootValue = toParsedCommandValue(directive.value);
+
+		if (directive.leftover.length > 0) {
+			emitRootError(mapLeftoverTokens(directive.leftover));
+			return;
+		}
+
+		applyGlobalOptions(rootCommand, parsedRootValue);
+
+		const { command, parsedValue } = resolveParsedCommand(
+			rootCommand,
+			parsedRootValue,
 		);
-		return;
-	}
 
-	const parsedRootValue = toParsedCommandValue(directive.value);
+		yield* invokeCommandAction(command, parsedValue);
+	});
+}
 
-	if (directive.leftover.length > 0) {
-		emitRootError(mapLeftoverTokens(directive.leftover));
-		return;
-	}
-
-	applyGlobalOptions(rootCommand, parsedRootValue);
-
-	const { command, parsedValue } = resolveParsedCommand(
-		rootCommand,
-		parsedRootValue,
-	);
-
-	await invokeCommandAction(command, parsedValue);
+export function runCli(argv: ReadonlyArray<string>): Promise<void> {
+	return Effect.runPromise(runCliEffect(argv));
 }

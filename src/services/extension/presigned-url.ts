@@ -4,6 +4,7 @@
  */
 
 import { getRequestHeaders, initApiBaseUrl } from "@/services/http-helpers";
+import * as Effect from "effect/Effect";
 import { getLogger } from "@/services/logger";
 import { graphql } from "gql.tada";
 import { request } from "graphql-request";
@@ -49,7 +50,7 @@ const GenerateReleaseUploadUrlMutation = graphql(`
 /**
  * Get a presigned upload URL for an extension artifact
  */
-export async function getUploadTarget(
+async function getUploadTargetPromise(
 	params: GetUploadTargetParams,
 	accessToken: string,
 ): Promise<UploadTarget> {
@@ -110,4 +111,17 @@ export async function getUploadTarget(
 		maxSizeBytes: data.maxSizeBytes,
 		requiredHeaders: headersMap,
 	};
+}
+
+export function getUploadTargetEffect(...args: Parameters<typeof getUploadTargetPromise>): Effect.Effect<Awaited<ReturnType<typeof getUploadTargetPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => getUploadTargetPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function getUploadTarget(
+	...args: Parameters<typeof getUploadTargetPromise>
+): Promise<Awaited<ReturnType<typeof getUploadTargetPromise>>> {
+	return Effect.runPromise(getUploadTargetEffect(...args));
 }

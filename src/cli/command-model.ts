@@ -1,3 +1,5 @@
+import * as Effect from "effect/Effect";
+
 export type CommandValueParser = (value: string, previous?: unknown) => unknown;
 
 export interface CommandArgumentDefinition {
@@ -18,7 +20,9 @@ export interface CommandOptionDefinition {
 	parser?: CommandValueParser;
 }
 
-export type CommandAction = (...args: unknown[]) => unknown | Promise<unknown>;
+export type CommandAction = (
+	...args: unknown[]
+) => Effect.Effect<unknown, unknown, never>;
 
 function toCamelCase(value: string): string {
 	return value.replace(/-([a-z])/g, (_, char: string) => char.toUpperCase());
@@ -175,10 +179,12 @@ export class Command {
 	}
 
 	action<TArgs extends unknown[], TResult>(
-		handler: (...args: TArgs) => TResult | Promise<TResult>,
+		handler: (
+			...args: TArgs
+		) => Effect.Effect<TResult, unknown, never>,
 	): this {
 		this.actionValue = ((...args: unknown[]) =>
-			handler(...(args as TArgs))) as CommandAction;
+			Effect.suspend(() => handler(...(args as TArgs)))) as CommandAction;
 		return this;
 	}
 

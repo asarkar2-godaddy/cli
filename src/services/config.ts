@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import * as Effect from "effect/Effect";
 import { join } from "node:path";
 import * as TOML from "@iarna/toml";
 import { type ArkErrors, type } from "arktype";
@@ -322,7 +323,7 @@ export function getConfigFile({
 	throw new Error(`Config file not found at ${defaultPath}.${envHint}`);
 }
 
-export async function createConfigFile(data: Config, env?: ConfigEnvironment) {
+async function createConfigFilePromise(data: Config, env?: ConfigEnvironment) {
 	const filePath = getConfigFilePath(env);
 	const file = filePath;
 
@@ -410,7 +411,7 @@ export async function createConfigFile(data: Config, env?: ConfigEnvironment) {
 	fs.writeFileSync(filePath, tomlString);
 }
 
-export async function updateVersionNumber(version: string | null) {
+async function updateVersionNumberPromise(version: string | null) {
 	if (!version) return;
 
 	const config = getConfigFile();
@@ -466,7 +467,7 @@ function getConfigFilePathForUpdate(
 	return { path: defaultPath };
 }
 
-export async function addActionToConfig(
+async function addActionToConfigPromise(
 	action: ActionConfig,
 	options: { configPath?: string; env?: Environment } = {},
 ): Promise<CmdResult<void>> {
@@ -497,7 +498,7 @@ export async function addActionToConfig(
 	}
 }
 
-export async function addSubscriptionToConfig(
+async function addSubscriptionToConfigPromise(
 	subscription: SubscriptionConfig,
 	options: { configPath?: string; env?: Environment } = {},
 ): Promise<CmdResult<void>> {
@@ -530,7 +531,7 @@ export async function addSubscriptionToConfig(
 	}
 }
 
-export async function createEnvFile(
+async function createEnvFilePromise(
 	{
 		secret,
 		publicKey,
@@ -596,7 +597,7 @@ export async function createEnvFile(
 	fs.writeFileSync(envPath, envContent);
 }
 
-export async function addExtensionToConfig(
+async function addExtensionToConfigPromise(
 	extensionType: ExtensionType,
 	extension:
 		| EmbedExtensionConfig
@@ -647,4 +648,82 @@ export async function addExtensionToConfig(
 			error: toConfigError(error, "Unable to update extensions in config"),
 		};
 	}
+}
+
+export function createConfigFileEffect(...args: Parameters<typeof createConfigFilePromise>): Effect.Effect<Awaited<ReturnType<typeof createConfigFilePromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => createConfigFilePromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function updateVersionNumberEffect(...args: Parameters<typeof updateVersionNumberPromise>): Effect.Effect<Awaited<ReturnType<typeof updateVersionNumberPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => updateVersionNumberPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function addActionToConfigEffect(...args: Parameters<typeof addActionToConfigPromise>): Effect.Effect<Awaited<ReturnType<typeof addActionToConfigPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => addActionToConfigPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function addSubscriptionToConfigEffect(...args: Parameters<typeof addSubscriptionToConfigPromise>): Effect.Effect<Awaited<ReturnType<typeof addSubscriptionToConfigPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => addSubscriptionToConfigPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function createEnvFileEffect(...args: Parameters<typeof createEnvFilePromise>): Effect.Effect<Awaited<ReturnType<typeof createEnvFilePromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => createEnvFilePromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function addExtensionToConfigEffect(...args: Parameters<typeof addExtensionToConfigPromise>): Effect.Effect<Awaited<ReturnType<typeof addExtensionToConfigPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => addExtensionToConfigPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function createConfigFile(
+	...args: Parameters<typeof createConfigFilePromise>
+): Promise<Awaited<ReturnType<typeof createConfigFilePromise>>> {
+	return Effect.runPromise(createConfigFileEffect(...args));
+}
+
+export function updateVersionNumber(
+	...args: Parameters<typeof updateVersionNumberPromise>
+): Promise<Awaited<ReturnType<typeof updateVersionNumberPromise>>> {
+	return Effect.runPromise(updateVersionNumberEffect(...args));
+}
+
+export function addActionToConfig(
+	...args: Parameters<typeof addActionToConfigPromise>
+): Promise<Awaited<ReturnType<typeof addActionToConfigPromise>>> {
+	return Effect.runPromise(addActionToConfigEffect(...args));
+}
+
+export function addSubscriptionToConfig(
+	...args: Parameters<typeof addSubscriptionToConfigPromise>
+): Promise<Awaited<ReturnType<typeof addSubscriptionToConfigPromise>>> {
+	return Effect.runPromise(addSubscriptionToConfigEffect(...args));
+}
+
+export function createEnvFile(
+	...args: Parameters<typeof createEnvFilePromise>
+): Promise<Awaited<ReturnType<typeof createEnvFilePromise>>> {
+	return Effect.runPromise(createEnvFileEffect(...args));
+}
+
+export function addExtensionToConfig(
+	...args: Parameters<typeof addExtensionToConfigPromise>
+): Promise<Awaited<ReturnType<typeof addExtensionToConfigPromise>>> {
+	return Effect.runPromise(addExtensionToConfigEffect(...args));
 }

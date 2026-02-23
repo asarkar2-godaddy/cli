@@ -1,4 +1,5 @@
 import { type } from "arktype";
+import * as Effect from "effect/Effect";
 import { graphql } from "gql.tada";
 import { ClientError, request } from "graphql-request";
 import { getRequestHeaders, initApiBaseUrl } from "./http-helpers";
@@ -149,7 +150,7 @@ export const updateApplicationInput = type({
 	status: '"ACTIVE" | "INACTIVE"?',
 });
 
-export async function createApplication(
+async function createApplicationPromise(
 	input: typeof applicationInput.infer,
 	{ accessToken }: { accessToken: string | null },
 ) {
@@ -191,7 +192,7 @@ export async function createApplication(
 	}
 }
 
-export async function updateApplication(
+async function updateApplicationPromise(
 	id: string,
 	input: typeof updateApplicationInput.infer,
 	{ accessToken }: { accessToken: string | null },
@@ -227,7 +228,7 @@ export async function updateApplication(
 	}
 }
 
-export async function getApplication(
+async function getApplicationPromise(
 	name: string,
 	{ accessToken }: { accessToken: string | null },
 ) {
@@ -245,7 +246,7 @@ export async function getApplication(
 	return result;
 }
 
-export async function getApplicationAndLatestRelease(
+async function getApplicationAndLatestReleasePromise(
 	name: string,
 	{ accessToken }: { accessToken: string | null },
 ) {
@@ -282,7 +283,7 @@ export const releaseInput = type({
 	subscriptions: subscriptionInput.array().optional(),
 });
 
-export async function createRelease(
+async function createReleasePromise(
 	input: typeof releaseInput.infer,
 	{ accessToken }: { accessToken: string | null },
 ) {
@@ -328,7 +329,7 @@ export async function createRelease(
 	}
 }
 
-export async function enableApplication(
+async function enableApplicationPromise(
 	input: { applicationName: string; storeId: string },
 	{ accessToken }: { accessToken: string | null },
 ) {
@@ -363,7 +364,7 @@ export async function enableApplication(
 	}
 }
 
-export async function disableApplication(
+async function disableApplicationPromise(
 	input: { applicationName: string; storeId: string },
 	{ accessToken }: { accessToken: string | null },
 ) {
@@ -398,7 +399,7 @@ export async function disableApplication(
 	}
 }
 
-export async function listApplications({
+async function listApplicationsPromise({
 	accessToken,
 }: { accessToken: string | null }) {
 	if (!accessToken) {
@@ -415,7 +416,7 @@ export async function listApplications({
 	return result;
 }
 
-export async function archiveApplication(
+async function archiveApplicationPromise(
 	id: string,
 	{ accessToken }: { accessToken: string | null },
 ) {
@@ -448,4 +449,121 @@ export async function archiveApplication(
 
 		throw new Error("An unexpected error occurred");
 	}
+}
+
+export function createApplicationEffect(...args: Parameters<typeof createApplicationPromise>): Effect.Effect<Awaited<ReturnType<typeof createApplicationPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => createApplicationPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function updateApplicationEffect(...args: Parameters<typeof updateApplicationPromise>): Effect.Effect<Awaited<ReturnType<typeof updateApplicationPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => updateApplicationPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function getApplicationEffect(...args: Parameters<typeof getApplicationPromise>): Effect.Effect<Awaited<ReturnType<typeof getApplicationPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => getApplicationPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function getApplicationAndLatestReleaseEffect(...args: Parameters<typeof getApplicationAndLatestReleasePromise>): Effect.Effect<Awaited<ReturnType<typeof getApplicationAndLatestReleasePromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => getApplicationAndLatestReleasePromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function createReleaseEffect(...args: Parameters<typeof createReleasePromise>): Effect.Effect<Awaited<ReturnType<typeof createReleasePromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => createReleasePromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function enableApplicationEffect(...args: Parameters<typeof enableApplicationPromise>): Effect.Effect<Awaited<ReturnType<typeof enableApplicationPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => enableApplicationPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function disableApplicationEffect(...args: Parameters<typeof disableApplicationPromise>): Effect.Effect<Awaited<ReturnType<typeof disableApplicationPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => disableApplicationPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function listApplicationsEffect(...args: Parameters<typeof listApplicationsPromise>): Effect.Effect<Awaited<ReturnType<typeof listApplicationsPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => listApplicationsPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function archiveApplicationEffect(...args: Parameters<typeof archiveApplicationPromise>): Effect.Effect<Awaited<ReturnType<typeof archiveApplicationPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => archiveApplicationPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function createApplication(
+	...args: Parameters<typeof createApplicationPromise>
+): Promise<Awaited<ReturnType<typeof createApplicationPromise>>> {
+	return Effect.runPromise(createApplicationEffect(...args));
+}
+
+export function updateApplication(
+	...args: Parameters<typeof updateApplicationPromise>
+): Promise<Awaited<ReturnType<typeof updateApplicationPromise>>> {
+	return Effect.runPromise(updateApplicationEffect(...args));
+}
+
+export function getApplication(
+	...args: Parameters<typeof getApplicationPromise>
+): Promise<Awaited<ReturnType<typeof getApplicationPromise>>> {
+	return Effect.runPromise(getApplicationEffect(...args));
+}
+
+export function getApplicationAndLatestRelease(
+	...args: Parameters<typeof getApplicationAndLatestReleasePromise>
+): Promise<Awaited<ReturnType<typeof getApplicationAndLatestReleasePromise>>> {
+	return Effect.runPromise(getApplicationAndLatestReleaseEffect(...args));
+}
+
+export function createRelease(
+	...args: Parameters<typeof createReleasePromise>
+): Promise<Awaited<ReturnType<typeof createReleasePromise>>> {
+	return Effect.runPromise(createReleaseEffect(...args));
+}
+
+export function enableApplication(
+	...args: Parameters<typeof enableApplicationPromise>
+): Promise<Awaited<ReturnType<typeof enableApplicationPromise>>> {
+	return Effect.runPromise(enableApplicationEffect(...args));
+}
+
+export function disableApplication(
+	...args: Parameters<typeof disableApplicationPromise>
+): Promise<Awaited<ReturnType<typeof disableApplicationPromise>>> {
+	return Effect.runPromise(disableApplicationEffect(...args));
+}
+
+export function listApplications(
+	...args: Parameters<typeof listApplicationsPromise>
+): Promise<Awaited<ReturnType<typeof listApplicationsPromise>>> {
+	return Effect.runPromise(listApplicationsEffect(...args));
+}
+
+export function archiveApplication(
+	...args: Parameters<typeof archiveApplicationPromise>
+): Promise<Awaited<ReturnType<typeof archiveApplicationPromise>>> {
+	return Effect.runPromise(archiveApplicationEffect(...args));
 }

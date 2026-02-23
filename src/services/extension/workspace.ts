@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import * as Effect from "effect/Effect";
 import { join } from "node:path";
 import type { Result } from "../../shared/types";
 
@@ -57,7 +58,7 @@ export interface DetectExtensionsOptions {
  * });
  * ```
  */
-export async function getExtensions(
+async function getExtensionsPromise(
 	options?: DetectExtensionsOptions,
 ): Promise<Result<ExtensionPackage[]>> {
 	const repoRoot = options?.repoRoot ?? process.cwd();
@@ -326,4 +327,17 @@ export function readPackageJson(
 			),
 		};
 	}
+}
+
+export function getExtensionsEffect(...args: Parameters<typeof getExtensionsPromise>): Effect.Effect<Awaited<ReturnType<typeof getExtensionsPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => getExtensionsPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function getExtensions(
+	...args: Parameters<typeof getExtensionsPromise>
+): Promise<Awaited<ReturnType<typeof getExtensionsPromise>>> {
+	return Effect.runPromise(getExtensionsEffect(...args));
 }

@@ -1,14 +1,28 @@
 import { join, resolve } from "node:path";
 import type { ArkErrors } from "arktype";
+import * as Effect from "effect/Effect";
 import type {
 	Application,
 	ApplicationInfo,
 	CreateApplicationInput,
+	DeployProgressEvent,
 	DeployResult,
 	ReleaseInfo,
 	ValidationResult,
 } from "../../core/applications";
-import { type Environment, envGet } from "../../core/environment";
+import {
+	applicationArchiveEffect,
+	applicationDeployEffect,
+	applicationEnableEffect,
+	applicationInfoEffect,
+	applicationInitEffect,
+	applicationListEffect,
+	applicationReleaseEffect,
+	applicationUpdateEffect,
+	applicationValidateEffect,
+	applicationDisableEffect,
+} from "../../core/applications";
+import { type Environment, envGetEffect } from "../../core/environment";
 import {
 	type ActionConfig,
 	type BlocksExtensionConfig,
@@ -16,9 +30,9 @@ import {
 	type Config,
 	type EmbedExtensionConfig,
 	type SubscriptionConfig,
-	addActionToConfig,
-	addExtensionToConfig,
-	addSubscriptionToConfig,
+	addActionToConfigEffect,
+	addExtensionToConfigEffect,
+	addSubscriptionToConfigEffect,
 	getConfigFile,
 	getConfigFilePath,
 } from "../../services/config";
@@ -36,6 +50,13 @@ import {
 	emitSuccess,
 	unwrapResult,
 } from "../agent/respond";
+import {
+	emitStreamError,
+	emitStreamProgress,
+	emitStreamResult,
+	emitStreamStart,
+	emitStreamStep,
+} from "../agent/stream";
 import { protectPayload, truncateList } from "../agent/truncation";
 import { Command } from "../command-model";
 
@@ -89,33 +110,28 @@ interface ReleaseOptions extends AddBaseOptions {
 	description?: string;
 }
 
-interface DeployOptions extends AddBaseOptions {}
+interface DeployOptions extends AddBaseOptions {
+	follow?: boolean;
+}
 
 type ConfigReadResult = ReturnType<typeof getConfigFile>;
 
-async function resolveEnvironment(environment?: string): Promise<Environment> {
+function resolveEnvironmentEffect(
+	environment?: string,
+): Effect.Effect<Environment, unknown, never> {
 	if (environment) {
-		return unwrapResult(
-			await envGet(environment),
-			"Failed to resolve environment",
-		) as Environment;
+		return envGetEffect(environment).pipe(
+			Effect.map((result) =>
+				unwrapResult(result, "Failed to resolve environment"),
+			),
+			Effect.map((result) => result as Environment),
+		);
 	}
 
-	return unwrapResult(
-		await envGet(),
-		"Failed to resolve environment",
-	) as Environment;
-}
-
-function ensureSuccess(
-	result: { success: boolean; error?: unknown },
-	fallbackMessage: string,
-): void {
-	if (!result.success) {
-		throw result.error instanceof Error
-			? result.error
-			: new Error(fallbackMessage);
-	}
+	return envGetEffect().pipe(
+		Effect.map((result) => unwrapResult(result, "Failed to resolve environment")),
+		Effect.map((result) => result as Environment),
+	);
 }
 
 function resolveConfigPath(
@@ -161,8 +177,95 @@ function emitRuntimeError(
 	);
 }
 
-async function loadApplicationModule() {
-	return import("../../core/applications");
+function runApplicationCommand(
+	commandId: keyof typeof commandIds,
+	effect: Effect.Effect<void, unknown, never>,
+): Effect.Effect<void, never, never> {
+	return effect.pipe(
+		Effect.catchAll((error) =>
+			Effect.sync(() => {
+				emitRuntimeError(commandId, error);
+			}),
+		),
+	);
+}
+
+function buildDeployPayload(
+	name: string,
+	deployResult: DeployResult,
+): Record<string, unknown> {
+	const summarizedPayload = protectPayload(
+		{
+			total_extensions: deployResult.totalExtensions,
+			blocked_extensions: deployResult.blockedExtensions,
+			security_reports: deployResult.securityReports.map((report) => ({
+				extension_name: report.extensionName,
+				extension_dir: report.extensionDir,
+				blocked: report.blocked,
+				total_findings: report.totalFindings,
+				blocked_findings: report.blockedFindings,
+				warnings: report.warnings,
+				pre_bundle: {
+					blocked: report.preBundleReport.blocked,
+					scanned_files: report.preBundleReport.scannedFiles,
+					summary: report.preBundleReport.summary,
+					findings: report.preBundleReport.findings,
+				},
+				post_bundle: report.postBundleReport
+					? {
+							blocked: report.postBundleReport.blocked,
+							scanned_files: report.postBundleReport.scannedFiles,
+							summary: report.postBundleReport.summary,
+							findings: report.postBundleReport.findings,
+						}
+					: undefined,
+			})),
+			bundle_reports: deployResult.bundleReports.map((report) => ({
+				extension_name: report.extensionName,
+				artifact_name: report.artifactName,
+				size_bytes: report.size,
+				sha256: report.sha256,
+				targets: report.targets,
+				upload_ids: report.uploadIds,
+				uploaded: report.uploaded,
+			})),
+		},
+		`application-deploy-${name}`,
+	);
+
+	return {
+		...summarizedPayload.value,
+		truncated: summarizedPayload.metadata?.truncated ?? false,
+		total: summarizedPayload.metadata?.total,
+		shown: summarizedPayload.metadata?.shown,
+		full_output: summarizedPayload.metadata?.full_output,
+	};
+}
+
+function emitDeployProgressAsStream(event: DeployProgressEvent): void {
+	if (event.type === "step") {
+		if (!event.status) {
+			return;
+		}
+
+		emitStreamStep({
+			name: event.name,
+			status: event.status,
+			message: event.message,
+			extensionName: event.extensionName,
+			details: event.details,
+		});
+		return;
+	}
+
+	if (event.type === "progress") {
+		emitStreamProgress({
+			name: event.name,
+			percent: event.percent,
+			message: event.message,
+			details: event.details,
+		});
+	}
 }
 
 export function createApplicationCommand(): Command {
@@ -170,32 +273,35 @@ export function createApplicationCommand(): Command {
 		.alias("app")
 		.description("Manage applications");
 
-	app.action(async () => {
-		const node = findRegistryNodeById(commandIds.applicationGroup);
-		if (!node) {
-			emitRuntimeError(
-				"root",
-				new Error("Application command registry metadata is missing"),
-			);
-			return;
-		}
+	app.action(() =>
+		Effect.sync(() => {
+			const node = findRegistryNodeById(commandIds.applicationGroup);
+			if (!node) {
+				emitRuntimeError(
+					"root",
+					new Error("Application command registry metadata is missing"),
+				);
+				return;
+			}
 
-		emitSuccess(
-			currentCommandString(),
-			registryNodeToResult(node),
-			nextActionsFor(commandIds.applicationGroup),
-		);
-	});
+			emitSuccess(
+				currentCommandString(),
+				registryNodeToResult(node),
+				nextActionsFor(commandIds.applicationGroup),
+			);
+		}),
+	);
 
 	app
 		.command("info")
 		.description("Show application information")
 		.argument("<name>", "Application name")
-		.action(async (name: string) => {
-			try {
-				const { applicationInfo } = await loadApplicationModule();
+		.action((name: string) =>
+			runApplicationCommand(
+				"applicationGroup",
+				Effect.gen(function* () {
 				const appInfo = unwrapResult(
-					await applicationInfo(name),
+					yield* applicationInfoEffect(name),
 					"Failed to get application info",
 				) as ApplicationInfo;
 				const latestRelease = appInfo.releases?.[0]
@@ -224,20 +330,20 @@ export function createApplicationCommand(): Command {
 						applicationName: name,
 					}),
 				);
-			} catch (error) {
-				emitRuntimeError("applicationGroup", error);
-			}
-		});
+				}),
+			),
+		);
 
 	app
 		.command("list")
 		.alias("ls")
 		.description("List all applications")
-		.action(async () => {
-			try {
-				const { applicationList } = await loadApplicationModule();
+		.action(() =>
+			runApplicationCommand(
+				"applicationGroup",
+				Effect.gen(function* () {
 				const applications = unwrapResult(
-					await applicationList(),
+					yield* applicationListEffect(),
 					"Failed to list applications",
 				) as Application[];
 
@@ -254,20 +360,20 @@ export function createApplicationCommand(): Command {
 					},
 					nextActionsFor(commandIds.applicationList),
 				);
-			} catch (error) {
-				emitRuntimeError("applicationGroup", error);
-			}
-		});
+				}),
+			),
+		);
 
 	app
 		.command("validate")
 		.description("Validate application configuration")
 		.argument("<name>", "Application name")
-		.action(async (name: string) => {
-			try {
-				const { applicationValidate } = await loadApplicationModule();
+		.action((name: string) =>
+			runApplicationCommand(
+				"applicationGroup",
+				Effect.gen(function* () {
 				const validation = unwrapResult(
-					await applicationValidate(name),
+					yield* applicationValidateEffect(name),
 					"Failed to validate application",
 				) as ValidationResult;
 
@@ -296,10 +402,9 @@ export function createApplicationCommand(): Command {
 						applicationName: name,
 					}),
 				);
-			} catch (error) {
-				emitRuntimeError("applicationGroup", error);
-			}
-		});
+				}),
+			),
+		);
 
 	app
 		.command("update")
@@ -308,9 +413,10 @@ export function createApplicationCommand(): Command {
 		.option("--label <label>", "Application label")
 		.option("--description <description>", "Application description")
 		.option("--status <status>", "Application status (ACTIVE|INACTIVE)")
-		.action(async (name: string, options: UpdateOptions) => {
-			try {
-				const { applicationUpdate } = await loadApplicationModule();
+		.action((name: string, options: UpdateOptions) =>
+			runApplicationCommand(
+				"applicationGroup",
+				Effect.gen(function* () {
 				const config: {
 					label?: string;
 					description?: string;
@@ -340,8 +446,8 @@ export function createApplicationCommand(): Command {
 					);
 				}
 
-				ensureSuccess(
-					await applicationUpdate(name, config),
+				unwrapResult(
+					yield* applicationUpdateEffect(name, config),
 					"Failed to update application",
 				);
 
@@ -356,21 +462,21 @@ export function createApplicationCommand(): Command {
 						applicationName: name,
 					}),
 				);
-			} catch (error) {
-				emitRuntimeError("applicationGroup", error);
-			}
-		});
+				}),
+			),
+		);
 
 	app
 		.command("enable")
 		.description("Enable application on a store")
 		.argument("<name>", "Application name")
 		.requiredOption("--store-id <storeId>", "Store ID")
-		.action(async (name: string, options: StoreToggleOptions) => {
-			try {
-				const { applicationEnable } = await loadApplicationModule();
-				ensureSuccess(
-					await applicationEnable(name, options.storeId),
+		.action((name: string, options: StoreToggleOptions) =>
+			runApplicationCommand(
+				"applicationGroup",
+				Effect.gen(function* () {
+				unwrapResult(
+					yield* applicationEnableEffect(name, options.storeId),
 					"Failed to enable application",
 				);
 
@@ -382,21 +488,21 @@ export function createApplicationCommand(): Command {
 						storeId: options.storeId,
 					}),
 				);
-			} catch (error) {
-				emitRuntimeError("applicationGroup", error);
-			}
-		});
+				}),
+			),
+		);
 
 	app
 		.command("disable")
 		.description("Disable application on a store")
 		.argument("<name>", "Application name")
 		.requiredOption("--store-id <storeId>", "Store ID")
-		.action(async (name: string, options: StoreToggleOptions) => {
-			try {
-				const { applicationDisable } = await loadApplicationModule();
-				ensureSuccess(
-					await applicationDisable(name, options.storeId),
+		.action((name: string, options: StoreToggleOptions) =>
+			runApplicationCommand(
+				"applicationGroup",
+				Effect.gen(function* () {
+				unwrapResult(
+					yield* applicationDisableEffect(name, options.storeId),
 					"Failed to disable application",
 				);
 
@@ -408,20 +514,20 @@ export function createApplicationCommand(): Command {
 						storeId: options.storeId,
 					}),
 				);
-			} catch (error) {
-				emitRuntimeError("applicationGroup", error);
-			}
-		});
+				}),
+			),
+		);
 
 	app
 		.command("archive")
 		.description("Archive application")
 		.argument("<name>", "Application name")
-		.action(async (name: string) => {
-			try {
-				const { applicationArchive } = await loadApplicationModule();
-				ensureSuccess(
-					await applicationArchive(name),
+		.action((name: string) =>
+			runApplicationCommand(
+				"applicationGroup",
+				Effect.gen(function* () {
+				unwrapResult(
+					yield* applicationArchiveEffect(name),
 					"Failed to archive application",
 				);
 				emitSuccess(
@@ -431,10 +537,9 @@ export function createApplicationCommand(): Command {
 						applicationName: name,
 					}),
 				);
-			} catch (error) {
-				emitRuntimeError("applicationGroup", error);
-			}
-		});
+				}),
+			),
+		);
 
 	app
 		.command("init")
@@ -450,9 +555,10 @@ export function createApplicationCommand(): Command {
 		)
 		.option("-c, --config <path>", "Path to configuration file")
 		.option("--environment <env>", "Environment (ote|prod)")
-		.action(async (options: InitOptions) => {
-			try {
-				const { applicationInit } = await loadApplicationModule();
+		.action((options: InitOptions) =>
+			runApplicationCommand(
+				"applicationGroup",
+				Effect.gen(function* () {
 				let cfg: Config | undefined;
 				if (options.config || options.environment) {
 					const candidate = getConfigFile({
@@ -509,9 +615,9 @@ export function createApplicationCommand(): Command {
 					);
 				}
 
-				const environment = await resolveEnvironment(options.environment);
+				const environment = yield* resolveEnvironmentEffect(options.environment);
 				const appData = unwrapResult(
-					await applicationInit(input, environment),
+					yield* applicationInitEffect(input, environment),
 					"Failed to create application",
 				);
 
@@ -534,31 +640,32 @@ export function createApplicationCommand(): Command {
 						applicationName: appData.name,
 					}),
 				);
-			} catch (error) {
-				emitRuntimeError("applicationGroup", error);
-			}
-		});
+				}),
+			),
+		);
 
 	const addCommand = new Command("add").description(
 		"Add configurations to application",
 	);
 
-	addCommand.action(async () => {
-		const node = findRegistryNodeById(commandIds.applicationAddGroup);
-		if (!node) {
-			emitRuntimeError(
-				"applicationGroup",
-				new Error("Application add registry metadata is missing"),
-			);
-			return;
-		}
+	addCommand.action(() =>
+		Effect.sync(() => {
+			const node = findRegistryNodeById(commandIds.applicationAddGroup);
+			if (!node) {
+				emitRuntimeError(
+					"applicationGroup",
+					new Error("Application add registry metadata is missing"),
+				);
+				return;
+			}
 
-		emitSuccess(
-			currentCommandString(),
-			registryNodeToResult(node),
-			nextActionsFor(commandIds.applicationAddGroup),
-		);
-	});
+			emitSuccess(
+				currentCommandString(),
+				registryNodeToResult(node),
+				nextActionsFor(commandIds.applicationAddGroup),
+			);
+		}),
+	);
 
 	addCommand
 		.command("action")
@@ -567,8 +674,10 @@ export function createApplicationCommand(): Command {
 		.requiredOption("--url <url>", "Action endpoint URL")
 		.option("--config <path>", "Path to configuration file")
 		.option("--environment <env>", "Environment (ote|prod)")
-		.action(async (options: AddActionOptions) => {
-			try {
+		.action((options: AddActionOptions) =>
+			runApplicationCommand(
+				"applicationAddGroup",
+				Effect.gen(function* () {
 				if (options.name.length < 3) {
 					throw new ValidationError(
 						"Action name must be at least 3 characters long",
@@ -576,10 +685,10 @@ export function createApplicationCommand(): Command {
 					);
 				}
 
-				const environment = await resolveEnvironment(options.environment);
+				const environment = yield* resolveEnvironmentEffect(options.environment);
 				const action: ActionConfig = { name: options.name, url: options.url };
-				ensureSuccess(
-					await addActionToConfig(action, {
+				unwrapResult(
+					yield* addActionToConfigEffect(action, {
 						configPath: options.config,
 						env: environment,
 					}),
@@ -594,10 +703,9 @@ export function createApplicationCommand(): Command {
 					},
 					nextActionsFor(commandIds.applicationAddAction),
 				);
-			} catch (error) {
-				emitRuntimeError("applicationAddGroup", error);
-			}
-		});
+				}),
+			),
+		);
 
 	addCommand
 		.command("subscription")
@@ -607,8 +715,10 @@ export function createApplicationCommand(): Command {
 		.requiredOption("--url <url>", "Webhook endpoint URL")
 		.option("--config <path>", "Path to configuration file")
 		.option("--environment <env>", "Environment (ote|prod)")
-		.action(async (options: AddSubscriptionOptions) => {
-			try {
+		.action((options: AddSubscriptionOptions) =>
+			runApplicationCommand(
+				"applicationAddGroup",
+				Effect.gen(function* () {
 				if (options.name.length < 3) {
 					throw new ValidationError(
 						"Subscription name must be at least 3 characters long",
@@ -624,14 +734,14 @@ export function createApplicationCommand(): Command {
 					);
 				}
 
-				const environment = await resolveEnvironment(options.environment);
+				const environment = yield* resolveEnvironmentEffect(options.environment);
 				const subscription: SubscriptionConfig = {
 					name: options.name,
 					events: eventList,
 					url: options.url,
 				};
-				ensureSuccess(
-					await addSubscriptionToConfig(subscription, {
+				unwrapResult(
+					yield* addSubscriptionToConfigEffect(subscription, {
 						configPath: options.config,
 						env: environment,
 					}),
@@ -646,31 +756,32 @@ export function createApplicationCommand(): Command {
 					},
 					nextActionsFor(commandIds.applicationAddSubscription),
 				);
-			} catch (error) {
-				emitRuntimeError("applicationAddGroup", error);
-			}
-		});
+				}),
+			),
+		);
 
 	const extensionCommand = addCommand
 		.command("extension")
 		.description("Add UI extension configuration to godaddy.toml");
 
-	extensionCommand.action(async () => {
-		const node = findRegistryNodeById(commandIds.applicationAddExtensionGroup);
-		if (!node) {
-			emitRuntimeError(
-				"applicationAddGroup",
-				new Error("Application add extension registry metadata is missing"),
-			);
-			return;
-		}
+	extensionCommand.action(() =>
+		Effect.sync(() => {
+			const node = findRegistryNodeById(commandIds.applicationAddExtensionGroup);
+			if (!node) {
+				emitRuntimeError(
+					"applicationAddGroup",
+					new Error("Application add extension registry metadata is missing"),
+				);
+				return;
+			}
 
-		emitSuccess(
-			currentCommandString(),
-			registryNodeToResult(node),
-			nextActionsFor(commandIds.applicationAddExtensionGroup),
-		);
-	});
+			emitSuccess(
+				currentCommandString(),
+				registryNodeToResult(node),
+				nextActionsFor(commandIds.applicationAddExtensionGroup),
+			);
+		}),
+	);
 
 	extensionCommand
 		.command("embed")
@@ -684,8 +795,10 @@ export function createApplicationCommand(): Command {
 		)
 		.option("--config <path>", "Path to configuration file")
 		.option("--environment <env>", "Environment (ote|prod)")
-		.action(async (options: AddExtensionEmbedOptions) => {
-			try {
+		.action((options: AddExtensionEmbedOptions) =>
+			runApplicationCommand(
+				"applicationAddExtensionGroup",
+				Effect.gen(function* () {
 				if (options.name.length < 3) {
 					throw new ValidationError(
 						"Extension name must be at least 3 characters long",
@@ -715,9 +828,9 @@ export function createApplicationCommand(): Command {
 					source: options.source,
 					targets,
 				};
-				const environment = await resolveEnvironment(options.environment);
-				ensureSuccess(
-					await addExtensionToConfig("embed", extension, {
+				const environment = yield* resolveEnvironmentEffect(options.environment);
+				unwrapResult(
+					yield* addExtensionToConfigEffect("embed", extension, {
 						configPath: options.config,
 						env: environment,
 					}),
@@ -733,10 +846,9 @@ export function createApplicationCommand(): Command {
 					},
 					nextActionsFor(commandIds.applicationAddExtensionEmbed),
 				);
-			} catch (error) {
-				emitRuntimeError("applicationAddExtensionGroup", error);
-			}
-		});
+				}),
+			),
+		);
 
 	extensionCommand
 		.command("checkout")
@@ -750,8 +862,10 @@ export function createApplicationCommand(): Command {
 		)
 		.option("--config <path>", "Path to configuration file")
 		.option("--environment <env>", "Environment (ote|prod)")
-		.action(async (options: AddExtensionEmbedOptions) => {
-			try {
+		.action((options: AddExtensionEmbedOptions) =>
+			runApplicationCommand(
+				"applicationAddExtensionGroup",
+				Effect.gen(function* () {
 				if (options.name.length < 3) {
 					throw new ValidationError(
 						"Extension name must be at least 3 characters long",
@@ -781,9 +895,9 @@ export function createApplicationCommand(): Command {
 					source: options.source,
 					targets,
 				};
-				const environment = await resolveEnvironment(options.environment);
-				ensureSuccess(
-					await addExtensionToConfig("checkout", extension, {
+				const environment = yield* resolveEnvironmentEffect(options.environment);
+				unwrapResult(
+					yield* addExtensionToConfigEffect("checkout", extension, {
 						configPath: options.config,
 						env: environment,
 					}),
@@ -799,10 +913,9 @@ export function createApplicationCommand(): Command {
 					},
 					nextActionsFor(commandIds.applicationAddExtensionCheckout),
 				);
-			} catch (error) {
-				emitRuntimeError("applicationAddExtensionGroup", error);
-			}
-		});
+				}),
+			),
+		);
 
 	extensionCommand
 		.command("blocks")
@@ -810,14 +923,16 @@ export function createApplicationCommand(): Command {
 		.requiredOption("--source <source>", "Path to blocks extension source file")
 		.option("--config <path>", "Path to configuration file")
 		.option("--environment <env>", "Environment (ote|prod)")
-		.action(async (options: AddExtensionBlocksOptions) => {
-			try {
+		.action((options: AddExtensionBlocksOptions) =>
+			runApplicationCommand(
+				"applicationAddExtensionGroup",
+				Effect.gen(function* () {
 				const extension: BlocksExtensionConfig = {
 					source: options.source,
 				};
-				const environment = await resolveEnvironment(options.environment);
-				ensureSuccess(
-					await addExtensionToConfig("blocks", extension, {
+				const environment = yield* resolveEnvironmentEffect(options.environment);
+				unwrapResult(
+					yield* addExtensionToConfigEffect("blocks", extension, {
 						configPath: options.config,
 						env: environment,
 					}),
@@ -833,10 +948,9 @@ export function createApplicationCommand(): Command {
 					},
 					nextActionsFor(commandIds.applicationAddExtensionBlocks),
 				);
-			} catch (error) {
-				emitRuntimeError("applicationAddExtensionGroup", error);
-			}
-		});
+				}),
+			),
+		);
 
 	app.addCommand(addCommand);
 
@@ -848,12 +962,13 @@ export function createApplicationCommand(): Command {
 		.option("--description <description>", "Release description")
 		.option("--config <path>", "Path to configuration file")
 		.option("--environment <env>", "Environment (ote|prod)")
-		.action(async (name: string, options: ReleaseOptions) => {
-			try {
-				const { applicationRelease } = await loadApplicationModule();
-				const environment = await resolveEnvironment(options.environment);
+		.action((name: string, options: ReleaseOptions) =>
+			runApplicationCommand(
+				"applicationGroup",
+				Effect.gen(function* () {
+				const environment = yield* resolveEnvironmentEffect(options.environment);
 				const releaseInfo = unwrapResult(
-					await applicationRelease({
+					yield* applicationReleaseEffect({
 						applicationName: name,
 						version: options.releaseVersion,
 						description: options.description,
@@ -875,10 +990,9 @@ export function createApplicationCommand(): Command {
 						applicationName: name,
 					}),
 				);
-			} catch (error) {
-				emitRuntimeError("applicationGroup", error);
-			}
-		});
+				}),
+			),
+		);
 
 	app
 		.command("deploy")
@@ -886,50 +1000,54 @@ export function createApplicationCommand(): Command {
 		.argument("<name>", "Application name")
 		.option("--config <path>", "Path to configuration file")
 		.option("--environment <env>", "Environment (ote|prod)")
-		.action(async (name: string, options: DeployOptions) => {
-			try {
-				const { applicationDeploy } = await loadApplicationModule();
-				const environment = await resolveEnvironment(options.environment);
-				const deployResult = unwrapResult(
-					await applicationDeploy(name, {
-						configPath: options.config,
-						env: environment,
-					}),
-					"Failed to deploy application",
-				) as DeployResult;
+		.option("--follow", "Stream deploy progress as NDJSON events")
+		.action((name: string, options: DeployOptions) => {
+			const command = currentCommandString();
+			const follow = options.follow === true;
+			const nextActions = nextActionsFor(commandIds.applicationDeploy, {
+				applicationName: name,
+			});
 
-				const summarizedPayload = protectPayload(
-					{
-						total_extensions: deployResult.totalExtensions,
-						blocked_extensions: deployResult.blockedExtensions,
-						security_reports: deployResult.securityReports,
-						bundle_reports: deployResult.bundleReports.map((report) => ({
-							extension_name: report.extensionName,
-							artifact_name: report.artifactName,
-							size_bytes: report.size,
-							targets: report.targets,
-							uploaded: report.uploaded,
-						})),
-					},
-					`application-deploy-${name}`,
-				);
+			return Effect.gen(function* () {
+				const environment = yield* resolveEnvironmentEffect(options.environment);
 
-				emitSuccess(
-					currentCommandString(),
-					{
-						...summarizedPayload.value,
-						truncated: summarizedPayload.metadata?.truncated ?? false,
-						total: summarizedPayload.metadata?.total,
-						shown: summarizedPayload.metadata?.shown,
-						full_output: summarizedPayload.metadata?.full_output,
-					},
-					nextActionsFor(commandIds.applicationDeploy, {
-						applicationName: name,
+				if (follow) {
+					yield* Effect.sync(() => emitStreamStart(command));
+				}
+
+				const deployResult: DeployResult = yield* applicationDeployEffect(name, {
+					configPath: options.config,
+					env: environment,
+					onProgress: follow ? emitDeployProgressAsStream : undefined,
+				});
+				const payload = buildDeployPayload(name, deployResult);
+
+				yield* Effect.sync(() => {
+					if (follow) {
+						emitStreamResult(command, payload, nextActions);
+						return;
+					}
+
+					emitSuccess(command, payload, nextActions);
+				});
+			}).pipe(
+				Effect.catchAll((error) =>
+					Effect.sync(() => {
+						if (follow) {
+							const mapped = mapRuntimeError(error);
+							emitStreamError(
+								command,
+								{ message: mapped.message, code: mapped.code },
+								mapped.fix,
+								nextActions,
+							);
+							return;
+						}
+
+						emitRuntimeError("applicationGroup", error);
 					}),
-				);
-			} catch (error) {
-				emitRuntimeError("applicationGroup", error);
-			}
+				),
+			);
 		});
 
 	return app;

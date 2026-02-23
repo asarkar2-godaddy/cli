@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import * as Effect from "effect/Effect";
 import {
 	type Environment,
 	envGet,
@@ -229,7 +230,7 @@ async function parseTokenValue(
 	}
 }
 
-export async function saveToken(
+async function saveTokenPromise(
 	accessToken: string,
 	expiresAt: Date,
 	environment?: Environment,
@@ -241,7 +242,7 @@ export async function saveToken(
 	await keytar.setPassword(KEYCHAIN_SERVICE, scopedTokenKey, token);
 }
 
-export async function getStoredToken(
+async function getStoredTokenPromise(
 	environment?: Environment,
 ): Promise<StoredToken | null> {
 	const keytar = await getKeytar();
@@ -330,7 +331,7 @@ export async function getStoredToken(
 	return legacyToken;
 }
 
-export async function deleteStoredToken(
+async function deleteStoredTokenPromise(
 	environment?: Environment,
 ): Promise<void> {
 	const keytar = await getKeytar();
@@ -340,4 +341,43 @@ export async function deleteStoredToken(
 	await deleteLegacyScopedTokens(env);
 	await keytar.deletePassword(KEYCHAIN_SERVICE, legacyEnvironmentTokenKey);
 	await keytar.deletePassword(KEYCHAIN_SERVICE, LEGACY_TOKEN_KEY);
+}
+
+export function saveTokenEffect(...args: Parameters<typeof saveTokenPromise>): Effect.Effect<Awaited<ReturnType<typeof saveTokenPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => saveTokenPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function getStoredTokenEffect(...args: Parameters<typeof getStoredTokenPromise>): Effect.Effect<Awaited<ReturnType<typeof getStoredTokenPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => getStoredTokenPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function deleteStoredTokenEffect(...args: Parameters<typeof deleteStoredTokenPromise>): Effect.Effect<Awaited<ReturnType<typeof deleteStoredTokenPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => deleteStoredTokenPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function saveToken(
+	...args: Parameters<typeof saveTokenPromise>
+): Promise<Awaited<ReturnType<typeof saveTokenPromise>>> {
+	return Effect.runPromise(saveTokenEffect(...args));
+}
+
+export function getStoredToken(
+	...args: Parameters<typeof getStoredTokenPromise>
+): Promise<Awaited<ReturnType<typeof getStoredTokenPromise>>> {
+	return Effect.runPromise(getStoredTokenEffect(...args));
+}
+
+export function deleteStoredToken(
+	...args: Parameters<typeof deleteStoredTokenPromise>
+): Promise<Awaited<ReturnType<typeof deleteStoredTokenPromise>>> {
+	return Effect.runPromise(deleteStoredTokenEffect(...args));
 }

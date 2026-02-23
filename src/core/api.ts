@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import * as Effect from "effect/Effect";
 import { v7 as uuid } from "uuid";
 import {
 	AuthenticationError,
@@ -33,7 +34,7 @@ export interface ApiResponse {
 /**
  * Make an authenticated request to the GoDaddy API
  */
-export async function apiRequest(
+async function apiRequestPromise(
 	options: ApiRequestOptions,
 ): Promise<CmdResult<ApiResponse>> {
 	const {
@@ -388,4 +389,17 @@ export function parseHeaders(
 	}
 
 	return { success: true, data: result };
+}
+
+export function apiRequestEffect(...args: Parameters<typeof apiRequestPromise>): Effect.Effect<Awaited<ReturnType<typeof apiRequestPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => apiRequestPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function apiRequest(
+	...args: Parameters<typeof apiRequestPromise>
+): Promise<Awaited<ReturnType<typeof apiRequestPromise>>> {
+	return Effect.runPromise(apiRequestEffect(...args));
 }

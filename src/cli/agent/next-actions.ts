@@ -511,12 +511,16 @@ export function nextActionsFor(
 		case commandIds.applicationRelease:
 			return [
 				{
-					command: "godaddy application deploy <name>",
+					command: "godaddy application deploy <name> [--follow]",
 					description: "Deploy the released application",
 					params: {
 						name: {
 							value: context.applicationName ?? "",
 							required: true,
+						},
+						follow: {
+							description: "Stream deploy progress as NDJSON events",
+							default: false,
 						},
 					},
 				},
@@ -551,6 +555,20 @@ export function nextActionsFor(
 						name: {
 							value: context.applicationName ?? "",
 							required: true,
+						},
+					},
+				},
+				{
+					command: "godaddy application deploy <name> [--follow]",
+					description: "Rerun deployment with optional NDJSON progress stream",
+					params: {
+						name: {
+							value: context.applicationName ?? "",
+							required: true,
+						},
+						follow: {
+							description: "Stream deploy progress as NDJSON events",
+							default: false,
 						},
 					},
 				},

@@ -34,6 +34,27 @@ describe("CLI Smoke Tests", () => {
 		expect(Array.isArray(payload.next_actions)).toBe(true);
 	});
 
+	it("discovery tree includes --follow on application deploy", () => {
+		const result = runCli([]);
+		expect(result.status).toBe(0);
+
+		const payload = JSON.parse(result.stdout) as {
+			result: { command_tree: { children?: Array<Record<string, unknown>> } };
+		};
+		const rootChildren = payload.result.command_tree.children ?? [];
+		const applicationNode = rootChildren.find(
+			(node) => node.id === "application.group",
+		) as { children?: Array<Record<string, unknown>> } | undefined;
+		const applicationChildren = applicationNode?.children ?? [];
+		const deployNode = applicationChildren.find(
+			(node) => node.id === "application.deploy",
+		);
+
+		expect(deployNode).toBeDefined();
+		expect(String(deployNode?.command)).toContain("[--follow]");
+		expect(String(deployNode?.usage)).toContain("[--follow]");
+	});
+
 	it("--pretty formats success envelopes with indentation", () => {
 		const result = runCli(["--pretty"]);
 		expect(result.status).toBe(0);

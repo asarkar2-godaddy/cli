@@ -21,7 +21,7 @@ function writeEnvelope(envelope: AgentEnvelope): void {
 	}
 
 	process.stdout.write(`${serializeEnvelope(envelope)}\n`);
-	envelopeWritten = true;
+	markEnvelopeWritten();
 }
 
 export function resetEnvelopeWriter(): void {
@@ -35,6 +35,10 @@ export function setEnvelopePrettyPrint(enabled: boolean): void {
 
 export function hasWrittenEnvelope(): boolean {
 	return envelopeWritten;
+}
+
+export function markEnvelopeWritten(): void {
+	envelopeWritten = true;
 }
 
 export function currentCommandString(): string {

@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import * as Effect from "effect/Effect";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -9,7 +10,7 @@ type Credentials = {
 
 const PATH = join(homedir(), ".godaddy", "credentials");
 
-export async function getCredentials(): Promise<Credentials> {
+async function getCredentialsPromise(): Promise<Credentials> {
 	let text = "";
 	try {
 		if (fs.existsSync(PATH)) {
@@ -49,4 +50,17 @@ export async function getCredentials(): Promise<Credentials> {
 		CLIENT_ID,
 		CLIENT_SECRET,
 	};
+}
+
+export function getCredentialsEffect(...args: Parameters<typeof getCredentialsPromise>): Effect.Effect<Awaited<ReturnType<typeof getCredentialsPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => getCredentialsPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function getCredentials(
+	...args: Parameters<typeof getCredentialsPromise>
+): Promise<Awaited<ReturnType<typeof getCredentialsPromise>>> {
+	return Effect.runPromise(getCredentialsEffect(...args));
 }

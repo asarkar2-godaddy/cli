@@ -1,4 +1,5 @@
 import type { Stats } from "node:fs";
+import * as Effect from "effect/Effect";
 import { readdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { Result } from "../../shared/types";
@@ -27,7 +28,7 @@ const SOURCE_EXTENSIONS = [".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"];
  * }
  * ```
  */
-export async function findFilesToScan(
+async function findFilesToScanPromise(
 	rootPath: string,
 ): Promise<Result<string[]>> {
 	try {
@@ -125,4 +126,17 @@ async function traverseDirectory(
  */
 function isSourceFile(filePath: string): boolean {
 	return SOURCE_EXTENSIONS.some((ext) => filePath.endsWith(ext));
+}
+
+export function findFilesToScanEffect(...args: Parameters<typeof findFilesToScanPromise>): Effect.Effect<Awaited<ReturnType<typeof findFilesToScanPromise>>, unknown, never> {
+	return Effect.tryPromise({
+		try: () => findFilesToScanPromise(...args),
+		catch: (error) => error,
+	});
+}
+
+export function findFilesToScan(
+	...args: Parameters<typeof findFilesToScanPromise>
+): Promise<Awaited<ReturnType<typeof findFilesToScanPromise>>> {
+	return Effect.runPromise(findFilesToScanEffect(...args));
 }

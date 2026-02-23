@@ -24,6 +24,7 @@ All executable commands emit JSON envelopes:
 `--help` remains standard CLI help text.
 `--output` has been removed; all executable command paths return JSON envelopes.
 Use `--pretty` to format envelopes with 2-space indentation for human readability.
+Long-running operations can stream typed NDJSON events with `--follow`, ending with a terminal `result` or `error` event.
 
 ## Root Discovery
 
@@ -68,7 +69,7 @@ Returns environment/auth snapshots and the full command tree.
 - `godaddy application archive <name>`
 - `godaddy application init [--name <name>] [--description <description>] [--url <url>] [--proxy-url <proxyUrl>] [--scopes <scopes>] [--config <path>] [--environment <env>]`
 - `godaddy application release <name> --release-version <version> [--description <description>] [--config <path>] [--environment <env>]`
-- `godaddy application deploy <name> [--config <path>] [--environment <env>]`
+- `godaddy application deploy <name> [--config <path>] [--environment <env>] [--follow]`
 
 #### Application Add
 

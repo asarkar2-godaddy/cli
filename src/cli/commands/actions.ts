@@ -1,3 +1,4 @@
+import * as Effect from "effect/Effect";
 import { mapRuntimeError } from "../agent/errors";
 import { nextActionsFor } from "../agent/next-actions";
 import {
@@ -1803,35 +1804,37 @@ export function createActionsCommand(): Command {
 		"Manage application actions",
 	);
 
-	actions.action(async () => {
-		const node = findRegistryNodeById(commandIds.actionsGroup);
-		if (!node) {
-			const mapped = mapRuntimeError(
-				new Error("Actions command registry metadata is missing"),
-			);
-			emitError(
-				currentCommandString(),
-				{ message: mapped.message, code: mapped.code },
-				mapped.fix,
-				nextActionsFor(commandIds.root),
-			);
-			return;
-		}
+	actions.action(() =>
+		Effect.sync(() => {
+			const node = findRegistryNodeById(commandIds.actionsGroup);
+			if (!node) {
+				const mapped = mapRuntimeError(
+					new Error("Actions command registry metadata is missing"),
+				);
+				emitError(
+					currentCommandString(),
+					{ message: mapped.message, code: mapped.code },
+					mapped.fix,
+					nextActionsFor(commandIds.root),
+				);
+				return;
+			}
 
-		emitSuccess(
-			currentCommandString(),
-			registryNodeToResult(node),
-			nextActionsFor(commandIds.actionsGroup),
-		);
-	});
+			emitSuccess(
+				currentCommandString(),
+				registryNodeToResult(node),
+				nextActionsFor(commandIds.actionsGroup),
+			);
+		}),
+	);
 
 	actions
 		.command("list")
 		.description(
 			"List all available actions that an application developer can hook into",
 		)
-		.action(async () => {
-			try {
+		.action(() =>
+			Effect.sync(() => {
 				const truncated = truncateList(AVAILABLE_ACTIONS, "actions-list");
 				emitSuccess(
 					currentCommandString(),
@@ -1846,23 +1849,27 @@ export function createActionsCommand(): Command {
 						actionName: truncated.items[0],
 					}),
 				);
-			} catch (error) {
-				const mapped = mapRuntimeError(error);
-				emitError(
-					currentCommandString(),
-					{ message: mapped.message, code: mapped.code },
-					mapped.fix,
-					nextActionsFor(commandIds.actionsGroup),
-				);
-			}
-		});
+			}).pipe(
+				Effect.catchAll((error) =>
+					Effect.sync(() => {
+						const mapped = mapRuntimeError(error);
+						emitError(
+							currentCommandString(),
+							{ message: mapped.message, code: mapped.code },
+							mapped.fix,
+							nextActionsFor(commandIds.actionsGroup),
+						);
+					}),
+				),
+			),
+		);
 
 	actions
 		.command("describe")
 		.description("Show detailed interface information for a specific action")
 		.argument("<action>", "Action name")
-		.action(async (actionName: string) => {
-			try {
+		.action((actionName: string) =>
+			Effect.sync(() => {
 				if (!AVAILABLE_ACTIONS.includes(actionName)) {
 					throw new Error(`Action '${actionName}' not found`);
 				}
@@ -1895,16 +1902,20 @@ export function createActionsCommand(): Command {
 					},
 					nextActionsFor(commandIds.actionsDescribe, { actionName }),
 				);
-			} catch (error) {
-				const mapped = mapRuntimeError(error);
-				emitError(
-					currentCommandString(),
-					{ message: mapped.message, code: mapped.code },
-					mapped.fix,
-					nextActionsFor(commandIds.actionsGroup),
-				);
-			}
-		});
+			}).pipe(
+				Effect.catchAll((error) =>
+					Effect.sync(() => {
+						const mapped = mapRuntimeError(error);
+						emitError(
+							currentCommandString(),
+							{ message: mapped.message, code: mapped.code },
+							mapped.fix,
+							nextActionsFor(commandIds.actionsGroup),
+						);
+					}),
+				),
+			),
+		);
 
 	return actions;
 }
