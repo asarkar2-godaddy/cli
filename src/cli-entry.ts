@@ -45,6 +45,52 @@ const EFFECT_CLI_CONFIG = CliConfig.make({
 	showBuiltIns: true,
 });
 
+function isShortVerboseCluster(token: string): boolean {
+	return /^-v{2,}$/.test(token);
+}
+
+function normalizeVerbosityArgs(argv: ReadonlyArray<string>): string[] {
+	const retained: string[] = [];
+	let verbosity = 0;
+
+	for (const token of argv) {
+		if (token === "--debug") {
+			verbosity = Math.max(verbosity, 2);
+			continue;
+		}
+
+		if (token === "--info" || token === "--verbose") {
+			verbosity += 1;
+			continue;
+		}
+
+		if (token === "-v") {
+			verbosity += 1;
+			continue;
+		}
+
+		if (isShortVerboseCluster(token)) {
+			const level = token.length - 1;
+			verbosity += level;
+			continue;
+		}
+
+		retained.push(token);
+	}
+
+	const normalizedVerbosity = Math.min(verbosity, 2);
+
+	if (normalizedVerbosity >= 2) {
+		return ["--debug", ...retained];
+	}
+
+	if (normalizedVerbosity === 1) {
+		return ["--verbose", ...retained];
+	}
+
+	return retained;
+}
+
 function buildOptionsParser(
 	options: ReadonlyArray<Command["options"][number]>,
 ): Options.Options<unknown> {
@@ -397,10 +443,11 @@ export function createCliProgram(): Command {
 export async function runCli(argv: ReadonlyArray<string>): Promise<void> {
 	const rootCommand = createCliProgram();
 	const descriptor = buildDescriptor(rootCommand);
+	const normalizedArgv = normalizeVerbosityArgs(argv);
 
 	const parseEffect = CommandDescriptor.parse(
 		descriptor,
-		[rootCommand.name, ...argv],
+		[rootCommand.name, ...normalizedArgv],
 		EFFECT_CLI_CONFIG,
 	).pipe(Effect.provide(NodeContext.layer));
 

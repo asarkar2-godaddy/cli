@@ -89,4 +89,56 @@ describe("CLI Smoke Tests", () => {
 		expect(result.stdout).toContain("COMMANDS");
 		expect(result.stdout).toContain("application");
 	});
+
+	it("-v enables basic verbose mode", () => {
+		const result = runCli(["-v"]);
+		expect(result.status).toBe(0);
+
+		const payload = JSON.parse(result.stdout);
+		expect(payload.ok).toBe(true);
+		expect(payload.command).toBe("godaddy -v");
+		expect(result.stderr).toContain("(verbose output enabled)");
+		expect(result.stderr).not.toContain("full details");
+	});
+
+	it("-vv enables full verbose mode", () => {
+		const result = runCli(["-vv"]);
+		expect(result.status).toBe(0);
+
+		const payload = JSON.parse(result.stdout);
+		expect(payload.ok).toBe(true);
+		expect(payload.command).toBe("godaddy -vv");
+		expect(result.stderr).toContain("(verbose output enabled: full details)");
+	});
+
+	it("repeated -v flags enable full verbose mode", () => {
+		const result = runCli(["-v", "-v"]);
+		expect(result.status).toBe(0);
+
+		const payload = JSON.parse(result.stdout);
+		expect(payload.ok).toBe(true);
+		expect(payload.command).toBe("godaddy -v -v");
+		expect(result.stderr).toContain("(verbose output enabled: full details)");
+	});
+
+	it("--info aliases to basic verbose mode", () => {
+		const result = runCli(["--info"]);
+		expect(result.status).toBe(0);
+
+		const payload = JSON.parse(result.stdout);
+		expect(payload.ok).toBe(true);
+		expect(payload.command).toBe("godaddy --info");
+		expect(result.stderr).toContain("(verbose output enabled)");
+		expect(result.stderr).not.toContain("full details");
+	});
+
+	it("--debug aliases to full verbose mode", () => {
+		const result = runCli(["--debug"]);
+		expect(result.status).toBe(0);
+
+		const payload = JSON.parse(result.stdout);
+		expect(payload.ok).toBe(true);
+		expect(payload.command).toBe("godaddy --debug");
+		expect(result.stderr).toContain("(verbose output enabled: full details)");
+	});
 });
