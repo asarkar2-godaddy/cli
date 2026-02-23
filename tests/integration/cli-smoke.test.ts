@@ -63,10 +63,30 @@ describe("CLI Smoke Tests", () => {
 		expect(payload.error.code).toBe("UNSUPPORTED_OPTION");
 	});
 
+	it("application info requires <name> at parse-time", () => {
+		const result = runCli(["application", "info"]);
+		expect(result.status).toBe(1);
+
+		const payload = JSON.parse(result.stdout);
+		expect(payload.ok).toBe(false);
+		expect(payload.error.code).toBe("VALIDATION_ERROR");
+		expect(payload.error.message).toContain("Missing argument <name>");
+	});
+
+	it("application validate requires <name> at parse-time", () => {
+		const result = runCli(["application", "validate"]);
+		expect(result.status).toBe(1);
+
+		const payload = JSON.parse(result.stdout);
+		expect(payload.ok).toBe(false);
+		expect(payload.error.code).toBe("VALIDATION_ERROR");
+		expect(payload.error.message).toContain("Missing argument <name>");
+	});
+
 	it("--help still prints framework help text", () => {
 		const result = runCli(["--help"]);
 		expect(result.status).toBe(0);
-		expect(result.stdout).toContain("Usage");
+		expect(result.stdout).toContain("COMMANDS");
 		expect(result.stdout).toContain("application");
 	});
 });

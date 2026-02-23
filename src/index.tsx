@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
-import { CommanderError } from "commander";
-import { createCliProgram } from "./cli-entry";
-import { mapCommanderError, mapRuntimeError } from "./cli/agent/errors";
+import { runCli } from "./cli-entry";
+import { mapRuntimeError } from "./cli/agent/errors";
 import { commandIds } from "./cli/agent/registry";
 import { nextActionsFor } from "./cli/agent/next-actions";
 import {
@@ -17,31 +16,10 @@ import {
  */
 async function main(): Promise<void> {
 	resetEnvelopeWriter();
-	const program = createCliProgram();
 
 	try {
-		await program.parseAsync(process.argv);
+		await runCli(process.argv.slice(2));
 	} catch (error) {
-		if (error instanceof CommanderError) {
-			if (
-				error.code === "commander.helpDisplayed" ||
-				error.code === "commander.version"
-			) {
-				return;
-			}
-
-			if (!hasWrittenEnvelope()) {
-				const mapped = mapCommanderError(error);
-				emitError(
-					currentCommandString(),
-					{ message: mapped.message, code: mapped.code },
-					mapped.fix,
-					nextActionsFor(commandIds.root),
-				);
-			}
-			return;
-		}
-
 		if (!hasWrittenEnvelope()) {
 			const mapped = mapRuntimeError(error);
 			emitError(

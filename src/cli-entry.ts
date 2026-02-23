@@ -1,48 +1,310 @@
 #!/usr/bin/env node
 
-import { Command } from "commander";
+import * as Args from "@effect/cli/Args";
+import * as CliConfig from "@effect/cli/CliConfig";
+import * as CommandDescriptor from "@effect/cli/CommandDescriptor";
+import * as HelpDoc from "@effect/cli/HelpDoc";
+import * as Options from "@effect/cli/Options";
+import * as NodeContext from "@effect/platform-node/NodeContext";
 import packageJson from "../package.json";
 import { createAuthCommand, createEnvCommand } from "./cli";
+import { mapLeftoverTokens, mapRuntimeError, mapValidationError } from "./cli/agent/errors";
 import { commandIds, getRootCommandTree } from "./cli/agent/registry";
 import { nextActionsFor } from "./cli/agent/next-actions";
-import { currentCommandString, emitSuccess } from "./cli/agent/respond";
+import {
+	currentCommandString,
+	emitError,
+	emitSuccess,
+} from "./cli/agent/respond";
 import { createActionsCommand } from "./cli/commands/actions";
 import { createApplicationCommand } from "./cli/commands/application";
+import { Command, getCanonicalPath } from "./cli/command-model";
 import { createWebhookCommand } from "./cli/commands/webhook";
 import { envGet, validateEnvironment } from "./core/environment";
 import { setDebugMode } from "./services/logger";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Option from "effect/Option";
 
-/**
- * Agent-first CLI entry point using commander.js
- */
-function configureCommandOutput(command: Command): void {
-	command
-		.showSuggestionAfterError(false)
-		.showHelpAfterError(false)
-		.configureOutput({
-			writeOut: (str) => {
-				process.stdout.write(str);
-			},
-			writeErr: () => {
-				// Parse and command errors are emitted as JSON envelopes elsewhere.
-			},
-		})
-		.exitOverride();
+type Descriptor = CommandDescriptor.Command<any>;
 
-	for (const subcommand of command.commands) {
-		configureCommandOutput(subcommand);
+const EFFECT_CLI_CONFIG = CliConfig.make({
+	isCaseSensitive: true,
+	finalCheckBuiltIn: true,
+	showBuiltIns: true,
+});
+
+function buildOptionsParser(options: ReadonlyArray<Command["options"][number]>) {
+	if (options.length === 0) {
+		return Options.none;
+	}
+
+	const optionMap: Record<string, Options.Options<any>> = {};
+
+	for (const option of options) {
+		let parser: Options.Options<any> = option.takesValue
+			? Options.text(option.longName)
+			: Options.boolean(option.longName);
+
+		if (option.shortName) {
+			parser = Options.withAlias(parser, option.shortName);
+		}
+
+		if (option.description) {
+			parser = Options.withDescription(parser, option.description);
+		}
+
+		if (option.takesValue && !option.required) {
+			parser = Options.optional(parser);
+		}
+
+		optionMap[option.key] = parser;
+	}
+
+	return Options.all(optionMap);
+}
+
+function buildArgsParser(args: ReadonlyArray<Command["arguments"][number]>) {
+	if (args.length === 0) {
+		return undefined;
+	}
+
+	if (args.length === 1) {
+		const definition = args[0];
+		let parser: Args.Args<any> = Args.text({ name: definition.name });
+
+		if (!definition.required) {
+			parser = Args.optional(parser);
+		}
+
+		if (definition.description) {
+			parser = Args.withDescription(parser, definition.description);
+		}
+
+		return parser;
+	}
+
+	const parsers = args.map((definition) => {
+		let parser: Args.Args<any> = Args.text({ name: definition.name });
+		if (!definition.required) {
+			parser = Args.optional(parser);
+		}
+		if (definition.description) {
+			parser = Args.withDescription(parser, definition.description);
+		}
+		return parser;
+	});
+
+	return Args.all(parsers);
+}
+
+function buildDescriptor(command: Command, overrideName?: string): Descriptor {
+	const optionsParser = buildOptionsParser(command.options);
+	const argsParser = buildArgsParser(command.arguments);
+	const name = overrideName ?? command.name;
+
+	let descriptor: Descriptor =
+		typeof argsParser === "undefined"
+			? CommandDescriptor.make(name, optionsParser)
+			: CommandDescriptor.make(name, optionsParser, argsParser);
+
+	const description = command.getDescription();
+	if (description.length > 0) {
+		descriptor = CommandDescriptor.withDescription(descriptor, description);
+	}
+
+	if (command.commands.length > 0) {
+		const subcommands: Array<readonly [string, Descriptor]> = [];
+
+		for (const child of command.commands) {
+			subcommands.push([child.name, buildDescriptor(child)]);
+
+			for (const alias of child.getAliases()) {
+				subcommands.push([child.name, buildDescriptor(child, alias)]);
+			}
+		}
+
+		descriptor = CommandDescriptor.withSubcommands(
+			descriptor,
+			subcommands as [
+				readonly [string, Descriptor],
+				...Array<readonly [string, Descriptor]>,
+			],
+		);
+	}
+
+	return descriptor;
+}
+
+function unwrapOptionalValue<T>(value: unknown): T | undefined {
+	if (
+		typeof value === "object" &&
+		value !== null &&
+		("_tag" in value || "_id" in value) &&
+		Option.isSome(value as Option.Option<T>)
+	) {
+		return (value as Option.Some<T>).value;
+	}
+
+	return undefined;
+}
+
+function extractCommandOptions(
+	command: Command,
+	parsedValue: Record<string, any>,
+): Record<string, unknown> {
+	const parsedOptions = (parsedValue.options ?? {}) as Record<string, unknown>;
+	const options: Record<string, unknown> = {};
+
+	for (const option of command.options) {
+		const rawValue = parsedOptions[option.key];
+
+		if (!option.takesValue) {
+			options[option.key] = Boolean(rawValue);
+			continue;
+		}
+
+		let normalizedValue = option.required
+			? rawValue
+			: unwrapOptionalValue<string>(rawValue);
+
+		if (typeof normalizedValue === "string" && option.parser) {
+			normalizedValue = option.parser(normalizedValue);
+		}
+
+		options[option.key] = normalizedValue;
+	}
+
+	return options;
+}
+
+function extractCommandArguments(command: Command, parsedValue: Record<string, any>) {
+	if (command.arguments.length === 0) {
+		return [];
+	}
+
+	const parsedArgs = parsedValue.args;
+
+	if (command.arguments.length === 1) {
+		const [argument] = command.arguments;
+		return [argument.required ? parsedArgs : unwrapOptionalValue(parsedArgs)];
+	}
+
+	if (!Array.isArray(parsedArgs)) {
+		return [];
+	}
+
+	return command.arguments.map((argument, index) =>
+		argument.required
+			? parsedArgs[index]
+			: unwrapOptionalValue(parsedArgs[index]),
+	);
+}
+
+function resolveParsedCommand(
+	rootCommand: Command,
+	parsedRootValue: Record<string, any>,
+): { command: Command; parsedValue: Record<string, any> } {
+	let currentCommand = rootCommand;
+	let currentValue = parsedRootValue;
+
+	while (true) {
+		const subcommand = currentValue.subcommand;
+		if (
+			typeof subcommand !== "object" ||
+			subcommand === null ||
+			!("_tag" in subcommand) ||
+			Option.isNone(subcommand as Option.Option<unknown>)
+		) {
+			break;
+		}
+
+		const [subcommandName, nextValue] = (subcommand as Option.Some<[
+			string,
+			Record<string, any>,
+		]>).value;
+		const nextCommand = currentCommand.commands.find(
+			(command) => command.name === subcommandName,
+		);
+
+		if (!nextCommand) {
+			throw new Error(`Unable to resolve parsed subcommand: ${subcommandName}`);
+		}
+
+		currentCommand = nextCommand;
+		currentValue = nextValue;
+	}
+
+	return { command: currentCommand, parsedValue: currentValue };
+}
+
+async function invokeCommandAction(
+	command: Command,
+	parsedValue: Record<string, any>,
+): Promise<void> {
+	const action = command.getAction();
+
+	if (!action) {
+		throw new Error(`No action configured for command '${getCanonicalPath(command)}'`);
+	}
+
+	const argumentsList = extractCommandArguments(command, parsedValue);
+	const options = extractCommandOptions(command, parsedValue);
+
+	if (argumentsList.length > 0 && command.options.length > 0) {
+		await action(...argumentsList, options);
+		return;
+	}
+
+	if (argumentsList.length > 0) {
+		await action(...argumentsList);
+		return;
+	}
+
+	if (command.options.length > 0) {
+		await action(options);
+		return;
+	}
+
+	await action();
+}
+
+function applyGlobalOptions(
+	rootCommand: Command,
+	parsedRootValue: Record<string, any>,
+): void {
+	const options = extractCommandOptions(rootCommand, parsedRootValue);
+
+	if (options.debug === true) {
+		setDebugMode(true);
+	}
+
+	const environment = typeof options.env === "string" ? options.env : undefined;
+	if (environment) {
+		validateEnvironment(environment);
 	}
 }
 
-export function createCliProgram(): Command {
-	const program = new Command();
+function emitRootError(details: { message: string; code: string; fix: string }): void {
+	emitError(
+		currentCommandString(),
+		{ message: details.message, code: details.code },
+		details.fix,
+		nextActionsFor(commandIds.root),
+	);
+}
 
-	program
-		.name("godaddy")
+function writeHelp(helpDoc: HelpDoc.HelpDoc): void {
+	const text = HelpDoc.toAnsiText(helpDoc);
+	process.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
+}
+
+export function createCliProgram(): Command {
+	const program = new Command("godaddy")
 		.description(
 			"GoDaddy Developer Platform CLI - Agent-first JSON interface for platform operations",
 		)
-		.version(packageJson.version)
 		.option(
 			"-e, --env <environment>",
 			"Set the target environment for commands (ote, prod)",
@@ -86,24 +348,74 @@ export function createCliProgram(): Command {
 			);
 		});
 
-	program.hook("preAction", async (thisCommand) => {
-		const options = thisCommand.opts();
-
-		if (options.debug) {
-			setDebugMode(true);
-		}
-
-		if (options.env) {
-			validateEnvironment(options.env);
-		}
-	});
-
 	program.addCommand(createEnvCommand());
 	program.addCommand(createAuthCommand());
 	program.addCommand(createActionsCommand());
 	program.addCommand(createApplicationCommand());
 	program.addCommand(createWebhookCommand());
-	configureCommandOutput(program);
 
 	return program;
+}
+
+export async function runCli(argv: ReadonlyArray<string>): Promise<void> {
+	const rootCommand = createCliProgram();
+	const descriptor = buildDescriptor(rootCommand);
+
+	const parseEffect = CommandDescriptor.parse(
+		descriptor,
+		[rootCommand.name, ...argv],
+		EFFECT_CLI_CONFIG,
+	).pipe(Effect.provide(NodeContext.layer));
+
+	const parseExit = await Effect.runPromiseExit(parseEffect);
+
+	if (Exit.isFailure(parseExit)) {
+		const validationError = Option.getOrUndefined(
+			Cause.failureOption(parseExit.cause),
+		);
+
+		if (validationError) {
+			emitRootError(mapValidationError(validationError));
+			return;
+		}
+
+		throw Cause.squash(parseExit.cause);
+	}
+
+	const directive = parseExit.value;
+
+	if (directive._tag === "BuiltIn") {
+		if (directive.option._tag === "ShowHelp") {
+			writeHelp(directive.option.helpDoc);
+			return;
+		}
+
+		if (directive.option._tag === "ShowVersion") {
+			process.stdout.write(`${packageJson.version}\n`);
+			return;
+		}
+
+		emitRootError(
+			mapRuntimeError(
+				new Error(
+					`Built-in option '${directive.option._tag}' is not supported in this runtime`,
+				),
+			),
+		);
+		return;
+	}
+
+	if (directive.leftover.length > 0) {
+		emitRootError(mapLeftoverTokens(directive.leftover));
+		return;
+	}
+
+	applyGlobalOptions(rootCommand, directive.value);
+
+	const { command, parsedValue } = resolveParsedCommand(
+		rootCommand,
+		directive.value,
+	);
+
+	await invokeCommandAction(command, parsedValue);
 }

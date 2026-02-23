@@ -1,6 +1,5 @@
 /**
- * Traditional CLI interface exports
- * Commander.js commands and CLI-specific utilities
+ * CLI command model exports
  */
 
 export * from "./types";

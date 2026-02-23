@@ -1,4 +1,5 @@
-import type { CommanderError } from "commander";
+import * as HelpDoc from "@effect/cli/HelpDoc";
+import type { ValidationError as EffectValidationError } from "@effect/cli/ValidationError";
 import {
 	AuthenticationError,
 	CliError,
@@ -11,6 +12,21 @@ export interface AgentErrorDetails {
 	message: string;
 	code: string;
 	fix: string;
+}
+
+function stripAnsi(value: string): string {
+	return value.replace(/\u001b\[[0-9;]*m/g, "");
+}
+
+function formatValidationMessage(error: EffectValidationError): string {
+	if ("error" in error && error.error) {
+		const text = stripAnsi(HelpDoc.toAnsiText(error.error)).trim();
+		if (text.length > 0) {
+			return text;
+		}
+	}
+
+	return "Invalid command input";
 }
 
 function fromCliError(error: CliError): AgentErrorDetails {
@@ -55,6 +71,14 @@ function fromCliError(error: CliError): AgentErrorDetails {
 
 function inferFromMessage(message: string): AgentErrorDetails {
 	const lower = message.toLowerCase();
+
+	if (lower.includes("--output")) {
+		return {
+			message,
+			code: "UNSUPPORTED_OPTION",
+			fix: "Remove --output; all commands now emit JSON envelopes.",
+		};
+	}
 
 	if (lower.includes("security") || lower.includes("blocked")) {
 		return {
@@ -103,53 +127,78 @@ export function mapRuntimeError(error: unknown): AgentErrorDetails {
 	};
 }
 
-export function mapCommanderError(error: CommanderError): AgentErrorDetails {
-	if (error.code === "commander.unknownCommand") {
+export function mapValidationError(
+	error: EffectValidationError,
+): AgentErrorDetails {
+	const message = formatValidationMessage(error);
+
+	if (message.includes("--output")) {
 		return {
-			message: error.message,
-			code: "COMMAND_NOT_FOUND",
-			fix: "Run: godaddy",
+			message,
+			code: "UNSUPPORTED_OPTION",
+			fix: "Remove --output; all commands now emit JSON envelopes.",
 		};
 	}
 
-	if (error.code === "commander.unknownOption") {
-		if (error.message.includes("--output")) {
+	switch (error._tag) {
+		case "CommandMismatch":
 			return {
-				message: error.message,
-				code: "UNSUPPORTED_OPTION",
-				fix: "Remove --output; all commands now emit JSON envelopes.",
+				message,
+				code: "COMMAND_NOT_FOUND",
+				fix: "Run: godaddy",
 			};
-		}
+		case "MissingFlag":
+		case "MissingValue":
+		case "InvalidArgument":
+		case "InvalidValue":
+		case "MultipleValuesDetected":
+		case "NoBuiltInMatch":
+		case "UnclusteredFlag":
+		case "MissingSubcommand":
+		case "CorrectedFlag":
+			return {
+				message,
+				code: "VALIDATION_ERROR",
+				fix: "Provide valid arguments/options shown in --help and retry.",
+			};
+		case "HelpRequested":
+			return {
+				message,
+				code: "VALIDATION_ERROR",
+				fix: "Use --help for command usage details.",
+			};
+		default:
+			return {
+				message,
+				code: "VALIDATION_ERROR",
+				fix: "Check command usage with --help and retry.",
+			};
+	}
+}
 
+export function mapLeftoverTokens(
+	leftover: ReadonlyArray<string>,
+): AgentErrorDetails {
+	if (leftover.some((token) => token === "--output" || token.startsWith("--output="))) {
 		return {
-			message: error.message,
+			message: `Unsupported option: ${leftover.join(" ")}`,
+			code: "UNSUPPORTED_OPTION",
+			fix: "Remove --output; all commands now emit JSON envelopes.",
+		};
+	}
+
+	const optionToken = leftover.find((token) => token.startsWith("-"));
+	if (optionToken) {
+		return {
+			message: `Unsupported option: ${optionToken}`,
 			code: "VALIDATION_ERROR",
 			fix: "Remove unsupported options and rerun the command.",
 		};
 	}
 
-	if (
-		error.code === "commander.missingArgument" ||
-		error.code === "commander.optionMissingArgument"
-	) {
-		return {
-			message: error.message,
-			code: "VALIDATION_ERROR",
-			fix: "Provide all required arguments and options shown in --help.",
-		};
-	}
-
-	if (error.code === "commander.excessArguments") {
-		return {
-			message: error.message,
-			code: "COMMAND_NOT_FOUND",
-			fix: "Run: godaddy",
-		};
-	}
-
 	return {
-		message: error.message,
-		code: "VALIDATION_ERROR",
-		fix: "Check command usage with --help and retry.",
+		message: `Unexpected trailing arguments: ${leftover.join(" ")}`,
+		code: "COMMAND_NOT_FOUND",
+		fix: "Run: godaddy",
 	};
 }

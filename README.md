@@ -22,6 +22,7 @@ All executable commands emit JSON envelopes:
 ```
 
 `--help` remains standard CLI help text.
+`--output` has been removed; all executable command paths return JSON envelopes.
 
 ## Root Discovery
 

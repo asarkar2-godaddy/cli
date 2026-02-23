@@ -1,4 +1,4 @@
-import { Command } from "commander";
+import { Command } from "../command-model";
 import { join, resolve } from "node:path";
 import type {
 	Application,

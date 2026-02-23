@@ -1,4 +1,4 @@
-import { Command } from "commander";
+import { Command } from "../command-model";
 import { envGet } from "../../core/environment";
 import { mapRuntimeError } from "../agent/errors";
 import {
