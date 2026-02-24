@@ -115,11 +115,7 @@ export function getExtensionsEffect(
 		const rootPackageJson = readPackageJson(rootPackageJsonPath);
 		const workspaces = rootPackageJson.workspaces as string[] | undefined;
 
-		if (
-			!workspaces ||
-			!Array.isArray(workspaces) ||
-			workspaces.length === 0
-		) {
+		if (!workspaces || !Array.isArray(workspaces) || workspaces.length === 0) {
 			return yield* Effect.fail(
 				new ConfigurationError({
 					message: `No extensions directory found at ${extensionsPath} and no workspaces defined in package.json. Either create ${extensionsDir}/ directory or add workspaces to package.json.`,
@@ -137,7 +133,10 @@ export function getExtensionsEffect(
 				const baseDir = workspace.replace("/*", "");
 				const basePath = join(repoRoot, baseDir);
 
-				if (nodeFs.existsSync(basePath) && nodeFs.statSync(basePath).isDirectory()) {
+				if (
+					nodeFs.existsSync(basePath) &&
+					nodeFs.statSync(basePath).isDirectory()
+				) {
 					const entries = nodeFs.readdirSync(basePath, {
 						withFileTypes: true,
 					});

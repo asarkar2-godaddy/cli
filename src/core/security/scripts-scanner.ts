@@ -35,9 +35,7 @@ const LIFECYCLE_SCRIPTS = ["install", "postinstall", "preinstall"] as const;
  * }
  * ```
  */
-export function scanPackageScripts(
-	pkgPath: string,
-): Finding[] {
+export function scanPackageScripts(pkgPath: string): Finding[] {
 	const content = nodeFs.readFileSync(pkgPath, "utf-8");
 	const pkg = JSON.parse(content) as Record<string, unknown>;
 	const findings: Finding[] = [];

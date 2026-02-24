@@ -155,10 +155,13 @@ describe("Extension Entry Point Resolution", () => {
 			const entryPath = path.join(srcDir, "index.ts");
 			fs.writeFileSync(entryPath, "export {}");
 
-			const result = resolveEntryPoint({
-				packageDir: tempDir,
-				packageJson: {},
-			}, nodeFs);
+			const result = resolveEntryPoint(
+				{
+					packageDir: tempDir,
+					packageJson: {},
+				},
+				nodeFs,
+			);
 
 			expect(result.entryPath).toBe(entryPath);
 			expect(result.resolvedFrom).toBe("fallback");
@@ -170,10 +173,13 @@ describe("Extension Entry Point Resolution", () => {
 			const entryPath = path.join(srcDir, "index.tsx");
 			fs.writeFileSync(entryPath, "export {}");
 
-			const result = resolveEntryPoint({
-				packageDir: tempDir,
-				packageJson: {},
-			}, nodeFs);
+			const result = resolveEntryPoint(
+				{
+					packageDir: tempDir,
+					packageJson: {},
+				},
+				nodeFs,
+			);
 
 			expect(result.entryPath).toBe(entryPath);
 			expect(result.resolvedFrom).toBe("fallback");
@@ -185,10 +191,13 @@ describe("Extension Entry Point Resolution", () => {
 			const entryPath = path.join(srcDir, "index.mts");
 			fs.writeFileSync(entryPath, "export {}");
 
-			const result = resolveEntryPoint({
-				packageDir: tempDir,
-				packageJson: {},
-			}, nodeFs);
+			const result = resolveEntryPoint(
+				{
+					packageDir: tempDir,
+					packageJson: {},
+				},
+				nodeFs,
+			);
 
 			expect(result.entryPath).toBe(entryPath);
 			expect(result.resolvedFrom).toBe("fallback");
@@ -198,10 +207,13 @@ describe("Extension Entry Point Resolution", () => {
 			const entryPath = path.join(tempDir, "index.ts");
 			fs.writeFileSync(entryPath, "export {}");
 
-			const result = resolveEntryPoint({
-				packageDir: tempDir,
-				packageJson: {},
-			}, nodeFs);
+			const result = resolveEntryPoint(
+				{
+					packageDir: tempDir,
+					packageJson: {},
+				},
+				nodeFs,
+			);
 
 			expect(result.entryPath).toBe(entryPath);
 			expect(result.resolvedFrom).toBe("fallback");
@@ -211,10 +223,13 @@ describe("Extension Entry Point Resolution", () => {
 			const entryPath = path.join(tempDir, "index.mts");
 			fs.writeFileSync(entryPath, "export {}");
 
-			const result = resolveEntryPoint({
-				packageDir: tempDir,
-				packageJson: {},
-			}, nodeFs);
+			const result = resolveEntryPoint(
+				{
+					packageDir: tempDir,
+					packageJson: {},
+				},
+				nodeFs,
+			);
 
 			expect(result.entryPath).toBe(entryPath);
 			expect(result.resolvedFrom).toBe("fallback");
@@ -226,10 +241,13 @@ describe("Extension Entry Point Resolution", () => {
 			const entryPath = path.join(srcDir, "index.js");
 			fs.writeFileSync(entryPath, "module.exports = {}");
 
-			const result = resolveEntryPoint({
-				packageDir: tempDir,
-				packageJson: {},
-			}, nodeFs);
+			const result = resolveEntryPoint(
+				{
+					packageDir: tempDir,
+					packageJson: {},
+				},
+				nodeFs,
+			);
 
 			expect(result.entryPath).toBe(entryPath);
 			expect(result.resolvedFrom).toBe("fallback");
@@ -239,10 +257,13 @@ describe("Extension Entry Point Resolution", () => {
 			const entryPath = path.join(tempDir, "index.js");
 			fs.writeFileSync(entryPath, "module.exports = {}");
 
-			const result = resolveEntryPoint({
-				packageDir: tempDir,
-				packageJson: {},
-			}, nodeFs);
+			const result = resolveEntryPoint(
+				{
+					packageDir: tempDir,
+					packageJson: {},
+				},
+				nodeFs,
+			);
 
 			expect(result.entryPath).toBe(entryPath);
 			expect(result.resolvedFrom).toBe("fallback");
@@ -310,10 +331,13 @@ describe("Extension Entry Point Resolution", () => {
 
 		test("throws error when no entry point found", () => {
 			expect(() =>
-				resolveEntryPoint({
-					packageDir: tempDir,
-					packageJson: {},
-				}, nodeFs),
+				resolveEntryPoint(
+					{
+						packageDir: tempDir,
+						packageJson: {},
+					},
+					nodeFs,
+				),
 			).toThrow("No entry point found");
 		});
 

@@ -8,15 +8,15 @@ import {
 	makeGraphQLClientEffect,
 } from "@/services/http-helpers";
 import { getLogger } from "@/services/logger";
+import type { Fetch } from "@effect/platform/FetchHttpClient";
+import type { FileSystem } from "@effect/platform/FileSystem";
 import * as Effect from "effect/Effect";
 import { graphql } from "gql.tada";
-import type { Fetch } from "@effect/platform/FetchHttpClient";
 import {
 	type ConfigurationError,
 	NetworkError,
 	type ValidationError,
 } from "../../effect/errors";
-import type { FileSystem } from "@effect/platform/FileSystem";
 
 const logger = getLogger();
 

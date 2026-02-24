@@ -6,8 +6,8 @@ import {
 	authStatusEffect,
 } from "../../core/auth";
 import { envGetEffect } from "../../core/environment";
-import { EnvelopeWriter } from "../services/envelope-writer";
 import type { NextAction } from "../agent/types";
+import { EnvelopeWriter } from "../services/envelope-writer";
 
 // ---------------------------------------------------------------------------
 // Colocated next_actions
@@ -58,85 +58,99 @@ function authStatusActions(authenticated: boolean): NextAction[] {
 // Subcommands
 // ---------------------------------------------------------------------------
 
-const authLogin = Command.make(
-	"login",
-	{},
-	() =>
-		Effect.gen(function* () {
-			const writer = yield* EnvelopeWriter;
-			const loginResult = yield* authLoginEffect();
-			const environment = yield* envGetEffect().pipe(
-				Effect.map(String),
-				Effect.orElseSucceed(() => "unknown"),
-			);
+const authLogin = Command.make("login", {}, () =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		const loginResult = yield* authLoginEffect();
+		const environment = yield* envGetEffect().pipe(
+			Effect.map(String),
+			Effect.orElseSucceed(() => "unknown"),
+		);
 
-			yield* writer.emitSuccess("godaddy auth login", {
+		yield* writer.emitSuccess(
+			"godaddy auth login",
+			{
 				authenticated: loginResult.success,
 				environment,
 				expires_at: loginResult.expiresAt?.toISOString(),
-			}, authLoginActions);
-		}),
+			},
+			authLoginActions,
+		);
+	}),
 ).pipe(Command.withDescription("Login to GoDaddy Developer Platform"));
 
-const authLogout = Command.make(
-	"logout",
-	{},
-	() =>
-		Effect.gen(function* () {
-			const writer = yield* EnvelopeWriter;
-			yield* authLogoutEffect();
-			const environment = yield* envGetEffect().pipe(
-				Effect.map(String),
-				Effect.orElseSucceed(() => "unknown"),
-			);
+const authLogout = Command.make("logout", {}, () =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		yield* authLogoutEffect();
+		const environment = yield* envGetEffect().pipe(
+			Effect.map(String),
+			Effect.orElseSucceed(() => "unknown"),
+		);
 
-			yield* writer.emitSuccess(
-				"godaddy auth logout",
-				{ authenticated: false, environment },
-				authLogoutActions,
-			);
-		}),
+		yield* writer.emitSuccess(
+			"godaddy auth logout",
+			{ authenticated: false, environment },
+			authLogoutActions,
+		);
+	}),
 ).pipe(Command.withDescription("Logout and clear stored credentials"));
 
-const authStatus = Command.make(
-	"status",
-	{},
-	() =>
-		Effect.gen(function* () {
-			const writer = yield* EnvelopeWriter;
-			const status = yield* authStatusEffect();
+const authStatus = Command.make("status", {}, () =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		const status = yield* authStatusEffect();
 
-			yield* writer.emitSuccess("godaddy auth status", {
+		yield* writer.emitSuccess(
+			"godaddy auth status",
+			{
 				authenticated: status.authenticated,
 				has_token: status.hasToken,
 				token_expiry: status.tokenExpiry?.toISOString(),
 				environment: status.environment,
-			}, authStatusActions(status.authenticated));
-		}),
+			},
+			authStatusActions(status.authenticated),
+		);
+	}),
 ).pipe(Command.withDescription("Check authentication status"));
 
 // ---------------------------------------------------------------------------
 // Parent command
 // ---------------------------------------------------------------------------
 
-const authParent = Command.make(
-	"auth",
-	{},
-	() =>
-		Effect.gen(function* () {
-			const writer = yield* EnvelopeWriter;
-			yield* writer.emitSuccess("godaddy auth", {
+const authParent = Command.make("auth", {}, () =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		yield* writer.emitSuccess(
+			"godaddy auth",
+			{
 				command: "godaddy auth",
 				description: "Manage authentication with GoDaddy Developer Platform",
 				commands: [
-					{ command: "godaddy auth login", description: "Login to GoDaddy Developer Platform", usage: "godaddy auth login" },
-					{ command: "godaddy auth logout", description: "Logout and clear stored credentials", usage: "godaddy auth logout" },
-					{ command: "godaddy auth status", description: "Check authentication status", usage: "godaddy auth status" },
+					{
+						command: "godaddy auth login",
+						description: "Login to GoDaddy Developer Platform",
+						usage: "godaddy auth login",
+					},
+					{
+						command: "godaddy auth logout",
+						description: "Logout and clear stored credentials",
+						usage: "godaddy auth logout",
+					},
+					{
+						command: "godaddy auth status",
+						description: "Check authentication status",
+						usage: "godaddy auth status",
+					},
 				],
-			}, authGroupActions);
-		}),
+			},
+			authGroupActions,
+		);
+	}),
 ).pipe(
-	Command.withDescription("Manage authentication with GoDaddy Developer Platform"),
+	Command.withDescription(
+		"Manage authentication with GoDaddy Developer Platform",
+	),
 	Command.withSubcommands([authLogin, authLogout, authStatus]),
 );
 

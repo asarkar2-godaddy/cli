@@ -5,12 +5,12 @@ import {
 	parseHeadersEffect,
 	readBodyFromFileEffect,
 } from "../../../src/core/api";
-import { mockKeytar, mockValidToken } from "../../setup/system-mocks";
 import {
 	extractFailure,
 	runEffect,
 	runEffectExit,
 } from "../../setup/effect-test-utils";
+import { mockKeytar, mockValidToken } from "../../setup/system-mocks";
 
 describe("API Core Functions", () => {
 	beforeEach(() => {
@@ -38,9 +38,7 @@ describe("API Core Functions", () => {
 				userMessage: string;
 			};
 			expect(err._tag).toBe("AuthenticationError");
-			expect(err.userMessage).toContain(
-				"Unable to access secure credentials",
-			);
+			expect(err.userMessage).toContain("Unable to access secure credentials");
 			expect(fetch).not.toHaveBeenCalled();
 		});
 
@@ -123,9 +121,7 @@ describe("API Core Functions", () => {
 		});
 
 		test("handles values with equals signs", async () => {
-			const result = await runEffect(
-				parseFieldsEffect(["query=a=b&c=d"]),
-			);
+			const result = await runEffect(parseFieldsEffect(["query=a=b&c=d"]));
 			expect(result).toEqual({ query: "a=b&c=d" });
 		});
 
@@ -135,9 +131,7 @@ describe("API Core Functions", () => {
 		});
 
 		test("returns error for missing equals sign", async () => {
-			const exit = await runEffectExit(
-				parseFieldsEffect(["invalidfield"]),
-			);
+			const exit = await runEffectExit(parseFieldsEffect(["invalidfield"]));
 			const err = extractFailure(exit) as { userMessage: string };
 			expect(err.userMessage).toContain("Invalid field format");
 		});
@@ -178,33 +172,25 @@ describe("API Core Functions", () => {
 		});
 
 		test("handles header values with colons", async () => {
-			const result = await runEffect(
-				parseHeadersEffect(["X-Time: 12:30:00"]),
-			);
+			const result = await runEffect(parseHeadersEffect(["X-Time: 12:30:00"]));
 			expect(result).toEqual({ "X-Time": "12:30:00" });
 		});
 
 		test("trims whitespace from key and value", async () => {
 			const result = await runEffect(
-				parseHeadersEffect([
-					"  Content-Type  :  application/json  ",
-				]),
+				parseHeadersEffect(["  Content-Type  :  application/json  "]),
 			);
 			expect(result).toEqual({ "Content-Type": "application/json" });
 		});
 
 		test("returns error for missing colon", async () => {
-			const exit = await runEffectExit(
-				parseHeadersEffect(["InvalidHeader"]),
-			);
+			const exit = await runEffectExit(parseHeadersEffect(["InvalidHeader"]));
 			const err = extractFailure(exit) as { userMessage: string };
 			expect(err.userMessage).toContain("Invalid header format");
 		});
 
 		test("returns error for empty key", async () => {
-			const exit = await runEffectExit(
-				parseHeadersEffect([": value"]),
-			);
+			const exit = await runEffectExit(parseHeadersEffect([": value"]));
 			const err = extractFailure(exit) as { userMessage: string };
 			expect(err.userMessage).toContain("Empty header key");
 		});

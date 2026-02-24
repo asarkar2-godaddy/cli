@@ -406,15 +406,17 @@ export function run() {
 `,
 			);
 
-			getExtensionsFromConfigSpy.mockReturnValue(Effect.succeed([
-				{
-					type: "embed",
-					name: "@test/extension-upload-fail",
-					handle: "extension-upload-fail",
-					source: "index.ts",
-					targets: [{ target: "body.start" }],
-				},
-			]));
+			getExtensionsFromConfigSpy.mockReturnValue(
+				Effect.succeed([
+					{
+						type: "embed",
+						name: "@test/extension-upload-fail",
+						handle: "extension-upload-fail",
+						source: "index.ts",
+						targets: [{ target: "body.start" }],
+					},
+				]),
+			);
 
 			const artifactPath = join(testDir, "upload-fail.bundle.mjs");
 			const sourcemapPath = `${artifactPath}.map`;

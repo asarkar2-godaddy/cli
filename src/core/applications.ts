@@ -1,4 +1,6 @@
 import { resolve } from "node:path";
+import type { Fetch } from "@effect/platform/FetchHttpClient";
+import { FileSystem } from "@effect/platform/FileSystem";
 import { type ArkErrors, type } from "arktype";
 import * as Effect from "effect/Effect";
 import {
@@ -7,8 +9,6 @@ import {
 	NetworkError,
 	ValidationError,
 } from "../effect/errors";
-import { FileSystem } from "@effect/platform/FileSystem";
-import type { Fetch } from "@effect/platform/FetchHttpClient";
 import type { Keychain } from "../effect/services/keychain";
 import {
 	archiveApplicationEffect as archiveAppServiceEffect,
@@ -347,15 +347,27 @@ function callCreateApp(
 	input: Parameters<typeof createAppServiceEffect>[0],
 	opts: Parameters<typeof createAppServiceEffect>[1],
 ) {
-	return narrowResult(createAppServiceEffect(input, opts), (r) => r as CreateAppResult);
+	return narrowResult(
+		createAppServiceEffect(input, opts),
+		(r) => r as CreateAppResult,
+	);
 }
 
 function callGetApp(name: string, opts: { accessToken: string | null }) {
-	return narrowResult(getAppServiceEffect(name, opts), (r) => r as AppLookupResult);
+	return narrowResult(
+		getAppServiceEffect(name, opts),
+		(r) => r as AppLookupResult,
+	);
 }
 
-function callGetAppAndRelease(name: string, opts: { accessToken: string | null }) {
-	return narrowResult(getAppAndReleaseServiceEffect(name, opts), (r) => r as AppWithReleaseLookupResult);
+function callGetAppAndRelease(
+	name: string,
+	opts: { accessToken: string | null },
+) {
+	return narrowResult(
+		getAppAndReleaseServiceEffect(name, opts),
+		(r) => r as AppWithReleaseLookupResult,
+	);
 }
 
 function callListApps(opts: { accessToken: string | null }) {
@@ -392,7 +404,10 @@ function callCreateRelease(
 	input: Parameters<typeof createReleaseServiceEffect>[0],
 	opts: Parameters<typeof createReleaseServiceEffect>[1],
 ) {
-	return narrowResult(createReleaseServiceEffect(input, opts), (r) => r as CreateReleaseResult);
+	return narrowResult(
+		createReleaseServiceEffect(input, opts),
+		(r) => r as CreateReleaseResult,
+	);
 }
 
 // ---------------------------------------------------------------------------
@@ -405,7 +420,11 @@ function callCreateRelease(
 export function applicationInitEffect(
 	input: CreateApplicationInput,
 	environment?: Environment,
-): Effect.Effect<CreatedApplicationInfo, CliError, FileSystem | Keychain | Fetch> {
+): Effect.Effect<
+	CreatedApplicationInfo,
+	CliError,
+	FileSystem | Keychain | Fetch
+> {
 	return Effect.gen(function* () {
 		// Validate input
 		const validationResult = createApplicationInputValidator(input);

@@ -2,8 +2,8 @@
  * Shared filesystem utilities built on @effect/platform FileSystem.
  */
 
-import * as Effect from "effect/Effect";
 import { FileSystem } from "@effect/platform/FileSystem";
+import * as Effect from "effect/Effect";
 
 /**
  * Check if a file exists, returning false on any error (permission denied, etc.).

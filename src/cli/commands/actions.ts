@@ -2,13 +2,13 @@ import * as Args from "@effect/cli/Args";
 import * as Command from "@effect/cli/Command";
 import * as Effect from "effect/Effect";
 import { ValidationError } from "../../effect/errors";
-import { EnvelopeWriter } from "../services/envelope-writer";
 import { protectPayload, truncateList } from "../agent/truncation";
+import type { NextAction } from "../agent/types";
 import {
 	AVAILABLE_ACTIONS,
 	loadActionInterface,
 } from "../schemas/actions/index";
-import type { NextAction } from "../agent/types";
+import { EnvelopeWriter } from "../services/envelope-writer";
 
 // ---------------------------------------------------------------------------
 // Colocated next_actions
@@ -66,25 +66,26 @@ function actionsDescribeActions(actionName?: string): NextAction[] {
 // Subcommands
 // ---------------------------------------------------------------------------
 
-const actionsList = Command.make(
-	"list",
-	{},
-	() =>
-		Effect.gen(function* () {
-			const writer = yield* EnvelopeWriter;
-			const truncated = truncateList(
-				AVAILABLE_ACTIONS.map((name) => ({ name })),
-				"actions-list",
-			);
+const actionsList = Command.make("list", {}, () =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		const truncated = truncateList(
+			AVAILABLE_ACTIONS.map((name) => ({ name })),
+			"actions-list",
+		);
 
-			yield* writer.emitSuccess("godaddy actions list", {
+		yield* writer.emitSuccess(
+			"godaddy actions list",
+			{
 				actions: truncated.items,
 				total: truncated.metadata.total,
 				shown: truncated.metadata.shown,
 				truncated: truncated.metadata.truncated,
 				full_output: truncated.metadata.full_output,
-			}, actionsListActions(AVAILABLE_ACTIONS[0]));
-		}),
+			},
+			actionsListActions(AVAILABLE_ACTIONS[0]),
+		);
+	}),
 ).pipe(
 	Command.withDescription(
 		"List all available actions that an application developer can hook into",
@@ -122,13 +123,17 @@ const actionsDescribe = Command.make(
 				`actions-describe-${action}`,
 			);
 
-			yield* writer.emitSuccess("godaddy actions describe", {
-				...payload.value,
-				truncated: payload.metadata?.truncated ?? false,
-				total: payload.metadata?.total,
-				shown: payload.metadata?.shown,
-				full_output: payload.metadata?.full_output,
-			}, actionsDescribeActions(action));
+			yield* writer.emitSuccess(
+				"godaddy actions describe",
+				{
+					...payload.value,
+					truncated: payload.metadata?.truncated ?? false,
+					total: payload.metadata?.total,
+					shown: payload.metadata?.shown,
+					full_output: payload.metadata?.full_output,
+				},
+				actionsDescribeActions(action),
+			);
 		}),
 ).pipe(
 	Command.withDescription(
@@ -140,13 +145,12 @@ const actionsDescribe = Command.make(
 // Parent command
 // ---------------------------------------------------------------------------
 
-const actionsParent = Command.make(
-	"actions",
-	{},
-	() =>
-		Effect.gen(function* () {
-			const writer = yield* EnvelopeWriter;
-			yield* writer.emitSuccess("godaddy actions", {
+const actionsParent = Command.make("actions", {}, () =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		yield* writer.emitSuccess(
+			"godaddy actions",
+			{
 				command: "godaddy actions",
 				description: "Manage application actions",
 				commands: [
@@ -163,8 +167,10 @@ const actionsParent = Command.make(
 						usage: "godaddy actions describe <action>",
 					},
 				],
-			}, actionsGroupActions);
-		}),
+			},
+			actionsGroupActions,
+		);
+	}),
 ).pipe(
 	Command.withDescription("Manage application actions"),
 	Command.withSubcommands([actionsList, actionsDescribe]),

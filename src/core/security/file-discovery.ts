@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path";
-import * as Effect from "effect/Effect";
 import { FileSystem } from "@effect/platform/FileSystem";
+import * as Effect from "effect/Effect";
 import { ConfigurationError } from "../../effect/errors";
 import { getSecurityConfig, shouldExcludeFile } from "./config";
 
@@ -23,11 +23,12 @@ export function findFilesToScan(
 
 		// Verify root directory exists
 		const rootInfo = yield* fs.stat(absoluteRoot).pipe(
-			Effect.mapError((error) =>
-				new ConfigurationError({
-					message: error.message,
-					userMessage: `Failed to access directory: ${absoluteRoot}`,
-				}),
+			Effect.mapError(
+				(error) =>
+					new ConfigurationError({
+						message: error.message,
+						userMessage: `Failed to access directory: ${absoluteRoot}`,
+					}),
 			),
 		);
 
@@ -63,9 +64,9 @@ function traverseDirectory(
 			return;
 		}
 
-		const entries = yield* fs.readDirectory(dirPath).pipe(
-			Effect.orElseSucceed(() => [] as ReadonlyArray<string>),
-		);
+		const entries = yield* fs
+			.readDirectory(dirPath)
+			.pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<string>));
 
 		for (const entry of entries) {
 			const fullPath = join(dirPath, entry);
@@ -74,9 +75,9 @@ function traverseDirectory(
 				continue;
 			}
 
-			const info = yield* fs.stat(fullPath).pipe(
-				Effect.orElseSucceed(() => null),
-			);
+			const info = yield* fs
+				.stat(fullPath)
+				.pipe(Effect.orElseSucceed(() => null));
 
 			if (!info) continue;
 

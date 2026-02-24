@@ -2,9 +2,9 @@ import * as Exit from "effect/Exit";
 import { HttpResponse, graphql } from "msw";
 import { describe, expect, test } from "vitest";
 import { getApplicationEffect } from "../../src/services/applications";
+import { extractFailure, runEffectExit } from "../setup/effect-test-utils";
 import { server } from "../setup/msw-server";
 import { withNoAuth, withValidAuth } from "../setup/test-utils";
-import { extractFailure, runEffectExit } from "../setup/effect-test-utils";
 
 describe("GraphQL Error Handling", () => {
 	test("handles authentication error", async () => {

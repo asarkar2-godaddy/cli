@@ -1,11 +1,11 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { fileExists } from "../effect/fs-utils";
+import { FileSystem } from "@effect/platform/FileSystem";
 import type { ArkErrors } from "arktype";
 import * as Effect from "effect/Effect";
-import { FileSystem } from "@effect/platform/FileSystem";
-import { ConfigurationError, ValidationError } from "../effect/errors";
 import { CliConfig } from "../cli/services/cli-config";
+import { ConfigurationError, ValidationError } from "../effect/errors";
+import { fileExists } from "../effect/fs-utils";
 import {
 	type Config,
 	getConfigFileEffect as getConfigFile,
@@ -56,15 +56,12 @@ function getEnvironmentOverride(): Effect.Effect<
 	never,
 	never
 > {
-	return Effect.map(
-		Effect.serviceOption(CliConfig),
-		(option) => {
-			if (option._tag === "Some" && option.value.environmentOverride) {
-				return option.value.environmentOverride;
-			}
-			return _testEnvironmentOverride;
-		},
-	);
+	return Effect.map(Effect.serviceOption(CliConfig), (option) => {
+		if (option._tag === "Some" && option.value.environmentOverride) {
+			return option.value.environmentOverride;
+		}
+		return _testEnvironmentOverride;
+	});
 }
 
 /**
@@ -85,7 +82,9 @@ function getActiveEnvironmentInternalEffect(): Effect.Effect<
 		const fs = yield* FileSystem;
 		const exists = yield* fileExists(ENV_PATH);
 		if (exists) {
-			const file = yield* fs.readFileString(ENV_PATH).pipe(Effect.orElseSucceed(() => ""));
+			const file = yield* fs
+				.readFileString(ENV_PATH)
+				.pipe(Effect.orElseSucceed(() => ""));
 			if (file.trim()) {
 				return yield* Effect.try(() => validateEnvironment(file.trim())).pipe(
 					Effect.orElseSucceed(() => "ote" as Environment),
@@ -153,10 +152,13 @@ export function envSetEffect(
 		const validEnv = yield* validateEnvironmentEffect(name);
 		const fs = yield* FileSystem;
 		yield* fs.writeFileString(ENV_PATH, validEnv).pipe(
-			Effect.mapError(() => new ConfigurationError({
-				message: `Failed to write environment file: ${ENV_PATH}`,
-				userMessage: "Could not save environment setting",
-			})),
+			Effect.mapError(
+				() =>
+					new ConfigurationError({
+						message: `Failed to write environment file: ${ENV_PATH}`,
+						userMessage: "Could not save environment setting",
+					}),
+			),
 		);
 	}).pipe(
 		Effect.mapError((error): ConfigurationError | ValidationError => error),

@@ -55,7 +55,9 @@ describe("upload service", () => {
 				},
 			};
 
-			const result = await runEffect(uploadArtifactEffect(target, artifactPath));
+			const result = await runEffect(
+				uploadArtifactEffect(target, artifactPath),
+			);
 
 			expect(result).toEqual({
 				uploadId: "upload-123",

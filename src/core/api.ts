@@ -1,14 +1,14 @@
+import { Fetch } from "@effect/platform/FetchHttpClient";
+import { FileSystem } from "@effect/platform/FileSystem";
 import * as Effect from "effect/Effect";
 import { v7 as uuid } from "uuid";
-import { fileExists } from "../effect/fs-utils";
 import {
 	AuthenticationError,
 	type CliError,
 	NetworkError,
 	ValidationError,
 } from "../effect/errors";
-import { FileSystem } from "@effect/platform/FileSystem";
-import { Fetch } from "@effect/platform/FetchHttpClient";
+import { fileExists } from "../effect/fs-utils";
 import type { Keychain } from "../effect/services/keychain";
 import { getTokenInfoEffect } from "./auth";
 import { type Environment, envGetEffect, getApiUrl } from "./environment";
@@ -134,11 +134,12 @@ export function readBodyFromFileEffect(
 		}
 
 		const content = yield* fs.readFileString(filePath).pipe(
-			Effect.mapError((error) =>
-				new ValidationError({
-					message: `Failed to read file: ${error.message}`,
-					userMessage: `Could not read file: ${filePath}`,
-				}),
+			Effect.mapError(
+				(error) =>
+					new ValidationError({
+						message: `Failed to read file: ${error.message}`,
+						userMessage: `Could not read file: ${filePath}`,
+					}),
 			),
 		);
 

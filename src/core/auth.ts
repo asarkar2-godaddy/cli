@@ -1,10 +1,10 @@
 import crypto from "node:crypto";
 import http from "node:http";
 import { URL } from "node:url";
+import type { FileSystem } from "@effect/platform/FileSystem";
 import * as Effect from "effect/Effect";
 import { AuthenticationError, ConfigurationError } from "../effect/errors";
 import { Browser } from "../effect/services/browser";
-import type { FileSystem } from "@effect/platform/FileSystem";
 
 import type { Keychain } from "../effect/services/keychain";
 // loggedFetch calls globalThis.fetch directly — not through the Fetch service tag.

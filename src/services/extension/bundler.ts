@@ -6,7 +6,6 @@
 import * as nodeFs from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { fileExists } from "../../effect/fs-utils";
 import {
 	type ExtensionType,
 	buildEsbuildOptions,
@@ -17,10 +16,11 @@ import {
 	formatTimestamp,
 	shortHash,
 } from "@core/extension/naming";
+import { FileSystem } from "@effect/platform/FileSystem";
 import * as Effect from "effect/Effect";
 import * as esbuild from "esbuild";
-import { FileSystem } from "@effect/platform/FileSystem";
 import { ConfigurationError } from "../../effect/errors";
+import { fileExists } from "../../effect/fs-utils";
 import { getLogger } from "../logger";
 
 /**
@@ -97,11 +97,12 @@ export function cleanupTempDirectoryEffect(
 		const exists = yield* fileExists(tempDir);
 		if (exists) {
 			yield* fs.remove(tempDir, { recursive: true }).pipe(
-				Effect.mapError((error) =>
-					new ConfigurationError({
-						message: `Failed to cleanup temp directory: ${error.message}`,
-						userMessage: "Failed to cleanup temporary build files",
-					}),
+				Effect.mapError(
+					(error) =>
+						new ConfigurationError({
+							message: `Failed to cleanup temp directory: ${error.message}`,
+							userMessage: "Failed to cleanup temporary build files",
+						}),
 				),
 			);
 		}
@@ -121,19 +122,21 @@ export function bundleExtensionFromDirEffect(
 		// Read package.json
 		const packageJsonPath = join(extensionDir, "package.json");
 		const packageJsonContent = yield* fs.readFileString(packageJsonPath).pipe(
-			Effect.mapError((error) =>
-				new ConfigurationError({
-					message: `Failed to read package.json: ${error.message}`,
-					userMessage: "Failed to read extension package.json",
-				}),
+			Effect.mapError(
+				(error) =>
+					new ConfigurationError({
+						message: `Failed to read package.json: ${error.message}`,
+						userMessage: "Failed to read extension package.json",
+					}),
 			),
 		);
 		const packageJson = yield* Effect.try({
 			try: () => JSON.parse(packageJsonContent) as Record<string, unknown>,
-			catch: () => new ConfigurationError({
-				message: "Invalid JSON in package.json",
-				userMessage: "Failed to parse extension package.json",
-			}),
+			catch: () =>
+				new ConfigurationError({
+					message: "Invalid JSON in package.json",
+					userMessage: "Failed to parse extension package.json",
+				}),
 		});
 
 		const name = packageJson.name as string;
@@ -146,9 +149,10 @@ export function bundleExtensionFromDirEffect(
 
 		let entryResolution: ReturnType<typeof resolveEntryPoint>;
 		try {
-			entryResolution = resolveEntryPoint(
-				{ packageDir: extensionDir, packageJson },
-			);
+			entryResolution = resolveEntryPoint({
+				packageDir: extensionDir,
+				packageJson,
+			});
 		} catch (error) {
 			return yield* Effect.fail(
 				new ConfigurationError({
@@ -186,11 +190,12 @@ export function bundleExtensionEffect(
 		const extensionTempDir = join(tempRoot, pkg.name);
 
 		yield* fs.makeDirectory(extensionTempDir, { recursive: true }).pipe(
-			Effect.mapError((error) =>
-				new ConfigurationError({
-					message: `Failed to create temp directory: ${error.message}`,
-					userMessage: "Failed to create temporary build directory",
-				}),
+			Effect.mapError(
+				(error) =>
+					new ConfigurationError({
+						message: `Failed to create temp directory: ${error.message}`,
+						userMessage: "Failed to create temporary build directory",
+					}),
 			),
 		);
 
@@ -299,7 +304,8 @@ export function bundleExtensionEffect(
 				error instanceof ConfigurationError
 					? error
 					: new ConfigurationError({
-							message: "message" in error ? String(error.message) : String(error),
+							message:
+								"message" in error ? String(error.message) : String(error),
 							userMessage: "Failed to bundle extension",
 						}),
 			),

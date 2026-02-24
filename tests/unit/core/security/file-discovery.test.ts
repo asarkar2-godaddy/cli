@@ -2,8 +2,8 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findFilesToScan } from "@/core/security/file-discovery.ts";
-import { runEffect } from "../../../setup/effect-test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { runEffect } from "../../../setup/effect-test-utils";
 
 describe("File Discovery", () => {
 	let testDir: string;

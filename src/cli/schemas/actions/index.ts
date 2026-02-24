@@ -38,9 +38,7 @@ export function listActionNames(): string[] {
  * Load a single action interface by name.
  * Returns undefined if the action is not found.
  */
-export function loadActionInterface(
-	name: string,
-): ActionInterface | undefined {
+export function loadActionInterface(name: string): ActionInterface | undefined {
 	const manifest = loadManifest();
 	const filename = manifest[name];
 	if (!filename) {

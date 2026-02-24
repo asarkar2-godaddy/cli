@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { FileSystem } from "@effect/platform/FileSystem";
 import * as Effect from "effect/Effect";
 import * as ts from "typescript";
 import { buildAliasMaps } from "../../core/security/alias-builder";
@@ -15,7 +16,6 @@ import type {
 	ScanSummary,
 } from "../../core/security/types";
 import { SecurityError } from "../../effect/errors";
-import { FileSystem } from "@effect/platform/FileSystem";
 
 /**
  * Output format for scan results
@@ -272,7 +272,8 @@ export function scanBundleEffect(
 				error instanceof SecurityError
 					? error
 					: new SecurityError({
-							message: "message" in error ? String(error.message) : String(error),
+							message:
+								"message" in error ? String(error.message) : String(error),
 							userMessage: "Bundle security scan failed",
 						}),
 			),

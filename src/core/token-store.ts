@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
+import type { FileSystem } from "@effect/platform/FileSystem";
 import * as Effect from "effect/Effect";
 import { ConfigurationError } from "../effect/errors";
-import type { FileSystem } from "@effect/platform/FileSystem";
 import { Keychain, type KeychainCredential } from "../effect/services/keychain";
 import {
 	type Environment,

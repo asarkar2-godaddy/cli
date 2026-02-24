@@ -3,16 +3,18 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as Effect from "effect/Effect";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { NodeLiveLayer } from "../../../src/effect/layers/node-live";
 import {
 	detectPackageManager,
 	getExtensionsEffect,
 	readPackageJson,
 } from "../../../src/services/extension/workspace";
-import { NodeLiveLayer } from "../../../src/effect/layers/node-live";
 import { nodeFs } from "../../helpers/node-fs";
 
-function runEffect<A, E>(effect: Effect.Effect<A, E, any>): Promise<A> {
-	return Effect.runPromise(effect.pipe(Effect.provide(NodeLiveLayer)));
+function runEffect<A, E>(effect: Effect.Effect<A, E, unknown>): Promise<A> {
+	return Effect.runPromise(
+		effect.pipe(Effect.provide(NodeLiveLayer)) as Effect.Effect<A, E, never>,
+	);
 }
 
 describe("Extension Workspace", () => {
@@ -147,7 +149,9 @@ describe("Extension Workspace", () => {
 			const extensionsPath = path.join(tempDir, "extensions");
 			fs.mkdirSync(extensionsPath);
 
-			const result = await runEffect(getExtensionsEffect({ repoRoot: tempDir }));
+			const result = await runEffect(
+				getExtensionsEffect({ repoRoot: tempDir }),
+			);
 			expect(result).toEqual([]);
 		});
 
@@ -162,7 +166,9 @@ describe("Extension Workspace", () => {
 				JSON.stringify(packageJson),
 			);
 
-			const result = await runEffect(getExtensionsEffect({ repoRoot: tempDir }));
+			const result = await runEffect(
+				getExtensionsEffect({ repoRoot: tempDir }),
+			);
 			expect(result).toHaveLength(1);
 			expect(result[0]).toMatchObject({
 				name: "@test/ext1",
@@ -190,7 +196,9 @@ describe("Extension Workspace", () => {
 				JSON.stringify({ name: "ext2", version: "2.0.0" }),
 			);
 
-			const result = await runEffect(getExtensionsEffect({ repoRoot: tempDir }));
+			const result = await runEffect(
+				getExtensionsEffect({ repoRoot: tempDir }),
+			);
 			expect(result).toHaveLength(2);
 			expect(result.map((e) => e.name)).toContain("ext1");
 			expect(result.map((e) => e.name)).toContain("ext2");
@@ -210,7 +218,9 @@ describe("Extension Workspace", () => {
 			const ext2Path = path.join(extensionsPath, "ext2");
 			fs.mkdirSync(ext2Path);
 
-			const result = await runEffect(getExtensionsEffect({ repoRoot: tempDir }));
+			const result = await runEffect(
+				getExtensionsEffect({ repoRoot: tempDir }),
+			);
 			expect(result).toHaveLength(1);
 			expect(result[0].name).toBe("ext1");
 		});
@@ -228,7 +238,9 @@ describe("Extension Workspace", () => {
 				JSON.stringify({ name: "ext1" }),
 			);
 
-			const result = await runEffect(getExtensionsEffect({ repoRoot: tempDir }));
+			const result = await runEffect(
+				getExtensionsEffect({ repoRoot: tempDir }),
+			);
 			expect(result).toHaveLength(1);
 		});
 
@@ -270,7 +282,10 @@ describe("Extension Workspace", () => {
 			);
 
 			const result = await runEffect(
-				getExtensionsEffect({ repoRoot: tempDir, extensionsDir: "my-extensions" }),
+				getExtensionsEffect({
+					repoRoot: tempDir,
+					extensionsDir: "my-extensions",
+				}),
 			);
 			expect(result).toHaveLength(1);
 		});
@@ -287,7 +302,9 @@ describe("Extension Workspace", () => {
 				JSON.stringify({ name: "ext1" }),
 			);
 
-			const result = await runEffect(getExtensionsEffect({ repoRoot: tempDir }));
+			const result = await runEffect(
+				getExtensionsEffect({ repoRoot: tempDir }),
+			);
 			expect(result[0].packageManager).toBe("pnpm");
 		});
 	});
@@ -311,7 +328,9 @@ describe("Extension Workspace", () => {
 				}),
 			);
 
-			const result = await runEffect(getExtensionsEffect({ repoRoot: tempDir }));
+			const result = await runEffect(
+				getExtensionsEffect({ repoRoot: tempDir }),
+			);
 			expect(result).toHaveLength(1);
 			expect(result[0].name).toBe("@test/pkg1");
 		});
@@ -330,7 +349,9 @@ describe("Extension Workspace", () => {
 				JSON.stringify({ name: "pkg1", godaddy: { type: "extension" } }),
 			);
 
-			const result = await runEffect(getExtensionsEffect({ repoRoot: tempDir }));
+			const result = await runEffect(
+				getExtensionsEffect({ repoRoot: tempDir }),
+			);
 			expect(result).toHaveLength(1);
 			expect(result[0].name).toBe("pkg1");
 		});
@@ -358,7 +379,9 @@ describe("Extension Workspace", () => {
 				JSON.stringify({ name: "pkg1" }),
 			);
 
-			const result = await runEffect(getExtensionsEffect({ repoRoot: tempDir }));
+			const result = await runEffect(
+				getExtensionsEffect({ repoRoot: tempDir }),
+			);
 			expect(result).toHaveLength(1);
 			expect(result[0].name).toBe("ext1");
 		});
@@ -377,7 +400,9 @@ describe("Extension Workspace", () => {
 				JSON.stringify({ name: "ext1", godaddy: { extension: true } }),
 			);
 
-			const result = await runEffect(getExtensionsEffect({ repoRoot: tempDir }));
+			const result = await runEffect(
+				getExtensionsEffect({ repoRoot: tempDir }),
+			);
 			expect(result).toHaveLength(1);
 		});
 
@@ -418,7 +443,9 @@ describe("Extension Workspace", () => {
 			fs.mkdirSync(ext2Dir, { recursive: true });
 			fs.writeFileSync(path.join(ext2Dir, "package.json"), "{ invalid }");
 
-			const result = await runEffect(getExtensionsEffect({ repoRoot: tempDir }));
+			const result = await runEffect(
+				getExtensionsEffect({ repoRoot: tempDir }),
+			);
 			expect(result).toHaveLength(1);
 			expect(result[0].name).toBe("ext1");
 		});
@@ -439,7 +466,9 @@ describe("Extension Workspace", () => {
 				JSON.stringify({ version: "1.0.0", godaddy: { extension: true } }),
 			);
 
-			const result = await runEffect(getExtensionsEffect({ repoRoot: tempDir }));
+			const result = await runEffect(
+				getExtensionsEffect({ repoRoot: tempDir }),
+			);
 			expect(result).toHaveLength(0);
 		});
 
@@ -463,10 +492,15 @@ describe("Extension Workspace", () => {
 			fs.mkdirSync(pkg1Dir, { recursive: true });
 			fs.writeFileSync(
 				path.join(pkg1Dir, "package.json"),
-				JSON.stringify({ name: "ext-from-workspace", godaddy: { extension: true } }),
+				JSON.stringify({
+					name: "ext-from-workspace",
+					godaddy: { extension: true },
+				}),
 			);
 
-			const result = await runEffect(getExtensionsEffect({ repoRoot: tempDir }));
+			const result = await runEffect(
+				getExtensionsEffect({ repoRoot: tempDir }),
+			);
 			expect(result).toHaveLength(1);
 			expect(result[0].name).toBe("ext-from-dir");
 		});

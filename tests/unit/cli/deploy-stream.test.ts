@@ -16,9 +16,7 @@ function runWithCapture(
 ): Promise<CapturedEnvelope[]> {
 	return Effect.gen(function* () {
 		const { service, captured } = yield* makeTestEnvelopeWriter();
-		yield* program.pipe(
-			Effect.provide(Layer.succeed(EnvelopeWriter, service)),
-		);
+		yield* program.pipe(Effect.provide(Layer.succeed(EnvelopeWriter, service)));
 		return yield* Ref.get(captured);
 	}).pipe(Effect.runPromise);
 }

@@ -1,13 +1,25 @@
-import { vi } from "vitest";
 import * as Effect from "effect/Effect";
+import { vi } from "vitest";
 
 // Mock auth services to prevent real network calls and server startup for TUI tests
 vi.mock("../../src/core/auth", () => ({
 	getFromKeychainEffect: vi.fn().mockReturnValue(Effect.succeed("test-token")),
-	authLoginEffect: vi.fn().mockReturnValue(Effect.succeed({ success: true, accessToken: "test-token", expiresAt: new Date(Date.now() + 3600000) })),
+	authLoginEffect: vi.fn().mockReturnValue(
+		Effect.succeed({
+			success: true,
+			accessToken: "test-token",
+			expiresAt: new Date(Date.now() + 3600000),
+		}),
+	),
 	authLogoutEffect: vi.fn().mockReturnValue(Effect.void),
 	stopAuthServer: vi.fn(),
-	authStatusEffect: vi.fn().mockReturnValue(Effect.succeed({ authenticated: true, hasToken: true, environment: "ote" })),
+	authStatusEffect: vi.fn().mockReturnValue(
+		Effect.succeed({
+			authenticated: true,
+			hasToken: true,
+			environment: "ote",
+		}),
+	),
 	getAccessTokenEffect: vi.fn().mockReturnValue(Effect.succeed("test-token")),
 	getTokenInfoEffect: vi.fn().mockReturnValue(Effect.succeed(null)),
 }));

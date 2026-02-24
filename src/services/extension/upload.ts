@@ -4,10 +4,10 @@
  */
 
 import { getLogger } from "@/services/logger";
+import { Fetch } from "@effect/platform/FetchHttpClient";
+import { FileSystem } from "@effect/platform/FileSystem";
 import * as Effect from "effect/Effect";
 import { NetworkError } from "../../effect/errors";
-import { FileSystem } from "@effect/platform/FileSystem";
-import { Fetch } from "@effect/platform/FetchHttpClient";
 import type { UploadTarget } from "./presigned-url";
 
 const logger = getLogger();
@@ -64,11 +64,12 @@ export function uploadArtifactEffect(
 
 		// Read file content via platform FileSystem service
 		const fileContent = yield* fs.readFileString(filePath).pipe(
-			Effect.mapError((error) =>
-				new NetworkError({
-					message: `Failed to read artifact file: ${error.message}`,
-					userMessage: "Failed to upload extension artifact",
-				}),
+			Effect.mapError(
+				(error) =>
+					new NetworkError({
+						message: `Failed to read artifact file: ${error.message}`,
+						userMessage: "Failed to upload extension artifact",
+					}),
 			),
 		);
 
@@ -100,8 +101,7 @@ export function uploadArtifactEffect(
 		for (let attempt = 1; attempt <= maxRetries; attempt++) {
 			// Use only the requiredHeaders from the presigned URL (already signed)
 			// Filter out x-amz-meta-upload-id as it's not signed
-			const { "x-amz-meta-upload-id": _, ...headers } =
-				target.requiredHeaders;
+			const { "x-amz-meta-upload-id": _, ...headers } = target.requiredHeaders;
 
 			logger.debug(
 				{

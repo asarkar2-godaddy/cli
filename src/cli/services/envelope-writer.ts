@@ -2,13 +2,13 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
-import { CliConfig } from "./cli-config";
+import type { StreamEvent } from "../agent/stream";
 import type {
 	AgentErrorEnvelope,
 	AgentSuccessEnvelope,
 	NextAction,
 } from "../agent/types";
-import type { StreamEvent } from "../agent/stream";
+import { CliConfig } from "./cli-config";
 
 // ---------------------------------------------------------------------------
 // Service interface
@@ -219,11 +219,7 @@ export const makeTestEnvelopeWriter = (): Effect.Effect<
 			Ref.update(captured, (list) => [...list, { kind, value }]);
 
 		const service: EnvelopeWriterShape = {
-			emitSuccess: <T>(
-				command: string,
-				result: T,
-				nextActions: NextAction[],
-			) =>
+			emitSuccess: <T>(command: string, result: T, nextActions: NextAction[]) =>
 				Effect.gen(function* () {
 					const envelope: AgentSuccessEnvelope<T> = {
 						ok: true,

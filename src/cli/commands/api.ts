@@ -11,9 +11,9 @@ import {
 	readBodyFromFileEffect,
 } from "../../core/api";
 import { ValidationError } from "../../effect/errors";
+import type { NextAction } from "../agent/types";
 import { CliConfig } from "../services/cli-config";
 import { EnvelopeWriter } from "../services/envelope-writer";
-import type { NextAction } from "../agent/types";
 
 const VALID_METHODS: readonly HttpMethod[] = [
 	"GET",
@@ -162,7 +162,9 @@ const apiCommand = Command.make(
 			}
 
 			const method = methodInput as HttpMethod;
-			const fields = yield* parseFieldsEffect(normalizeStringArray(config.field));
+			const fields = yield* parseFieldsEffect(
+				normalizeStringArray(config.field),
+			);
 			const headers = yield* parseHeadersEffect(
 				normalizeStringArray(config.header),
 			);
@@ -199,16 +201,20 @@ const apiCommand = Command.make(
 				}
 			}
 
-			yield* writer.emitSuccess("godaddy api", {
-				endpoint: config.endpoint.startsWith("/")
-					? config.endpoint
-					: `/${config.endpoint}`,
-				method,
-				status: response.status,
-				status_text: response.statusText,
-				headers: config.include ? response.headers : undefined,
-				data: output ?? null,
-			}, apiRequestActions);
+			yield* writer.emitSuccess(
+				"godaddy api",
+				{
+					endpoint: config.endpoint.startsWith("/")
+						? config.endpoint
+						: `/${config.endpoint}`,
+					method,
+					status: response.status,
+					status_text: response.statusText,
+					headers: config.include ? response.headers : undefined,
+					data: output ?? null,
+				},
+				apiRequestActions,
+			);
 		}),
 ).pipe(
 	Command.withDescription("Make authenticated requests to the GoDaddy API"),

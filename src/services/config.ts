@@ -1,8 +1,8 @@
 import * as nodeFs from "node:fs";
 import { join } from "node:path";
+import { FileSystem } from "@effect/platform/FileSystem";
 import * as TOML from "@iarna/toml";
 import { type ArkErrors, type } from "arktype";
-import { FileSystem } from "@effect/platform/FileSystem";
 import * as Effect from "effect/Effect";
 import type { Environment } from "../core/environment";
 import { ConfigurationError } from "../effect/errors";
@@ -217,15 +217,13 @@ export function getConfigFilePath(
 /**
  * Read and parse a config file. Returns Config or ArkErrors.
  */
-export function getConfigFileEffect(
-	{
-		configPath,
-		env,
-	}: {
-		configPath?: string;
-		env?: ConfigEnvironment;
-	} = {},
-): Effect.Effect<Config | ArkErrors, ConfigurationError, FileSystem> {
+export function getConfigFileEffect({
+	configPath,
+	env,
+}: {
+	configPath?: string;
+	env?: ConfigEnvironment;
+} = {}): Effect.Effect<Config | ArkErrors, ConfigurationError, FileSystem> {
 	return Effect.gen(function* () {
 		const fs = yield* FileSystem;
 		const resolvedEnv = resolveConfigEnvironment(env);
@@ -285,15 +283,13 @@ export function getConfigFileEffect(
  * Backward-compatible sync version using node:fs directly.
  * Only for non-Effect call sites (tests, etc.). Prefer getConfigFileEffect.
  */
-export function getConfigFile(
-	{
-		configPath,
-		env,
-	}: {
-		configPath?: string;
-		env?: ConfigEnvironment;
-	} = {},
-): Config | ArkErrors {
+export function getConfigFile({
+	configPath,
+	env,
+}: {
+	configPath?: string;
+	env?: ConfigEnvironment;
+} = {}): Config | ArkErrors {
 	const resolvedEnv = resolveConfigEnvironment(env);
 
 	if (configPath) {
@@ -419,7 +415,11 @@ function extractExtensionsFromConfig(config: Config): ConfigExtensionInfo[] {
 function getConfigFilePathForUpdateEffect(
 	configPath?: string,
 	env?: ConfigEnvironment,
-): Effect.Effect<{ path: string; env?: ConfigEnvironment }, ConfigurationError, FileSystem> {
+): Effect.Effect<
+	{ path: string; env?: ConfigEnvironment },
+	ConfigurationError,
+	FileSystem
+> {
 	return Effect.gen(function* () {
 		const resolvedEnv = resolveConfigEnvironment(env);
 
@@ -474,9 +474,9 @@ function writeConfigToFileEffect(
 		let existingConfig = {};
 		const configFileExists = yield* fileExists(filePath);
 		if (configFileExists) {
-			const existingContent = yield* fs.readFileString(filePath).pipe(
-				Effect.orElseSucceed(() => ""),
-			);
+			const existingContent = yield* fs
+				.readFileString(filePath)
+				.pipe(Effect.orElseSucceed(() => ""));
 			if (existingContent) {
 				try {
 					existingConfig = TOML.parse(existingContent);
@@ -642,10 +642,7 @@ export function addSubscriptionToConfigEffect(
 		const updatedConfig: Config = {
 			...configResult,
 			subscriptions: {
-				webhook: [
-					...(configResult.subscriptions?.webhook || []),
-					subscription,
-				],
+				webhook: [...(configResult.subscriptions?.webhook || []), subscription],
 			},
 		};
 
@@ -656,7 +653,9 @@ export function addSubscriptionToConfigEffect(
 		yield* writeConfigToFileEffect(updatedConfig, env);
 	}).pipe(
 		Effect.catchAll((error) =>
-			Effect.fail(toConfigError(error, "Unable to update subscriptions in config")),
+			Effect.fail(
+				toConfigError(error, "Unable to update subscriptions in config"),
+			),
 		),
 	);
 }
@@ -688,9 +687,9 @@ export function createEnvFileEffect(
 		const envExists = yield* fileExists(envPath);
 
 		if (envExists) {
-			const existingEnvContent = yield* fs.readFileString(envPath).pipe(
-				Effect.orElseSucceed(() => ""),
-			);
+			const existingEnvContent = yield* fs
+				.readFileString(envPath)
+				.pipe(Effect.orElseSucceed(() => ""));
 
 			if (existingEnvContent) {
 				const envLines = existingEnvContent.split("\n");
@@ -786,7 +785,9 @@ export function addExtensionToConfigEffect(
 		yield* writeConfigToFileEffect(updatedConfig, env);
 	}).pipe(
 		Effect.catchAll((error) =>
-			Effect.fail(toConfigError(error, "Unable to update extensions in config")),
+			Effect.fail(
+				toConfigError(error, "Unable to update extensions in config"),
+			),
 		),
 	);
 }

@@ -7,8 +7,8 @@ import {
 	scanBundleEffect,
 	scanExtensionEffect,
 } from "@/services/extension/security-scan";
-import { runEffect } from "../../../setup/effect-test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { runEffect } from "../../../setup/effect-test-utils";
 
 describe("Security Scan Orchestrator", () => {
 	let testDir: string;
@@ -782,9 +782,7 @@ describe("Security Scan Orchestrator", () => {
 			const result = await runEffect(scanBundleEffect(tmpBundle));
 
 			expect(result.blocked).toBe(true);
-			expect(result.findings.some((f) => f.severity === "block")).toBe(
-				true,
-			);
+			expect(result.findings.some((f) => f.severity === "block")).toBe(true);
 		});
 
 		it("should return blocked=false for clean bundle", async () => {
@@ -821,9 +819,7 @@ export { maliciousFunction };
 			const result = await runEffect(scanBundleEffect(tmpBundle));
 
 			expect(result.blocked).toBe(true);
-			expect(result.findings.some((f) => f.ruleId === "SEC102")).toBe(
-				true,
-			);
+			expect(result.findings.some((f) => f.ruleId === "SEC102")).toBe(true);
 		});
 
 		it("should include summary statistics", async () => {

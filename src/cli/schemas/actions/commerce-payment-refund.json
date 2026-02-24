@@ -1,101 +1,87 @@
 {
-  "name": "commerce.payment.refund",
-  "description": "Refund a payment transaction",
-  "requestSchema": {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "title": "RefundPaymentRequest",
-    "type": "object",
-    "properties": {
-      "transactionId": {
-        "type": "string",
-        "description": "ID of the transaction to refund"
-      },
-      "amount": {
-        "type": "object",
-        "properties": {
-          "currency": {
-            "type": "string",
-            "description": "Three-letter ISO currency code"
-          },
-          "value": {
-            "type": "number",
-            "description": "Amount to refund"
-          }
-        },
-        "required": [
-          "currency",
-          "value"
-        ]
-      },
-      "reason": {
-        "type": "string",
-        "description": "Reason for the refund"
-      },
-      "metadata": {
-        "type": "object",
-        "additionalProperties": {
-          "type": "string"
-        },
-        "description": "Additional metadata for the refund"
-      }
-    },
-    "required": [
-      "transactionId",
-      "amount"
-    ]
-  },
-  "responseSchema": {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "title": "RefundPaymentResponse",
-    "type": "object",
-    "properties": {
-      "refundId": {
-        "type": "string",
-        "description": "Unique identifier for the refund"
-      },
-      "status": {
-        "type": "string",
-        "description": "Status of the refund"
-      },
-      "createdAt": {
-        "type": "string",
-        "format": "date-time",
-        "description": "When the refund was created"
-      },
-      "amount": {
-        "type": "object",
-        "properties": {
-          "currency": {
-            "type": "string",
-            "description": "Three-letter ISO currency code"
-          },
-          "value": {
-            "type": "number",
-            "description": "Amount refunded"
-          }
-        },
-        "required": [
-          "currency",
-          "value"
-        ]
-      },
-      "reason": {
-        "type": "string",
-        "description": "Reason for the refund"
-      },
-      "metadata": {
-        "type": "object",
-        "additionalProperties": {
-          "type": "string"
-        },
-        "description": "Additional metadata for the refund"
-      }
-    },
-    "required": [
-      "refundId",
-      "status",
-      "createdAt",
-      "amount"
-    ]
-  }
+	"name": "commerce.payment.refund",
+	"description": "Refund a payment transaction",
+	"requestSchema": {
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"title": "RefundPaymentRequest",
+		"type": "object",
+		"properties": {
+			"transactionId": {
+				"type": "string",
+				"description": "ID of the transaction to refund"
+			},
+			"amount": {
+				"type": "object",
+				"properties": {
+					"currency": {
+						"type": "string",
+						"description": "Three-letter ISO currency code"
+					},
+					"value": {
+						"type": "number",
+						"description": "Amount to refund"
+					}
+				},
+				"required": ["currency", "value"]
+			},
+			"reason": {
+				"type": "string",
+				"description": "Reason for the refund"
+			},
+			"metadata": {
+				"type": "object",
+				"additionalProperties": {
+					"type": "string"
+				},
+				"description": "Additional metadata for the refund"
+			}
+		},
+		"required": ["transactionId", "amount"]
+	},
+	"responseSchema": {
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"title": "RefundPaymentResponse",
+		"type": "object",
+		"properties": {
+			"refundId": {
+				"type": "string",
+				"description": "Unique identifier for the refund"
+			},
+			"status": {
+				"type": "string",
+				"description": "Status of the refund"
+			},
+			"createdAt": {
+				"type": "string",
+				"format": "date-time",
+				"description": "When the refund was created"
+			},
+			"amount": {
+				"type": "object",
+				"properties": {
+					"currency": {
+						"type": "string",
+						"description": "Three-letter ISO currency code"
+					},
+					"value": {
+						"type": "number",
+						"description": "Amount refunded"
+					}
+				},
+				"required": ["currency", "value"]
+			},
+			"reason": {
+				"type": "string",
+				"description": "Reason for the refund"
+			},
+			"metadata": {
+				"type": "object",
+				"additionalProperties": {
+					"type": "string"
+				},
+				"description": "Additional metadata for the refund"
+			}
+		},
+		"required": ["refundId", "status", "createdAt", "amount"]
+	}
 }

@@ -79,7 +79,6 @@ export interface ResolveEntryPointOptions {
  */
 export function resolveEntryPoint(
 	options: ResolveEntryPointOptions,
-
 ): EntryPointResolution {
 	const { packageDir, packageJson } = options;
 	const sourceType = getSourceType(packageJson);
@@ -190,7 +189,6 @@ export function resolveEntryPoint(
 export function tryResolvePath(
 	packageDir: string,
 	relativePath: string,
-
 ): string | null {
 	// Normalize the relative path (remove leading ./)
 	const normalized = relativePath.startsWith("./")

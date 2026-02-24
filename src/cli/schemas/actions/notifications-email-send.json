@@ -1,172 +1,151 @@
 {
-  "name": "notifications.email.send",
-  "description": "Send an email notification",
-  "requestSchema": {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "title": "notifications.email.send",
-    "type": "object",
-    "properties": {
-      "entityId": {
-        "type": "string",
-        "description": "UUID of the entity."
-      },
-      "entityType": {
-        "type": "string",
-        "description": "Type of UUID that the entityId refers to. Examples include: DISTRIBUTOR, STORE, CHANNEL."
-      },
-      "envelope": {
-        "$ref": "#/definitions/emailEnvelope"
-      },
-      "context": {
-        "$ref": "#/definitions/context"
-      }
-    },
-    "required": [
-      "entityId",
-      "entityType",
-      "envelope",
-      "context"
-    ],
-    "definitions": {
-      "context": {
-        "type": "object",
-        "description": "Context for the email",
-        "readonly": true,
-        "properties": {
-          "owner": {
-            "type": "string",
-            "description": "A distinct identifier of which system or service creating the email to send.",
-            "example": "urn:com.godaddy:commerce.order"
-          },
-          "storeId": {
-            "type": "string",
-            "description": "ID of the store that the email belongs to",
-            "example": "fd3d9291-dc9a-445d-aa68-d2ff1a77a83c"
-          },
-          "topic": {
-            "type": "string",
-            "description": "A distinct identifier of what the email represents.",
-            "example": "delivery-confirmed"
-          },
-          "objectType": {
-            "type": "string",
-            "description": "The object type the email is about.",
-            "example": "order"
-          },
-          "objectId": {
-            "type": "string",
-            "description": "The object ID the email is about.",
-            "example": "Order_30CkE0hWAITMFEYEFZKEDBbtiQc"
-          },
-          "references": {
-            "type": "array",
-            "description": "A set of references associated with the email.",
-            "items": {
-              "$ref": "#/definitions/Reference"
-            }
-          }
-        },
-        "required": [
-          "owner",
-          "topic",
-          "objectType",
-          "objectId",
-          "storeId"
-        ]
-      },
-      "emailEnvelope": {
-        "type": "object",
-        "properties": {
-          "to": {
-            "type": "array",
-            "items": {
-              "$ref": "#/definitions/addressOrString"
-            }
-          },
-          "subject": {
-            "type": "string",
-            "description": "Subject of the email."
-          },
-          "body": {
-            "type": "string",
-            "description": "Body of the email."
-          },
-          "isHtml": {
-            "type": "boolean",
-            "description": "Whether the email contains HTML."
-          },
-          "sentFrom": {
-            "$ref": "#/definitions/addressOrString"
-          }
-        },
-        "required": [
-          "to",
-          "subject",
-          "body"
-        ]
-      },
-      "addressOrString": {
-        "oneOf": [
-          {
-            "type": "string",
-            "description": "An email address on its own or email header e.g. Jane<jane@example.com>"
-          },
-          {
-            "$ref": "#/definitions/address"
-          }
-        ]
-      },
-      "address": {
-        "type": "object",
-        "properties": {
-          "email": {
-            "type": "string",
-            "description": "Email address."
-          },
-          "name": {
-            "type": "string",
-            "description": "Name of the person who owns the email address."
-          }
-        },
-        "required": [
-          "email"
-        ]
-      },
-      "Reference": {
-        "description": "A reference to the resource in an external service. This can be useful for integrating the resource to any external service.",
-        "type": "object",
-        "required": [
-          "id",
-          "value",
-          "origin"
-        ],
-        "properties": {
-          "type": {
-            "type": "string",
-            "description": "The unique UUID of the reference.",
-            "example": "fd3d9291-dc9a-445d-aa68-d2ff1a77a83c",
-            "readonly": true
-          },
-          "value": {
-            "type": "string",
-            "description": "The identifier of the resource in an external service.",
-            "example": "B0CX23PQVP"
-          },
-          "origin": {
-            "type": "string",
-            "description": "The origin or location of the reference.",
-            "example": "OLS"
-          }
-        }
-      }
-    }
-  },
-  "responseSchema": {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "title": "notifications.email.send:response",
-    "type": "object",
-    "description": "200 OK response with empty body",
-    "properties": {},
-    "additionalProperties": false
-  }
+	"name": "notifications.email.send",
+	"description": "Send an email notification",
+	"requestSchema": {
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"title": "notifications.email.send",
+		"type": "object",
+		"properties": {
+			"entityId": {
+				"type": "string",
+				"description": "UUID of the entity."
+			},
+			"entityType": {
+				"type": "string",
+				"description": "Type of UUID that the entityId refers to. Examples include: DISTRIBUTOR, STORE, CHANNEL."
+			},
+			"envelope": {
+				"$ref": "#/definitions/emailEnvelope"
+			},
+			"context": {
+				"$ref": "#/definitions/context"
+			}
+		},
+		"required": ["entityId", "entityType", "envelope", "context"],
+		"definitions": {
+			"context": {
+				"type": "object",
+				"description": "Context for the email",
+				"readonly": true,
+				"properties": {
+					"owner": {
+						"type": "string",
+						"description": "A distinct identifier of which system or service creating the email to send.",
+						"example": "urn:com.godaddy:commerce.order"
+					},
+					"storeId": {
+						"type": "string",
+						"description": "ID of the store that the email belongs to",
+						"example": "fd3d9291-dc9a-445d-aa68-d2ff1a77a83c"
+					},
+					"topic": {
+						"type": "string",
+						"description": "A distinct identifier of what the email represents.",
+						"example": "delivery-confirmed"
+					},
+					"objectType": {
+						"type": "string",
+						"description": "The object type the email is about.",
+						"example": "order"
+					},
+					"objectId": {
+						"type": "string",
+						"description": "The object ID the email is about.",
+						"example": "Order_30CkE0hWAITMFEYEFZKEDBbtiQc"
+					},
+					"references": {
+						"type": "array",
+						"description": "A set of references associated with the email.",
+						"items": {
+							"$ref": "#/definitions/Reference"
+						}
+					}
+				},
+				"required": ["owner", "topic", "objectType", "objectId", "storeId"]
+			},
+			"emailEnvelope": {
+				"type": "object",
+				"properties": {
+					"to": {
+						"type": "array",
+						"items": {
+							"$ref": "#/definitions/addressOrString"
+						}
+					},
+					"subject": {
+						"type": "string",
+						"description": "Subject of the email."
+					},
+					"body": {
+						"type": "string",
+						"description": "Body of the email."
+					},
+					"isHtml": {
+						"type": "boolean",
+						"description": "Whether the email contains HTML."
+					},
+					"sentFrom": {
+						"$ref": "#/definitions/addressOrString"
+					}
+				},
+				"required": ["to", "subject", "body"]
+			},
+			"addressOrString": {
+				"oneOf": [
+					{
+						"type": "string",
+						"description": "An email address on its own or email header e.g. Jane<jane@example.com>"
+					},
+					{
+						"$ref": "#/definitions/address"
+					}
+				]
+			},
+			"address": {
+				"type": "object",
+				"properties": {
+					"email": {
+						"type": "string",
+						"description": "Email address."
+					},
+					"name": {
+						"type": "string",
+						"description": "Name of the person who owns the email address."
+					}
+				},
+				"required": ["email"]
+			},
+			"Reference": {
+				"description": "A reference to the resource in an external service. This can be useful for integrating the resource to any external service.",
+				"type": "object",
+				"required": ["id", "value", "origin"],
+				"properties": {
+					"type": {
+						"type": "string",
+						"description": "The unique UUID of the reference.",
+						"example": "fd3d9291-dc9a-445d-aa68-d2ff1a77a83c",
+						"readonly": true
+					},
+					"value": {
+						"type": "string",
+						"description": "The identifier of the resource in an external service.",
+						"example": "B0CX23PQVP"
+					},
+					"origin": {
+						"type": "string",
+						"description": "The origin or location of the reference.",
+						"example": "OLS"
+					}
+				}
+			}
+		}
+	},
+	"responseSchema": {
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"title": "notifications.email.send:response",
+		"type": "object",
+		"description": "200 OK response with empty body",
+		"properties": {},
+		"additionalProperties": false
+	}
 }

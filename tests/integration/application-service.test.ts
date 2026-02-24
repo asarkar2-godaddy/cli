@@ -5,8 +5,8 @@ import {
 	createReleaseEffect,
 	disableApplicationEffect,
 	enableApplicationEffect,
-	getApplicationEffect,
 	getApplicationAndLatestReleaseEffect,
+	getApplicationEffect,
 	updateApplicationEffect,
 } from "../../src/services/applications";
 import { runEffect } from "../setup/effect-test-utils";

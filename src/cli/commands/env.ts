@@ -9,8 +9,8 @@ import {
 	envSetEffect,
 	getEnvironmentDisplay,
 } from "../../core/environment";
-import { EnvelopeWriter } from "../services/envelope-writer";
 import type { NextAction } from "../agent/types";
+import { EnvelopeWriter } from "../services/envelope-writer";
 
 // ---------------------------------------------------------------------------
 // Colocated next_actions
@@ -59,7 +59,9 @@ const envListActions: NextAction[] = [
 	{
 		command: "godaddy env set <environment>",
 		description: "Set active environment",
-		params: { environment: { enum: ["ote", "prod"], default: "ote", required: true } },
+		params: {
+			environment: { enum: ["ote", "prod"], default: "ote", required: true },
+		},
 	},
 	{
 		command: "godaddy env info [environment]",
@@ -89,54 +91,60 @@ function envInfoActions(environment?: string): NextAction[] {
 // Subcommands
 // ---------------------------------------------------------------------------
 
-const envList = Command.make(
-	"list",
-	{},
-	() =>
-		Effect.gen(function* () {
-			const writer = yield* EnvelopeWriter;
-			const environments = yield* envListEffect();
-			const activeEnvironment = environments[0];
+const envList = Command.make("list", {}, () =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		const environments = yield* envListEffect();
+		const activeEnvironment = environments[0];
 
-			yield* writer.emitSuccess("godaddy env list", {
+		yield* writer.emitSuccess(
+			"godaddy env list",
+			{
 				active_environment: activeEnvironment,
 				environments: environments.map((environment) => ({
 					environment,
 					display: getEnvironmentDisplay(environment),
 				})),
-			}, envListActions);
-		}),
+			},
+			envListActions,
+		);
+	}),
 ).pipe(Command.withDescription("List all available environments"));
 
-const envGet = Command.make(
-	"get",
-	{},
-	() =>
-		Effect.gen(function* () {
-			const writer = yield* EnvelopeWriter;
-			const environment = yield* envGetEffect();
+const envGet = Command.make("get", {}, () =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		const environment = yield* envGetEffect();
 
-			yield* writer.emitSuccess(
-				"godaddy env get",
-				{ environment },
-				envGetActions,
-			);
-		}),
+		yield* writer.emitSuccess(
+			"godaddy env get",
+			{ environment },
+			envGetActions,
+		);
+	}),
 ).pipe(Command.withDescription("Get current active environment"));
 
 const envSet = Command.make(
 	"set",
-	{ environment: Args.text({ name: "environment" }).pipe(Args.withDescription("Environment to set (ote|prod)")) },
+	{
+		environment: Args.text({ name: "environment" }).pipe(
+			Args.withDescription("Environment to set (ote|prod)"),
+		),
+	},
 	({ environment }) =>
 		Effect.gen(function* () {
 			const writer = yield* EnvelopeWriter;
 			const previousEnvironment = yield* envGetEffect();
 			yield* envSetEffect(environment);
 
-			yield* writer.emitSuccess("godaddy env set", {
-				previous_environment: previousEnvironment,
-				environment,
-			}, envSetActions);
+			yield* writer.emitSuccess(
+				"godaddy env set",
+				{
+					previous_environment: previousEnvironment,
+					environment,
+				},
+				envSetActions,
+			);
 		}),
 ).pipe(Command.withDescription("Set active environment"));
 
@@ -169,29 +177,48 @@ const envInfo = Command.make(
 				envInfoActions(info.environment),
 			);
 		}),
-).pipe(Command.withDescription("Show detailed information about an environment"));
+).pipe(
+	Command.withDescription("Show detailed information about an environment"),
+);
 
 // ---------------------------------------------------------------------------
 // Parent command
 // ---------------------------------------------------------------------------
 
-const envParent = Command.make(
-	"env",
-	{},
-	() =>
-		Effect.gen(function* () {
-			const writer = yield* EnvelopeWriter;
-			yield* writer.emitSuccess("godaddy env", {
+const envParent = Command.make("env", {}, () =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		yield* writer.emitSuccess(
+			"godaddy env",
+			{
 				command: "godaddy env",
 				description: "Manage GoDaddy environments (ote, prod)",
 				commands: [
-					{ command: "godaddy env list", description: "List all available environments", usage: "godaddy env list" },
-					{ command: "godaddy env get", description: "Get current active environment", usage: "godaddy env get" },
-					{ command: "godaddy env set <environment>", description: "Set active environment", usage: "godaddy env set <environment>" },
-					{ command: "godaddy env info [environment]", description: "Show detailed information about an environment", usage: "godaddy env info [environment]" },
+					{
+						command: "godaddy env list",
+						description: "List all available environments",
+						usage: "godaddy env list",
+					},
+					{
+						command: "godaddy env get",
+						description: "Get current active environment",
+						usage: "godaddy env get",
+					},
+					{
+						command: "godaddy env set <environment>",
+						description: "Set active environment",
+						usage: "godaddy env set <environment>",
+					},
+					{
+						command: "godaddy env info [environment]",
+						description: "Show detailed information about an environment",
+						usage: "godaddy env info [environment]",
+					},
 				],
-			}, envGroupActions);
-		}),
+			},
+			envGroupActions,
+		);
+	}),
 ).pipe(
 	Command.withDescription("Manage GoDaddy environments (ote, prod)"),
 	Command.withSubcommands([envList, envGet, envSet, envInfo]),

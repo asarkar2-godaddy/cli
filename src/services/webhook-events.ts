@@ -1,3 +1,5 @@
+import { Fetch } from "@effect/platform/FetchHttpClient";
+import type { FileSystem } from "@effect/platform/FileSystem";
 import * as Effect from "effect/Effect";
 import { type Environment, envGetEffect, getApiUrl } from "../core/environment";
 import {
@@ -6,8 +8,6 @@ import {
 	NetworkError,
 	type ValidationError,
 } from "../effect/errors";
-import type { FileSystem } from "@effect/platform/FileSystem";
-import { Fetch } from "@effect/platform/FetchHttpClient";
 import { logHttpRequest, logHttpResponse } from "./logger";
 
 export type WebhookEventType = {

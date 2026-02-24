@@ -2,13 +2,13 @@
  * Shared HTTP helpers for API requests
  */
 
-import * as Effect from "effect/Effect";
-import { v7 as uuid } from "uuid";
-import { GraphQLClient } from "graphql-request";
 import { Fetch } from "@effect/platform/FetchHttpClient";
+import type { FileSystem } from "@effect/platform/FileSystem";
+import * as Effect from "effect/Effect";
+import { GraphQLClient } from "graphql-request";
+import { v7 as uuid } from "uuid";
 import { type Environment, envGetEffect, getApiUrl } from "../core/environment";
 import { ConfigurationError } from "../effect/errors";
-import type { FileSystem } from "@effect/platform/FileSystem";
 
 /**
  * Resolve the API base URL from environment variables or the active environment.

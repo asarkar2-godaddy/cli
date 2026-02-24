@@ -1,423 +1,395 @@
 {
-  "name": "commerce.payment.process",
-  "description": "Process a payment by creating a new SALE transaction",
-  "requestSchema": {
-    "$id": "https://godaddy.com/schemas/commerce/create-sale-transaction.v2",
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "title": "Create Sale Transaction",
-    "description": "Schema for creating a new SALE transaction to process a payment",
-    "type": "object",
-    "properties": {
-      "type": {
-        "const": "SALE",
-        "description": "Transaction type - must be SALE for payment processing"
-      },
-      "transactionRefNum": {
-        "$ref": "#/$defs/RefNum",
-        "description": "Reference number for the transaction"
-      },
-      "fundingSource": {
-        "$ref": "#/$defs/FundingSource",
-        "description": "Payment method to be used for the transaction"
-      },
-      "amount": {
-        "$ref": "#/$defs/DetailedAmount",
-        "description": "Transaction amount to be processed"
-      },
-      "context": {
-        "$ref": "#/$defs/TransactionContext",
-        "description": "Additional context about where the transaction was initiated"
-      },
-      "clientContext": {
-        "$ref": "#/$defs/Dictionary",
-        "description": "Non-sensitive context data that can be stored and fetched by client"
-      },
-      "processingInstructions": {
-        "$ref": "#/$defs/TransactionProcessingInstruction",
-        "description": "Instructions for processing the transaction"
-      },
-      "notes": {
-        "type": "string",
-        "maxLength": 512,
-        "description": "Optional notes about the transaction"
-      },
-      "references": {
-        "type": "array",
-        "items": {
-          "$ref": "#/$defs/TransactionReference"
-        },
-        "description": "References to orders, invoices, or other documents"
-      }
-    },
-    "required": [
-      "type",
-      "amount",
-      "fundingSource"
-    ],
-    "additionalProperties": false,
-    "$defs": {
-      "RefNum": {
-        "title": "ReferenceNumber",
-        "description": "Reference number (UUID format)",
-        "type": "string",
-        "format": "uuid"
-      },
-      "Dictionary": {
-        "title": "Dictionary",
-        "description": "Key value pairs of strings",
-        "type": "object",
-        "minProperties": 0,
-        "maxProperties": 40,
-        "additionalProperties": {
-          "type": "string",
-          "maxLength": 256
-        }
-      },
-      "Currency": {
-        "title": "Currency",
-        "description": "ISO 4217 Currency codes",
-        "type": "string",
-        "example": "USD",
-        "minLength": 3,
-        "maxLength": 3
-      },
-      "Uuid": {
-        "title": "Uuid",
-        "description": "Unique identifier (UUID format)",
-        "type": "string",
-        "format": "uuid"
-      },
-      "DetailedAmount": {
-        "title": "Detailed Amount",
-        "type": "object",
-        "description": "Itemized amount details for payment processing",
-        "properties": {
-          "amountType": {
-            "const": "DETAILED"
-          },
-          "total": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1,
-            "description": "Total amount in smallest currency unit"
-          },
-          "tip": {
-            "$ref": "#/$defs/TipAmount",
-            "description": "Tip amount details"
-          },
-          "cashback": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0,
-            "description": "Cashback amount requested"
-          },
-          "subTotal": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0,
-            "description": "Subtotal before tips and fees"
-          },
-          "currency": {
-            "$ref": "#/$defs/Currency",
-            "description": "Amount currency"
-          },
-          "fees": {
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/Fee"
-            },
-            "description": "Additional fees applied to the transaction"
-          }
-        },
-        "required": [
-          "amountType",
-          "total",
-          "currency"
-        ],
-        "additionalProperties": false
-      },
-      "TipAmount": {
-        "title": "Tip Amount",
-        "type": "object",
-        "description": "Tip amount details",
-        "properties": {
-          "amount": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0,
-            "description": "Tip amount in smallest currency unit"
-          },
-          "customerOptedNoTip": {
-            "type": "boolean",
-            "default": false,
-            "description": "Indicates if customer explicitly opted for no tip"
-          }
-        },
-        "additionalProperties": false
-      },
-      "Fee": {
-        "title": "Fee",
-        "type": "object",
-        "description": "Fee details",
-        "properties": {
-          "type": {
-            "type": "string",
-            "description": "Type of fee"
-          },
-          "amount": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0,
-            "description": "Fee amount in smallest currency unit"
-          },
-          "description": {
-            "type": "string",
-            "description": "Description of the fee"
-          }
-        },
-        "required": [
-          "type",
-          "amount"
-        ],
-        "additionalProperties": false
-      },
-      "TransactionContext": {
-        "title": "Transaction Context",
-        "type": "object",
-        "description": "Context details about where the transaction was initiated",
-        "properties": {
-          "channelId": {
-            "$ref": "#/$defs/Uuid",
-            "description": "Channel identifier where transaction was initiated"
-          },
-          "merchantInitiatedTransaction": {
-            "type": "boolean",
-            "default": false,
-            "description": "True if initiated by merchant on behalf of customer"
-          }
-        },
-        "additionalProperties": false
-      },
-      "FundingSource": {
-        "title": "Funding Source",
-        "type": "object",
-        "description": "Payment method for the transaction",
-        "oneOf": [
-          {
-            "$ref": "#/$defs/CustomFundingSource"
-          }
-        ],
-        "discriminator": {
-          "propertyName": "sourceType"
-        }
-      },
-      "CustomFundingSource": {
-        "title": "Custom Funding Source",
-        "type": "object",
-        "description": "Custom payment method processed by a specific provider",
-        "properties": {
-          "sourceType": {
-            "const": "CUSTOM"
-          },
-          "provider": {
-            "type": "string",
-            "maxLength": 64,
-            "description": "Provider that can handle the funding source"
-          },
-          "processor": {
-            "type": "string",
-            "maxLength": 64,
-            "description": "Processor to be used for the funding source"
-          },
-          "customFundingType": {
-            "type": "string",
-            "maxLength": 64,
-            "description": "Type of the custom funding source"
-          },
-          "name": {
-            "type": "string",
-            "maxLength": 64,
-            "description": "Display name of the funding source"
-          },
-          "description": {
-            "type": "string",
-            "maxLength": 512,
-            "description": "Description about the funding source"
-          },
-          "paymentReference": {
-            "type": "string",
-            "description": "The reference to the payment token for the funding source"
-          }
-        },
-        "required": [
-          "sourceType",
-          "customFundingType",
-          "provider",
-          "paymentReference"
-        ],
-        "additionalProperties": false
-      },
-      "TransactionProcessingInstruction": {
-        "title": "Transaction Processing Instruction",
-        "description": "Instructions for processing the transaction",
-        "type": "object",
-        "properties": {
-          "partialAuthEnabled": {
-            "type": "boolean",
-            "default": true,
-            "description": "Allow partial authorizations for the sale"
-          },
-          "statementDescriptorSuffix": {
-            "type": "string",
-            "maxLength": 22,
-            "description": "Additional text to appear on customer's statement"
-          },
-          "storeAndForward": {
-            "type": "boolean",
-            "default": false,
-            "description": "Process as offline transaction (store and forward)"
-          }
-        },
-        "additionalProperties": false
-      },
-      "TransactionReference": {
-        "title": "Transaction Reference",
-        "type": "object",
-        "description": "Reference to an order, invoice, or other document",
-        "properties": {
-          "value": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Reference value (e.g., order number, invoice ID)"
-          },
-          "type": {
-            "type": "string",
-            "maxLength": 32,
-            "description": "Type of reference (e.g., 'ORDER', 'INVOICE', 'SUBSCRIPTION')"
-          },
-          "additionalLabel": {
-            "type": "string",
-            "maxLength": 32,
-            "description": "Optional additional label for the reference"
-          }
-        },
-        "required": [
-          "value",
-          "type"
-        ],
-        "additionalProperties": false
-      }
-    }
-  },
-  "responseSchema": {
-    "$id": "https://godaddy.com/schemas/commerce/transaction-complete.v2",
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "title": "Complete Transaction Schema",
-    "description": "Full Transaction type with all referenced types expanded",
-    "type": "object",
-    "properties": {
-      "type": {
-        "const": "SALE"
-      },
-      "transactionId": {
-        "type": "string",
-        "pattern": "([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})|(urn:[a-z]{1,3}:[a-z]{1,3}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
-        "description": "Server generated identifier for this transaction"
-      },
-      "transactionRefNum": {
-        "type": "string",
-        "format": "uuid",
-        "description": "Reference number (UUID format)"
-      },
-      "storeId": {
-        "type": "string",
-        "format": "uuid",
-        "description": "Store identifier for this transaction"
-      },
-      "fundingSource": {
-        "type": "object",
-        "properties": {
-          "sourceType": {
-            "const": "CUSTOM"
-          },
-          "customFundingType": {
-            "type": "string",
-            "description": "Type of the custom funding source"
-          },
-          "provider": {
-            "type": "string",
-            "description": "Provider that can handle the custom funding source"
-          },
-          "processor": {
-            "type": "string",
-            "description": "Processor used for the custom funding source"
-          },
-          "name": {
-            "type": "string",
-            "description": "Display name of the funding source"
-          },
-          "description": {
-            "type": "string",
-            "description": "Display description for the funding source"
-          },
-          "paymentReference": {
-            "type": "string",
-            "description": "The ID to the processed payment from the funding source"
-          }
-        },
-        "required": [
-          "sourceType",
-          "customFundingType",
-          "provider",
-          "paymentReference"
-        ]
-      },
-      "status": {
-        "type": "string",
-        "enum": [
-          "INITIATED",
-          "PENDING",
-          "FAILED",
-          "COMPLETED",
-          "VOIDED"
-        ],
-        "description": "Transaction status"
-      },
-      "amount": {
-        "type": "object",
-        "properties": {
-          "amountType": {
-            "const": "DETAILED"
-          },
-          "total": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Total amount"
-          },
-          "currency": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 3,
-            "description": "Amount currency"
-          }
-        },
-        "required": [
-          "amountType",
-          "total",
-          "currency"
-        ]
-      },
-      "createdAt": {
-        "type": "string",
-        "format": "date-time",
-        "description": "Created time in RFC 3339 format",
-        "example": "2022-07-21T17:32:28Z"
-      }
-    },
-    "required": [
-      "type",
-      "amount",
-      "createdAt"
-    ]
-  }
+	"name": "commerce.payment.process",
+	"description": "Process a payment by creating a new SALE transaction",
+	"requestSchema": {
+		"$id": "https://godaddy.com/schemas/commerce/create-sale-transaction.v2",
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"title": "Create Sale Transaction",
+		"description": "Schema for creating a new SALE transaction to process a payment",
+		"type": "object",
+		"properties": {
+			"type": {
+				"const": "SALE",
+				"description": "Transaction type - must be SALE for payment processing"
+			},
+			"transactionRefNum": {
+				"$ref": "#/$defs/RefNum",
+				"description": "Reference number for the transaction"
+			},
+			"fundingSource": {
+				"$ref": "#/$defs/FundingSource",
+				"description": "Payment method to be used for the transaction"
+			},
+			"amount": {
+				"$ref": "#/$defs/DetailedAmount",
+				"description": "Transaction amount to be processed"
+			},
+			"context": {
+				"$ref": "#/$defs/TransactionContext",
+				"description": "Additional context about where the transaction was initiated"
+			},
+			"clientContext": {
+				"$ref": "#/$defs/Dictionary",
+				"description": "Non-sensitive context data that can be stored and fetched by client"
+			},
+			"processingInstructions": {
+				"$ref": "#/$defs/TransactionProcessingInstruction",
+				"description": "Instructions for processing the transaction"
+			},
+			"notes": {
+				"type": "string",
+				"maxLength": 512,
+				"description": "Optional notes about the transaction"
+			},
+			"references": {
+				"type": "array",
+				"items": {
+					"$ref": "#/$defs/TransactionReference"
+				},
+				"description": "References to orders, invoices, or other documents"
+			}
+		},
+		"required": ["type", "amount", "fundingSource"],
+		"additionalProperties": false,
+		"$defs": {
+			"RefNum": {
+				"title": "ReferenceNumber",
+				"description": "Reference number (UUID format)",
+				"type": "string",
+				"format": "uuid"
+			},
+			"Dictionary": {
+				"title": "Dictionary",
+				"description": "Key value pairs of strings",
+				"type": "object",
+				"minProperties": 0,
+				"maxProperties": 40,
+				"additionalProperties": {
+					"type": "string",
+					"maxLength": 256
+				}
+			},
+			"Currency": {
+				"title": "Currency",
+				"description": "ISO 4217 Currency codes",
+				"type": "string",
+				"example": "USD",
+				"minLength": 3,
+				"maxLength": 3
+			},
+			"Uuid": {
+				"title": "Uuid",
+				"description": "Unique identifier (UUID format)",
+				"type": "string",
+				"format": "uuid"
+			},
+			"DetailedAmount": {
+				"title": "Detailed Amount",
+				"type": "object",
+				"description": "Itemized amount details for payment processing",
+				"properties": {
+					"amountType": {
+						"const": "DETAILED"
+					},
+					"total": {
+						"type": "integer",
+						"format": "int64",
+						"minimum": 1,
+						"description": "Total amount in smallest currency unit"
+					},
+					"tip": {
+						"$ref": "#/$defs/TipAmount",
+						"description": "Tip amount details"
+					},
+					"cashback": {
+						"type": "integer",
+						"format": "int64",
+						"minimum": 0,
+						"description": "Cashback amount requested"
+					},
+					"subTotal": {
+						"type": "integer",
+						"format": "int64",
+						"minimum": 0,
+						"description": "Subtotal before tips and fees"
+					},
+					"currency": {
+						"$ref": "#/$defs/Currency",
+						"description": "Amount currency"
+					},
+					"fees": {
+						"type": "array",
+						"items": {
+							"$ref": "#/$defs/Fee"
+						},
+						"description": "Additional fees applied to the transaction"
+					}
+				},
+				"required": ["amountType", "total", "currency"],
+				"additionalProperties": false
+			},
+			"TipAmount": {
+				"title": "Tip Amount",
+				"type": "object",
+				"description": "Tip amount details",
+				"properties": {
+					"amount": {
+						"type": "integer",
+						"format": "int64",
+						"minimum": 0,
+						"description": "Tip amount in smallest currency unit"
+					},
+					"customerOptedNoTip": {
+						"type": "boolean",
+						"default": false,
+						"description": "Indicates if customer explicitly opted for no tip"
+					}
+				},
+				"additionalProperties": false
+			},
+			"Fee": {
+				"title": "Fee",
+				"type": "object",
+				"description": "Fee details",
+				"properties": {
+					"type": {
+						"type": "string",
+						"description": "Type of fee"
+					},
+					"amount": {
+						"type": "integer",
+						"format": "int64",
+						"minimum": 0,
+						"description": "Fee amount in smallest currency unit"
+					},
+					"description": {
+						"type": "string",
+						"description": "Description of the fee"
+					}
+				},
+				"required": ["type", "amount"],
+				"additionalProperties": false
+			},
+			"TransactionContext": {
+				"title": "Transaction Context",
+				"type": "object",
+				"description": "Context details about where the transaction was initiated",
+				"properties": {
+					"channelId": {
+						"$ref": "#/$defs/Uuid",
+						"description": "Channel identifier where transaction was initiated"
+					},
+					"merchantInitiatedTransaction": {
+						"type": "boolean",
+						"default": false,
+						"description": "True if initiated by merchant on behalf of customer"
+					}
+				},
+				"additionalProperties": false
+			},
+			"FundingSource": {
+				"title": "Funding Source",
+				"type": "object",
+				"description": "Payment method for the transaction",
+				"oneOf": [
+					{
+						"$ref": "#/$defs/CustomFundingSource"
+					}
+				],
+				"discriminator": {
+					"propertyName": "sourceType"
+				}
+			},
+			"CustomFundingSource": {
+				"title": "Custom Funding Source",
+				"type": "object",
+				"description": "Custom payment method processed by a specific provider",
+				"properties": {
+					"sourceType": {
+						"const": "CUSTOM"
+					},
+					"provider": {
+						"type": "string",
+						"maxLength": 64,
+						"description": "Provider that can handle the funding source"
+					},
+					"processor": {
+						"type": "string",
+						"maxLength": 64,
+						"description": "Processor to be used for the funding source"
+					},
+					"customFundingType": {
+						"type": "string",
+						"maxLength": 64,
+						"description": "Type of the custom funding source"
+					},
+					"name": {
+						"type": "string",
+						"maxLength": 64,
+						"description": "Display name of the funding source"
+					},
+					"description": {
+						"type": "string",
+						"maxLength": 512,
+						"description": "Description about the funding source"
+					},
+					"paymentReference": {
+						"type": "string",
+						"description": "The reference to the payment token for the funding source"
+					}
+				},
+				"required": [
+					"sourceType",
+					"customFundingType",
+					"provider",
+					"paymentReference"
+				],
+				"additionalProperties": false
+			},
+			"TransactionProcessingInstruction": {
+				"title": "Transaction Processing Instruction",
+				"description": "Instructions for processing the transaction",
+				"type": "object",
+				"properties": {
+					"partialAuthEnabled": {
+						"type": "boolean",
+						"default": true,
+						"description": "Allow partial authorizations for the sale"
+					},
+					"statementDescriptorSuffix": {
+						"type": "string",
+						"maxLength": 22,
+						"description": "Additional text to appear on customer's statement"
+					},
+					"storeAndForward": {
+						"type": "boolean",
+						"default": false,
+						"description": "Process as offline transaction (store and forward)"
+					}
+				},
+				"additionalProperties": false
+			},
+			"TransactionReference": {
+				"title": "Transaction Reference",
+				"type": "object",
+				"description": "Reference to an order, invoice, or other document",
+				"properties": {
+					"value": {
+						"type": "string",
+						"maxLength": 128,
+						"description": "Reference value (e.g., order number, invoice ID)"
+					},
+					"type": {
+						"type": "string",
+						"maxLength": 32,
+						"description": "Type of reference (e.g., 'ORDER', 'INVOICE', 'SUBSCRIPTION')"
+					},
+					"additionalLabel": {
+						"type": "string",
+						"maxLength": 32,
+						"description": "Optional additional label for the reference"
+					}
+				},
+				"required": ["value", "type"],
+				"additionalProperties": false
+			}
+		}
+	},
+	"responseSchema": {
+		"$id": "https://godaddy.com/schemas/commerce/transaction-complete.v2",
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"title": "Complete Transaction Schema",
+		"description": "Full Transaction type with all referenced types expanded",
+		"type": "object",
+		"properties": {
+			"type": {
+				"const": "SALE"
+			},
+			"transactionId": {
+				"type": "string",
+				"pattern": "([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})|(urn:[a-z]{1,3}:[a-z]{1,3}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+				"description": "Server generated identifier for this transaction"
+			},
+			"transactionRefNum": {
+				"type": "string",
+				"format": "uuid",
+				"description": "Reference number (UUID format)"
+			},
+			"storeId": {
+				"type": "string",
+				"format": "uuid",
+				"description": "Store identifier for this transaction"
+			},
+			"fundingSource": {
+				"type": "object",
+				"properties": {
+					"sourceType": {
+						"const": "CUSTOM"
+					},
+					"customFundingType": {
+						"type": "string",
+						"description": "Type of the custom funding source"
+					},
+					"provider": {
+						"type": "string",
+						"description": "Provider that can handle the custom funding source"
+					},
+					"processor": {
+						"type": "string",
+						"description": "Processor used for the custom funding source"
+					},
+					"name": {
+						"type": "string",
+						"description": "Display name of the funding source"
+					},
+					"description": {
+						"type": "string",
+						"description": "Display description for the funding source"
+					},
+					"paymentReference": {
+						"type": "string",
+						"description": "The ID to the processed payment from the funding source"
+					}
+				},
+				"required": [
+					"sourceType",
+					"customFundingType",
+					"provider",
+					"paymentReference"
+				]
+			},
+			"status": {
+				"type": "string",
+				"enum": ["INITIATED", "PENDING", "FAILED", "COMPLETED", "VOIDED"],
+				"description": "Transaction status"
+			},
+			"amount": {
+				"type": "object",
+				"properties": {
+					"amountType": {
+						"const": "DETAILED"
+					},
+					"total": {
+						"type": "integer",
+						"format": "int64",
+						"description": "Total amount"
+					},
+					"currency": {
+						"type": "string",
+						"minLength": 3,
+						"maxLength": 3,
+						"description": "Amount currency"
+					}
+				},
+				"required": ["amountType", "total", "currency"]
+			},
+			"createdAt": {
+				"type": "string",
+				"format": "date-time",
+				"description": "Created time in RFC 3339 format",
+				"example": "2022-07-21T17:32:28Z"
+			}
+		},
+		"required": ["type", "amount", "createdAt"]
+	}
 }

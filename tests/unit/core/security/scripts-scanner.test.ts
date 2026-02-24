@@ -1,9 +1,9 @@
 import * as fs from "node:fs";
-import { nodeFs } from "../../../helpers/node-fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { scanPackageScripts } from "@/core/security/scripts-scanner";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { nodeFs } from "../../../helpers/node-fs";
 
 describe("Package Scripts Security Scanner", () => {
 	let tempDir: string;

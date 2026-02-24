@@ -48,10 +48,12 @@ describe("bundler service", () => {
 				version: "1.0.0",
 			};
 
-			const result = await runEffect(bundleExtensionEffect(pkg, entryPath, {
-				repoRoot: fixtureDir,
-				timestamp: "20250128143022",
-			}));
+			const result = await runEffect(
+				bundleExtensionEffect(pkg, entryPath, {
+					repoRoot: fixtureDir,
+					timestamp: "20250128143022",
+				}),
+			);
 
 			expect(result.packageName).toBe("simple-extension");
 			expect(result.version).toBe("1.0.0");
@@ -74,10 +76,12 @@ describe("bundler service", () => {
 				version: "2.1.0",
 			};
 
-			const result = await runEffect(bundleExtensionEffect(pkg, entryPath, {
-				repoRoot: fixtureDir,
-				timestamp: "20250128143022",
-			}));
+			const result = await runEffect(
+				bundleExtensionEffect(pkg, entryPath, {
+					repoRoot: fixtureDir,
+					timestamp: "20250128143022",
+				}),
+			);
 
 			// Verify the bundle includes the dependency (ms library)
 			// The minified bundle contains time constants from ms library (e.g., 365.25 for year calculation)
@@ -103,10 +107,12 @@ describe("bundler service", () => {
 				version: "1.0.0",
 			};
 
-			const result = await runEffect(bundleExtensionEffect(pkg, entryPath, {
-				repoRoot: fixtureDir,
-				timestamp: "20250128143022",
-			}));
+			const result = await runEffect(
+				bundleExtensionEffect(pkg, entryPath, {
+					repoRoot: fixtureDir,
+					timestamp: "20250128143022",
+				}),
+			);
 
 			// Compute hash of the actual file (strip sourceMappingURL to match implementation)
 			// The implementation strips the sourceMappingURL line and trims trailing whitespace
@@ -138,10 +144,12 @@ describe("bundler service", () => {
 				version: "0.5.2",
 			};
 
-			const result = await runEffect(bundleExtensionEffect(pkg, entryPath, {
-				repoRoot: fixtureDir,
-				timestamp: "20250128143022",
-			}));
+			const result = await runEffect(
+				bundleExtensionEffect(pkg, entryPath, {
+					repoRoot: fixtureDir,
+					timestamp: "20250128143022",
+				}),
+			);
 
 			// Verify name is sanitized (@ and / replaced with -)
 			expect(result.artifactName).toMatch(
@@ -277,10 +285,12 @@ describe("bundler service", () => {
 				version: "1.0.0",
 			};
 
-			const result = await runEffect(bundleExtensionEffect(pkg, entryPath, {
-				repoRoot: fixtureDir,
-				timestamp: "20250128143022",
-			}));
+			const result = await runEffect(
+				bundleExtensionEffect(pkg, entryPath, {
+					repoRoot: fixtureDir,
+					timestamp: "20250128143022",
+				}),
+			);
 
 			// Verify sourcemap exists
 			expect(result.sourcemapPath).toBeDefined();
@@ -301,10 +311,12 @@ describe("bundler service", () => {
 				version: "1.0.0",
 			};
 
-			const result = await runEffect(bundleExtensionEffect(pkg, entryPath, {
-				repoRoot: fixtureDir,
-				timestamp: "20250128143022",
-			}));
+			const result = await runEffect(
+				bundleExtensionEffect(pkg, entryPath, {
+					repoRoot: fixtureDir,
+					timestamp: "20250128143022",
+				}),
+			);
 
 			// Read bundle content and verify sourceMappingURL
 			const bundleContent = await readFile(result.artifactPath, "utf-8");

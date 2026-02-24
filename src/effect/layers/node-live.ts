@@ -1,5 +1,5 @@
-import * as Layer from "effect/Layer";
 import { Fetch } from "@effect/platform/FetchHttpClient";
+import * as Layer from "effect/Layer";
 import { Browser } from "../services/browser";
 import { Keychain, type KeychainService } from "../services/keychain";
 
