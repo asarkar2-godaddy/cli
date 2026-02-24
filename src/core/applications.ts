@@ -324,15 +324,19 @@ interface CreateReleaseResult {
 }
 
 interface AppListResult {
-	applications: Array<{
-		id: string;
-		label: string;
-		name: string;
-		description: string;
-		status: string;
-		url: string;
-		proxyUrl: string;
-	}> | null;
+	applications: {
+		edges: Array<{
+			node: {
+				id: string;
+				label: string;
+				name: string;
+				description: string;
+				status: string;
+				url: string;
+				proxyUrl: string;
+			};
+		}>;
+	} | null;
 }
 
 /** Narrow a service Effect's success type via Effect.map. Preserves E and R channels. */
@@ -563,20 +567,21 @@ export function applicationListEffect(): Effect.Effect<
 
 		const result = yield* callListApps({ accessToken });
 
-		if (!result.applications) {
+		const edges = result.applications?.edges;
+		if (!edges || edges.length === 0) {
 			return [] as Application[];
 		}
 
-		return result.applications.map(
-			(app) =>
+		return edges.map(
+			(edge) =>
 				({
-					id: app.id,
-					label: app.label,
-					name: app.name,
-					description: app.description,
-					status: app.status,
-					url: app.url,
-					proxyUrl: app.proxyUrl,
+					id: edge.node.id,
+					label: edge.node.label,
+					name: edge.node.name,
+					description: edge.node.description,
+					status: edge.node.status,
+					url: edge.node.url,
+					proxyUrl: edge.node.proxyUrl,
 				}) satisfies Application,
 		);
 	});

@@ -10,7 +10,8 @@ import {
 	parseHeadersEffect,
 	readBodyFromFileEffect,
 } from "../../core/api";
-import { ValidationError } from "../../effect/errors";
+import { authLoginEffect, getTokenInfoEffect } from "../../core/auth";
+import { AuthenticationError, ValidationError } from "../../effect/errors";
 import type { NextAction } from "../agent/types";
 import { CliConfig } from "../services/cli-config";
 import { EnvelopeWriter } from "../services/envelope-writer";
@@ -108,6 +109,35 @@ function normalizeStringArray(value: ReadonlyArray<string>): string[] {
 // Command
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Helpers — JWT scope check
+// ---------------------------------------------------------------------------
+
+/** Decode a JWT payload without verification (we only need the claims). */
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+	try {
+		const parts = token.split(".");
+		if (parts.length !== 3) return null;
+		const payload = Buffer.from(parts[1], "base64url").toString("utf-8");
+		return JSON.parse(payload) as Record<string, unknown>;
+	} catch {
+		return null;
+	}
+}
+
+/** Check whether a JWT already contains every scope in `required`. */
+function tokenHasScopes(token: string, required: string[]): boolean {
+	if (required.length === 0) return true;
+	const claims = decodeJwtPayload(token);
+	if (!claims || typeof claims.scope !== "string") return false;
+	const granted = new Set(claims.scope.split(/\s+/));
+	return required.every((s) => granted.has(s));
+}
+
+// ---------------------------------------------------------------------------
+// Command
+// ---------------------------------------------------------------------------
+
 const apiCommand = Command.make(
 	"api",
 	{
@@ -145,6 +175,13 @@ const apiCommand = Command.make(
 			Options.withAlias("i"),
 			Options.withDescription("Include response headers in result"),
 		),
+		scope: Options.text("scope").pipe(
+			Options.withAlias("s"),
+			Options.withDescription(
+				"Required OAuth scope. On 403, triggers auth and retries (can be repeated)",
+			),
+			Options.repeated,
+		),
 	},
 	(config) =>
 		Effect.gen(function* () {
@@ -175,14 +212,85 @@ const apiCommand = Command.make(
 				body = yield* readBodyFromFileEffect(filePath);
 			}
 
-			const response = yield* apiRequestEffect({
+			const requiredScopes = config.scope
+				.flatMap((s) =>
+					s
+						.split(/[\s,]+/)
+						.map((t) => t.trim())
+						.filter((t) => t.length > 0),
+				);
+
+			const requestOpts = {
 				endpoint: config.endpoint,
 				method,
 				fields: Object.keys(fields).length > 0 ? fields : undefined,
 				body,
 				headers: Object.keys(headers).length > 0 ? headers : undefined,
 				debug: cliConfig.verbosity >= 2,
-			});
+			};
+
+			// First attempt
+			const response = yield* apiRequestEffect(requestOpts).pipe(
+				Effect.catchAll((error) => {
+					// On 403 with --scope: check if the token is missing the scope,
+					// trigger auth, and retry — once.
+					if (
+						error._tag === "AuthenticationError" &&
+						error.message.includes("403") &&
+						requiredScopes.length > 0
+					) {
+						return Effect.gen(function* () {
+							// Get current token to inspect scopes
+							const tokenInfo = yield* getTokenInfoEffect().pipe(
+								Effect.catchAll(() => Effect.succeed(null)),
+							);
+
+							if (
+								tokenInfo &&
+								tokenHasScopes(tokenInfo.accessToken, requiredScopes)
+							) {
+								// Token already has the scopes — the 403 is not a scope issue
+								return yield* Effect.fail(error);
+							}
+
+							// Token is missing required scopes — re-auth and retry
+							if (cliConfig.verbosity >= 1) {
+								process.stderr.write(
+									`Token missing scope(s): ${requiredScopes.join(", ")}. Triggering auth flow...\n`,
+								);
+							}
+
+							const loginResult = yield* authLoginEffect({
+								additionalScopes: requiredScopes,
+							}).pipe(
+								Effect.catchAll(() =>
+									Effect.fail(
+										new AuthenticationError({
+											message: "Re-authentication failed",
+											userMessage:
+												"Automatic re-authentication failed. Run 'godaddy auth login' manually.",
+										}),
+									),
+								),
+							);
+
+							if (!loginResult.success) {
+								return yield* Effect.fail(
+									new AuthenticationError({
+										message: "Re-authentication did not succeed",
+										userMessage:
+											"Authentication did not complete. Run 'godaddy auth login' manually.",
+									}),
+								);
+							}
+
+							// Retry the request with the new token
+							return yield* apiRequestEffect(requestOpts);
+						});
+					}
+					return Effect.fail(error);
+				}),
+			);
 
 			let output = response.data;
 			const queryPath = Option.getOrUndefined(config.query);

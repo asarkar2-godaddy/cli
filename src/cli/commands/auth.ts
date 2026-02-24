@@ -1,4 +1,5 @@
 import * as Command from "@effect/cli/Command";
+import * as Options from "@effect/cli/Options";
 import * as Effect from "effect/Effect";
 import {
 	authLoginEffect,
@@ -58,25 +59,46 @@ function authStatusActions(authenticated: boolean): NextAction[] {
 // Subcommands
 // ---------------------------------------------------------------------------
 
-const authLogin = Command.make("login", {}, () =>
-	Effect.gen(function* () {
-		const writer = yield* EnvelopeWriter;
-		const loginResult = yield* authLoginEffect();
-		const environment = yield* envGetEffect().pipe(
-			Effect.map(String),
-			Effect.orElseSucceed(() => "unknown"),
-		);
+const authLogin = Command.make(
+	"login",
+	{
+		scope: Options.text("scope").pipe(
+			Options.withAlias("s"),
+			Options.withDescription(
+				"Additional OAuth scope to request (can be repeated)",
+			),
+			Options.repeated,
+		),
+	},
+	({ scope }) =>
+		Effect.gen(function* () {
+			const writer = yield* EnvelopeWriter;
+			const additionalScopes =
+				scope.length > 0
+					? scope.flatMap((s) =>
+							s
+								.split(/[\s,]+/)
+								.map((t) => t.trim())
+								.filter((t) => t.length > 0),
+						)
+					: undefined;
+			const loginResult = yield* authLoginEffect({ additionalScopes });
+			const environment = yield* envGetEffect().pipe(
+				Effect.map(String),
+				Effect.orElseSucceed(() => "unknown"),
+			);
 
-		yield* writer.emitSuccess(
-			"godaddy auth login",
-			{
-				authenticated: loginResult.success,
-				environment,
-				expires_at: loginResult.expiresAt?.toISOString(),
-			},
-			authLoginActions,
-		);
-	}),
+			yield* writer.emitSuccess(
+				"godaddy auth login",
+				{
+					authenticated: loginResult.success,
+					environment,
+					expires_at: loginResult.expiresAt?.toISOString(),
+					scopes_requested: additionalScopes,
+				},
+				authLoginActions,
+			);
+		}),
 ).pipe(Command.withDescription("Login to GoDaddy Developer Platform"));
 
 const authLogout = Command.make("logout", {}, () =>

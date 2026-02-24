@@ -25,7 +25,7 @@ import {
 } from "./token-store";
 
 const PORT = 7443;
-const OAUTH_SCOPE = "apps.app-registry:read apps.app-registry:write";
+const DEFAULT_OAUTH_SCOPES = "apps.app-registry:read apps.app-registry:write";
 
 export interface AuthResult {
 	success: boolean;
@@ -101,7 +101,9 @@ function getOauthClientIdEffect(): Effect.Effect<string, never, FileSystem> {
 /**
  * Authenticate with GoDaddy OAuth
  */
-export function authLoginEffect(): Effect.Effect<
+export function authLoginEffect(options?: {
+	additionalScopes?: string[];
+}): Effect.Effect<
 	AuthResult,
 	AuthenticationError,
 	FileSystem | Keychain | Browser
@@ -253,7 +255,11 @@ export function authLoginEffect(): Effect.Effect<
 							`http://localhost:${actualPort}/callback`,
 						);
 						authUrl.searchParams.set("state", state);
-						authUrl.searchParams.set("scope", OAUTH_SCOPE);
+						const extra = options?.additionalScopes?.filter((s) => s.length > 0) ?? [];
+						const scope = extra.length > 0
+							? `${DEFAULT_OAUTH_SCOPES} ${extra.join(" ")}`
+							: DEFAULT_OAUTH_SCOPES;
+						authUrl.searchParams.set("scope", scope);
 						authUrl.searchParams.set("code_challenge", codeChallenge);
 						authUrl.searchParams.set("code_challenge_method", "S256");
 

@@ -47,13 +47,17 @@ const ApplicationWithLatestReleaseQuery = graphql(`
 const ApplicationsListQuery = graphql(`
   query ApplicationsList {
     applications {
-      id
-      label
-      name
-      description
-      status
-      url
-      proxyUrl
+      edges {
+        node {
+          id
+          label
+          name
+          description
+          status
+          url
+          proxyUrl
+        }
+      }
     }
   }
 `);

@@ -297,22 +297,32 @@ export function runCli(rawArgv: ReadonlyArray<string>): Promise<void> {
 	// Normalize -vv, --info, --debug before the framework sees them
 	const normalized = normalizeVerbosityArgs(rawArgv);
 
-	// Pre-parse global flags to build layers BEFORE Command.run
+	// Pre-parse global flags to build layers BEFORE Command.run, then strip
+	// them so @effect/cli doesn't reject them as unknown subcommand options.
 	let prettyPrint = false;
 	let verbosity = 0;
 	let envOverride: Environment | null = null;
 
+	const stripIndices = new Set<number>();
 	for (let i = 0; i < normalized.length; i++) {
 		const token = normalized[i];
-		if (token === "--pretty") prettyPrint = true;
+		if (token === "--pretty") {
+			prettyPrint = true;
+			stripIndices.add(i);
+		}
 		if (token === "--verbose" || token === "-v")
 			verbosity = Math.max(verbosity, 1);
 		if (token === "--debug") verbosity = 2;
 		if (token === "--info") verbosity = Math.max(verbosity, 1);
 		if ((token === "--env" || token === "-e") && i + 1 < normalized.length) {
 			envOverride = validateEnvironment(normalized[i + 1]);
+			stripIndices.add(i);
+			stripIndices.add(i + 1);
+			i++; // skip value
 		}
 	}
+
+	const frameworkArgs = normalized.filter((_, i) => !stripIndices.has(i));
 
 	// Detect unsupported --output option before handing to framework
 	const outputIdx = normalized.indexOf("--output");
@@ -364,20 +374,39 @@ export function runCli(rawArgv: ReadonlyArray<string>): Promise<void> {
 
 	const program = cliRunner(
 		// Command.run expects the full process.argv (node + script + args)
-		// We pass a synthetic prefix so the framework strips the first two
-		["node", "godaddy", ...normalized],
+		// We pass a synthetic prefix so the framework strips the first two.
+		// Use frameworkArgs (global flags already stripped) so @effect/cli
+		// doesn't reject them as unknown options on subcommands.
+		["node", "godaddy", ...frameworkArgs],
 	).pipe(
 		// Centralized error boundary: catch ALL errors, emit JSON envelope
 		Effect.catchAll((error) =>
 			Effect.gen(function* () {
 				const writer = yield* EnvelopeWriter;
 
-				// Check if it's an @effect/cli ValidationError
-				const isCliValidation =
+				// Check if it's an @effect/cli ValidationError (not a custom CliError)
+				const CLI_VALIDATION_TAGS = new Set([
+					"CommandMismatch",
+					"CorrectedFlag",
+					"HelpRequested",
+					"InvalidArgument",
+					"InvalidValue",
+					"MissingFlag",
+					"MissingValue",
+					"MissingSubcommand",
+					"MultipleValuesDetected",
+					"NoBuiltInMatch",
+					"UnclusteredFlag",
+				]);
+				const errorTag =
 					typeof error === "object" &&
 					error !== null &&
 					"_tag" in error &&
-					typeof (error as { _tag: unknown })._tag === "string";
+					typeof (error as { _tag: unknown })._tag === "string"
+						? (error as { _tag: string })._tag
+						: undefined;
+				const isCliValidation =
+					errorTag !== undefined && CLI_VALIDATION_TAGS.has(errorTag);
 
 				let details: { message: string; code: string; fix: string };
 

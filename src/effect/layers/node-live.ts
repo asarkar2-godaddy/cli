@@ -1,7 +1,8 @@
 import { Fetch } from "@effect/platform/FetchHttpClient";
 import * as Layer from "effect/Layer";
 import { Browser } from "../services/browser";
-import { Keychain, type KeychainService } from "../services/keychain";
+import { Keychain } from "../services/keychain";
+import { createNativeKeychain } from "./keychain-native";
 
 /**
  * Provide globalThis.fetch via the platform Fetch tag.
@@ -9,48 +10,13 @@ import { Keychain, type KeychainService } from "../services/keychain";
  */
 export const FetchLive = Layer.sync(Fetch, () => globalThis.fetch);
 
-export const KeychainLive = Layer.sync(Keychain, () => {
-	let keytarPromise: Promise<KeychainService> | undefined;
-
-	function getKeytar(): Promise<KeychainService> {
-		if (!keytarPromise) {
-			keytarPromise = import("keytar").then((module) => {
-				const defaultExport = (module as { default?: unknown }).default;
-				const api = defaultExport ?? module;
-				const target = api as Record<string, unknown>;
-				if (
-					typeof target.setPassword !== "function" ||
-					typeof target.getPassword !== "function" ||
-					typeof target.deletePassword !== "function" ||
-					typeof target.findCredentials !== "function"
-				) {
-					throw new Error("Keytar module does not expose the expected API");
-				}
-				return api as KeychainService;
-			});
-		}
-		return keytarPromise;
-	}
-
-	return {
-		setPassword: async (service, account, password) => {
-			const kt = await getKeytar();
-			return kt.setPassword(service, account, password);
-		},
-		getPassword: async (service, account) => {
-			const kt = await getKeytar();
-			return kt.getPassword(service, account);
-		},
-		deletePassword: async (service, account) => {
-			const kt = await getKeytar();
-			return kt.deletePassword(service, account);
-		},
-		findCredentials: async (service) => {
-			const kt = await getKeytar();
-			return kt.findCredentials(service);
-		},
-	};
-});
+/**
+ * Keychain backed by OS credential stores (no native addons).
+ * macOS: Keychain via `security` CLI
+ * Linux: GNOME Keyring / KDE Wallet via `secret-tool` CLI
+ * Windows: PasswordVault via PowerShell
+ */
+export const KeychainLive = Layer.sync(Keychain, () => createNativeKeychain());
 
 export const BrowserLive = Layer.sync(Browser, () => ({
 	open: async (url: string) => {
