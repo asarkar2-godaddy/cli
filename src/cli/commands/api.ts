@@ -9,6 +9,7 @@ import {
 	parseFieldsEffect,
 	parseHeadersEffect,
 	readBodyFromFileEffect,
+	sanitizeResponseHeaders,
 } from "../../core/api";
 import { authLoginEffect, getTokenInfoEffect } from "../../core/auth";
 import { AuthenticationError, ValidationError } from "../../effect/errors";
@@ -318,7 +319,9 @@ const apiCommand = Command.make(
 					method,
 					status: response.status,
 					status_text: response.statusText,
-					headers: config.include ? response.headers : undefined,
+					headers: config.include
+						? sanitizeResponseHeaders(response.headers)
+						: undefined,
 					data: output ?? null,
 				},
 				apiRequestActions,

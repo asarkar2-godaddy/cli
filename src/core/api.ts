@@ -16,6 +16,60 @@ import { type Environment, envGetEffect, getApiUrl } from "./environment";
 // Minimum seconds before expiry to consider token valid for a request
 const TOKEN_EXPIRY_BUFFER_SECONDS = 30;
 
+// Header names (lowercased) that must be redacted from debug output and
+// the --include envelope to prevent leaking tokens, cookies, or secrets.
+const SENSITIVE_HEADER_PARTS = [
+	"authorization",
+	"cookie",
+	"set-cookie",
+	"token",
+	"secret",
+	"api-key",
+	"apikey",
+	"x-auth",
+] as const;
+
+function isSensitiveHeader(headerName: string): boolean {
+	const lower = headerName.toLowerCase();
+	return SENSITIVE_HEADER_PARTS.some((part) => lower.includes(part));
+}
+
+/**
+ * Return a copy of headers with sensitive values replaced by "[REDACTED]".
+ */
+export { sanitizeHeaders as sanitizeResponseHeaders };
+
+function sanitizeHeaders(
+	headers: Record<string, string>,
+): Record<string, string> {
+	const sanitized: Record<string, string> = {};
+	for (const [key, value] of Object.entries(headers)) {
+		sanitized[key] = isSensitiveHeader(key) ? "[REDACTED]" : value;
+	}
+	return sanitized;
+}
+
+/**
+ * Redact values whose keys look like they contain secrets.
+ */
+function redactSensitiveBodyFields(body: string): string {
+	try {
+		const parsed = JSON.parse(body);
+		if (typeof parsed !== "object" || parsed === null) return body;
+		const redacted: Record<string, unknown> = {};
+		for (const [key, value] of Object.entries(parsed)) {
+			const lower = key.toLowerCase();
+			const isSensitive = SENSITIVE_HEADER_PARTS.some((part) =>
+				lower.includes(part),
+			) || lower.includes("password") || lower.includes("credential");
+			redacted[key] = isSensitive ? "[REDACTED]" : value;
+		}
+		return JSON.stringify(redacted);
+	} catch {
+		return body;
+	}
+}
+
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export interface ApiRequestOptions {
@@ -265,13 +319,12 @@ export function apiRequestEffect(
 
 		if (debug) {
 			console.error(`> ${method} ${url}`);
-			for (const [key, value] of Object.entries(requestHeaders)) {
-				const displayValue =
-					key.toLowerCase() === "authorization" ? "Bearer [REDACTED]" : value;
-				console.error(`> ${key}: ${displayValue}`);
+			const sanitizedRequestHeaders = sanitizeHeaders(requestHeaders);
+			for (const [key, value] of Object.entries(sanitizedRequestHeaders)) {
+				console.error(`> ${key}: ${value}`);
 			}
 			if (requestBody) {
-				console.error(`> Body: ${requestBody}`);
+				console.error(`> Body: ${redactSensitiveBodyFields(requestBody)}`);
 			}
 			console.error("");
 		}
@@ -302,7 +355,8 @@ export function apiRequestEffect(
 
 		if (debug) {
 			console.error(`< ${response.status} ${response.statusText}`);
-			for (const [key, value] of Object.entries(responseHeaders)) {
+			const sanitizedResponseHeaders = sanitizeHeaders(responseHeaders);
+			for (const [key, value] of Object.entries(sanitizedResponseHeaders)) {
 				console.error(`< ${key}: ${value}`);
 			}
 			console.error("");
@@ -340,7 +394,9 @@ export function apiRequestEffect(
 
 		// Check for error status codes
 		if (!response.ok) {
-			const errorMessage =
+			// Internal message includes the raw server payload for debugging;
+			// userMessage is a safe, generic description shown to users/agents.
+			const internalDetail =
 				typeof data === "object" && data !== null
 					? JSON.stringify(data)
 					: String(data || response.statusText);
@@ -349,7 +405,7 @@ export function apiRequestEffect(
 			if (response.status === 401) {
 				return yield* Effect.fail(
 					new AuthenticationError({
-						message: `Authentication failed (401): ${errorMessage}`,
+						message: `Authentication failed (401): ${internalDetail}`,
 						userMessage:
 							"Your session has expired or is invalid. Run 'godaddy auth login' to re-authenticate.",
 					}),
@@ -360,7 +416,7 @@ export function apiRequestEffect(
 			if (response.status === 403) {
 				return yield* Effect.fail(
 					new AuthenticationError({
-						message: `Access denied (403): ${errorMessage}`,
+						message: `Access denied (403): ${internalDetail}`,
 						userMessage:
 							"You don't have permission to access this resource. Check your account permissions.",
 					}),
@@ -369,7 +425,7 @@ export function apiRequestEffect(
 
 			return yield* Effect.fail(
 				new NetworkError({
-					message: `API error (${response.status}): ${errorMessage}`,
+					message: `API error (${response.status}): ${internalDetail}`,
 					userMessage: `API request failed with status ${response.status}: ${response.statusText}`,
 				}),
 			);
