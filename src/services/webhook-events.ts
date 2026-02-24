@@ -95,7 +95,10 @@ export function getWebhookEventsTypesEffect({
 			return yield* Effect.fail(
 				new AuthenticationError({
 					message: json.error || "Authentication failed",
-					userMessage: json.error || "Authentication failed",
+					userMessage:
+						response.status === 401 || response.status === 403
+							? "Authentication failed. Run 'godaddy auth login'."
+							: `Webhook events request failed with status ${response.status}`,
 				}),
 			);
 		}

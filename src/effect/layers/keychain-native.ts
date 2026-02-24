@@ -288,6 +288,9 @@ function createWindowsKeychain(): KeychainService {
 
 	return {
 		async setPassword(service, account, password) {
+			assertSafePSValue(service, "service");
+			assertSafePSValue(account, "account");
+			assertSafePSValue(password, "password");
 			// Remove existing entry first (PasswordVault throws on duplicate)
 			const removeScript = `
 				${vaultInit}
@@ -307,6 +310,8 @@ function createWindowsKeychain(): KeychainService {
 		},
 
 		async getPassword(service, account) {
+			assertSafePSValue(service, "service");
+			assertSafePSValue(account, "account");
 			const script = `
 				${vaultInit}
 				try {
@@ -325,6 +330,8 @@ function createWindowsKeychain(): KeychainService {
 		},
 
 		async deletePassword(service, account) {
+			assertSafePSValue(service, "service");
+			assertSafePSValue(account, "account");
 			const script = `
 				${vaultInit}
 				try {
@@ -339,6 +346,7 @@ function createWindowsKeychain(): KeychainService {
 		},
 
 		async findCredentials(service) {
+			assertSafePSValue(service, "service");
 			const script = `
 				${vaultInit}
 				try {
@@ -370,9 +378,33 @@ function createWindowsKeychain(): KeychainService {
 	};
 }
 
-/** Escape single quotes for PowerShell string literals. */
+/**
+ * Escape a value for embedding inside PowerShell single-quoted strings.
+ *
+ * PowerShell single-quoted strings only interpret '' as a literal '.
+ * However, we must also strip NUL bytes (which can truncate strings in
+ * some contexts) and reject values containing characters that could break
+ * out of the quoting context if the script template is ever changed to
+ * use double-quotes or here-strings.
+ */
 function escapePS(value: string): string {
-	return value.replace(/'/g, "''");
+	// Strip NUL bytes that could truncate the string
+	const stripped = value.replace(/\0/g, "");
+	// In PowerShell single-quoted strings, only ' needs escaping (as '').
+	return stripped.replace(/'/g, "''");
+}
+
+/**
+ * Validate that a value is safe for PowerShell interpolation.
+ * Rejects values containing newlines or control characters that could
+ * escape the single-line script template.
+ */
+function assertSafePSValue(value: string, label: string): void {
+	if (/[\r\n]/.test(value)) {
+		throw new Error(
+			`Unsafe ${label} for credential storage: contains newline characters`,
+		);
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -175,7 +175,8 @@ export const releaseInput = type({
 });
 
 /**
- * Extract a user-friendly error message from a GraphQL ClientError
+ * Extract the internal error detail from a GraphQL ClientError.
+ * This may include server-side messages and extension codes.
  */
 function extractGraphQLError(err: unknown): string {
 	if (err instanceof ClientError) {
@@ -184,6 +185,29 @@ function extractGraphQLError(err: unknown): string {
 			const error = graphqlErrors[0];
 			const errorCode = error.extensions?.code;
 			return errorCode ? `${error.message} (${errorCode})` : error.message;
+		}
+	}
+	return "An unexpected error occurred";
+}
+
+/**
+ * Return a safe, generic user-facing message for a GraphQL error.
+ * Avoids leaking internal server details in the CLI JSON envelope.
+ */
+function safeGraphQLUserMessage(err: unknown): string {
+	if (err instanceof ClientError) {
+		const status = err.response.status;
+		if (status === 401 || status === 403)
+			return "Authentication failed. Run 'godaddy auth login'.";
+		if (status === 404)
+			return "The requested resource was not found.";
+		if (status && status >= 500)
+			return "The server encountered an error. Please try again later.";
+		// For 4xx with GraphQL-level error messages, allow the first message
+		// through since these are validation-style errors the user can act on.
+		const graphqlErrors = err.response.errors;
+		if (graphqlErrors?.length && graphqlErrors[0].message) {
+			return graphqlErrors[0].message;
 		}
 	}
 	return "An unexpected error occurred";
@@ -225,7 +249,7 @@ export function createApplicationEffect(
 			catch: (err) =>
 				new NetworkError({
 					message: extractGraphQLError(err),
-					userMessage: extractGraphQLError(err),
+					userMessage: safeGraphQLUserMessage(err),
 				}),
 		});
 	});
@@ -258,7 +282,7 @@ export function updateApplicationEffect(
 			catch: (err) =>
 				new NetworkError({
 					message: extractGraphQLError(err),
-					userMessage: extractGraphQLError(err),
+					userMessage: safeGraphQLUserMessage(err),
 				}),
 		});
 	});
@@ -290,7 +314,7 @@ export function getApplicationEffect(
 			catch: (err) =>
 				new NetworkError({
 					message: extractGraphQLError(err),
-					userMessage: extractGraphQLError(err),
+					userMessage: safeGraphQLUserMessage(err),
 				}),
 		});
 	});
@@ -322,7 +346,7 @@ export function getApplicationAndLatestReleaseEffect(
 			catch: (err) =>
 				new NetworkError({
 					message: extractGraphQLError(err),
-					userMessage: extractGraphQLError(err),
+					userMessage: safeGraphQLUserMessage(err),
 				}),
 		});
 	});
@@ -370,7 +394,7 @@ export function createReleaseEffect(
 			catch: (err) =>
 				new NetworkError({
 					message: extractGraphQLError(err),
-					userMessage: extractGraphQLError(err),
+					userMessage: safeGraphQLUserMessage(err),
 				}),
 		});
 	});
@@ -402,7 +426,7 @@ export function enableApplicationEffect(
 			catch: (err) =>
 				new NetworkError({
 					message: extractGraphQLError(err),
-					userMessage: extractGraphQLError(err),
+					userMessage: safeGraphQLUserMessage(err),
 				}),
 		});
 	});
@@ -434,7 +458,7 @@ export function disableApplicationEffect(
 			catch: (err) =>
 				new NetworkError({
 					message: extractGraphQLError(err),
-					userMessage: extractGraphQLError(err),
+					userMessage: safeGraphQLUserMessage(err),
 				}),
 		});
 	});
@@ -465,7 +489,7 @@ export function listApplicationsEffect({
 			catch: (err) =>
 				new NetworkError({
 					message: extractGraphQLError(err),
-					userMessage: extractGraphQLError(err),
+					userMessage: safeGraphQLUserMessage(err),
 				}),
 		});
 	});
@@ -497,7 +521,7 @@ export function archiveApplicationEffect(
 			catch: (err) =>
 				new NetworkError({
 					message: extractGraphQLError(err),
-					userMessage: extractGraphQLError(err),
+					userMessage: safeGraphQLUserMessage(err),
 				}),
 		});
 	});

@@ -25,7 +25,20 @@ import {
 } from "./token-store";
 
 const PORT = 7443;
+const AUTH_HOST = "127.0.0.1";
+const AUTH_TIMEOUT_MS = 120_000;
 const DEFAULT_OAUTH_SCOPES = "apps.app-registry:read apps.app-registry:write";
+
+/**
+ * Escape a string for safe embedding in HTML text content.
+ */
+function escapeHtml(text: string): string {
+	return text
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;");
+}
 
 export interface AuthResult {
 	success: boolean;
@@ -217,10 +230,11 @@ export function authLoginEffect(options?: {
 									"Content-Type": "text/html",
 								});
 								res.end(
-									`<html><body><h1>Authentication Failed</h1><p>${errorMessage}</p></body></html>`,
+									`<html><body><h1>Authentication Failed</h1><p>${escapeHtml(errorMessage)}</p></body></html>`,
 								);
 								reject(err);
 							} finally {
+								clearTimeout(authTimeout);
 								if (server) server.close();
 							}
 						} else {
@@ -234,7 +248,20 @@ export function authLoginEffect(options?: {
 						reject(err);
 					});
 
-					server.listen(PORT, () => {
+					// Auto-close after timeout if the user never completes the flow
+					const authTimeout = setTimeout(() => {
+						if (server) {
+							server.close();
+							server = null;
+						}
+						reject(
+							new Error(
+								"Login timed out. The authentication flow was not completed.",
+							),
+						);
+					}, AUTH_TIMEOUT_MS);
+
+					server.listen(PORT, AUTH_HOST, () => {
 						const actualPort = (server?.address() as import("net").AddressInfo)
 							?.port;
 						if (!actualPort) {
