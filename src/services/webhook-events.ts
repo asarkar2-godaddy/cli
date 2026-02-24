@@ -1,4 +1,13 @@
-import { type Environment, envGet, getApiUrl } from "../core/environment";
+import { Fetch } from "@effect/platform/FetchHttpClient";
+import type { FileSystem } from "@effect/platform/FileSystem";
+import * as Effect from "effect/Effect";
+import { type Environment, envGetEffect, getApiUrl } from "../core/environment";
+import {
+	AuthenticationError,
+	type ConfigurationError,
+	NetworkError,
+	type ValidationError,
+} from "../effect/errors";
 import { logHttpRequest, logHttpResponse } from "./logger";
 
 export type WebhookEventType = {
@@ -6,57 +15,91 @@ export type WebhookEventType = {
 	description: string;
 };
 
-export async function getWebhookEventsTypes({
+/**
+ * Fetch webhook event types from the API.
+ * Requires FileSystem service (via envGetEffect) and HttpClient.
+ */
+export function getWebhookEventsTypesEffect({
 	accessToken,
 }: {
 	accessToken: string | null;
-}): Promise<{ events: Array<WebhookEventType> }> {
-	if (!accessToken) {
-		throw new Error("Access token is required");
-	}
+}): Effect.Effect<
+	{ events: Array<WebhookEventType> },
+	AuthenticationError | NetworkError | ConfigurationError | ValidationError,
+	FileSystem | Fetch
+> {
+	return Effect.gen(function* () {
+		if (!accessToken) {
+			return yield* Effect.fail(
+				new AuthenticationError({
+					message: "Access token is required",
+					userMessage: "Authentication required to fetch webhook events",
+				}),
+			);
+		}
 
-	// Get the current environment and build the API URL
-	const result = await envGet();
-	if (!result.success || !result.data) {
-		throw result.error ?? new Error("Failed to get environment");
-	}
-	const env = result.data as Environment;
-	const baseUrl = getApiUrl(env);
+		const fetch = yield* Fetch;
 
-	const url = `${baseUrl}/v1/apis/webhook-event-types`;
-	const headers = {
-		Authorization: `Bearer ${accessToken}`,
-		UserAgent: "@godaddy/cli",
-	};
+		// Get the current environment and build the API URL
+		const env: Environment = yield* envGetEffect();
+		const baseUrl = getApiUrl(env);
 
-	const startTime = Date.now();
+		const url = `${baseUrl}/v1/apis/webhook-event-types`;
+		const headers = {
+			Authorization: `Bearer ${accessToken}`,
+			UserAgent: "@godaddy/cli",
+		};
 
-	// Log HTTP request
-	logHttpRequest({
-		method: "GET",
-		url,
-		headers,
+		const startTime = Date.now();
+
+		// Log HTTP request
+		logHttpRequest({
+			method: "GET",
+		});
+
+		const response = yield* Effect.tryPromise({
+			try: () => fetch(url, { headers }),
+			catch: (error) =>
+				new NetworkError({
+					message: `Failed to fetch webhook events: ${error instanceof Error ? error.message : String(error)}`,
+					userMessage: "Network error fetching webhook events",
+				}),
+		});
+
+		const duration = Date.now() - startTime;
+
+		const json = yield* Effect.tryPromise({
+			try: () =>
+				response.json() as Promise<{
+					events: Array<WebhookEventType>;
+					error?: string;
+				}>,
+			catch: (error) =>
+				new NetworkError({
+					message: `Failed to parse webhook events response: ${error instanceof Error ? error.message : String(error)}`,
+					userMessage: "Failed to parse webhook events response",
+				}),
+		});
+
+		// Log HTTP response
+		logHttpResponse({
+			method: "GET",
+			status: response.status,
+			statusText: response.statusText,
+			headers: response.headers ? {} : undefined,
+			body: json,
+			duration,
+		});
+
+		if (!response.ok) {
+			return yield* Effect.fail(
+				new AuthenticationError({
+					message: json.error || "Authentication failed",
+					userMessage: json.error || "Authentication failed",
+				}),
+			);
+		}
+
+		return json as { events: Array<WebhookEventType> };
 	});
-
-	const response = await fetch(url, { headers });
-	const duration = Date.now() - startTime;
-
-	const json = await response.json();
-
-	// Log HTTP response
-	logHttpResponse({
-		method: "GET",
-		url,
-		status: response.status,
-		statusText: response.statusText,
-		headers: response.headers ? {} : undefined,
-		body: json,
-		duration,
-	});
-
-	if (!response.ok) {
-		throw new Error(json.error || "Authentication failed");
-	}
-
-	return json;
 }

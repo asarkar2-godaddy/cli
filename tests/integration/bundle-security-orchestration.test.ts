@@ -1,9 +1,10 @@
 import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bundleExtensionFromDir } from "@/services/extension/bundler";
-import { scanBundle } from "@/services/extension/security-scan";
+import { bundleExtensionFromDirEffect } from "@/services/extension/bundler";
+import { scanBundleEffect } from "@/services/extension/security-scan";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { runEffect } from "../setup/effect-test-utils";
 
 describe("Bundle Security Orchestration (Integration)", () => {
 	let testDir: string;
@@ -43,26 +44,24 @@ describe("Bundle Security Orchestration (Integration)", () => {
 		);
 
 		// Bundle extension (use blocks type since it imports node modules)
-		const bundleResult = await bundleExtensionFromDir(extDir, {
-			repoRoot: testDir,
-			timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
-			extensionType: "blocks",
-		});
-		expect(bundleResult.success).toBe(true);
+		const bundleResult = await runEffect(
+			bundleExtensionFromDirEffect(extDir, {
+				repoRoot: testDir,
+				timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
+				extensionType: "blocks",
+			}),
+		);
 
-		const artifactPath = bundleResult.data!.artifactPath;
+		const artifactPath = bundleResult.artifactPath;
 
 		// Post-bundle scan should block
-		const scanResult = await scanBundle(artifactPath);
-		expect(scanResult.success).toBe(true);
-		expect(scanResult.data?.blocked).toBe(true);
+		const scanResult = await runEffect(scanBundleEffect(artifactPath));
+		expect(scanResult.blocked).toBe(true);
 
 		// Simulate orchestrator: delete artifact on block
 		await rm(artifactPath, { force: true }).catch(() => {});
-		if (bundleResult.data!.sourcemapPath) {
-			await rm(bundleResult.data!.sourcemapPath, { force: true }).catch(
-				() => {},
-			);
+		if (bundleResult.sourcemapPath) {
+			await rm(bundleResult.sourcemapPath, { force: true }).catch(() => {});
 		}
 
 		// Verify artifact deleted
@@ -91,19 +90,21 @@ describe("Bundle Security Orchestration (Integration)", () => {
     `,
 		);
 
-		const bundleResult = await bundleExtensionFromDir(extDir, {
-			repoRoot: testDir,
-			timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
-		});
-		const scanResult = await scanBundle(bundleResult.data!.artifactPath);
+		const bundleResult = await runEffect(
+			bundleExtensionFromDirEffect(extDir, {
+				repoRoot: testDir,
+				timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
+			}),
+		);
+		const scanResult = await runEffect(
+			scanBundleEffect(bundleResult.artifactPath),
+		);
 
-		expect(scanResult.data?.blocked).toBe(false);
-		expect(scanResult.data?.findings).toHaveLength(0);
+		expect(scanResult.blocked).toBe(false);
+		expect(scanResult.findings).toHaveLength(0);
 
 		// Artifact should NOT be deleted for clean bundles
-		await expect(
-			access(bundleResult.data!.artifactPath),
-		).resolves.toBeUndefined();
+		await expect(access(bundleResult.artifactPath)).resolves.toBeUndefined();
 	});
 
 	it("detects malicious dependency in bundled code", async () => {
@@ -140,19 +141,20 @@ describe("Bundle Security Orchestration (Integration)", () => {
 		);
 
 		// Use blocks type since it requires node module (child_process)
-		const bundleResult = await bundleExtensionFromDir(extDir, {
-			repoRoot: testDir,
-			timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
-			extensionType: "blocks",
-		});
-		expect(bundleResult.success).toBe(true);
-		const scanResult = await scanBundle(bundleResult.data!.artifactPath);
+		const bundleResult = await runEffect(
+			bundleExtensionFromDirEffect(extDir, {
+				repoRoot: testDir,
+				timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
+				extensionType: "blocks",
+			}),
+		);
+		const scanResult = await runEffect(
+			scanBundleEffect(bundleResult.artifactPath),
+		);
 
 		// Should detect child_process in bundled dependency
-		expect(scanResult.data?.blocked).toBe(true);
-		expect(scanResult.data?.findings.some((f) => f.ruleId === "SEC102")).toBe(
-			true,
-		);
+		expect(scanResult.blocked).toBe(true);
+		expect(scanResult.findings.some((f) => f.ruleId === "SEC102")).toBe(true);
 	});
 
 	it("does NOT alert on legitimate base64/prototype usage (false positive test)", async () => {
@@ -204,18 +206,23 @@ describe("Bundle Security Orchestration (Integration)", () => {
     `,
 		);
 
-		const bundleResult = await bundleExtensionFromDir(extDir, {
-			repoRoot: testDir,
-			timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
-		});
-		const scanResult = await scanBundle(bundleResult.data!.artifactPath);
+		const bundleResult = await runEffect(
+			bundleExtensionFromDirEffect(extDir, {
+				repoRoot: testDir,
+				timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
+			}),
+		);
+		const scanResult = await runEffect(
+			scanBundleEffect(bundleResult.artifactPath),
+		);
 
 		// Should NOT block - all patterns are legitimate usage
-		expect(scanResult.data?.blocked).toBe(false);
+		expect(scanResult.blocked).toBe(false);
 
 		// May have zero findings, or only low-severity warnings
-		const blockingFindings =
-			scanResult.data?.findings.filter((f) => f.severity === "block") || [];
+		const blockingFindings = scanResult.findings.filter(
+			(f) => f.severity === "block",
+		);
 		expect(blockingFindings).toHaveLength(0);
 	});
 });

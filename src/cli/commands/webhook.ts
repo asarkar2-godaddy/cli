@@ -1,48 +1,85 @@
-import { Command } from "commander";
-import { type WebhookEvent, webhookEvents } from "../../core/webhooks";
+import * as Command from "@effect/cli/Command";
+import * as Effect from "effect/Effect";
+import { webhookEventsEffect } from "../../core/webhooks";
+import { truncateList } from "../agent/truncation";
+import type { NextAction } from "../agent/types";
+import { EnvelopeWriter } from "../services/envelope-writer";
 
-export function createWebhookCommand(): Command {
-	const webhook = new Command("webhook").description(
-		"Manage webhook integrations",
-	);
+// ---------------------------------------------------------------------------
+// Colocated next_actions
+// ---------------------------------------------------------------------------
 
-	// webhook events
-	webhook
-		.command("events")
-		.description("List available webhook event types")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (options) => {
-			const result = await webhookEvents();
+const webhookGroupActions: NextAction[] = [
+	{
+		command: "godaddy webhook events",
+		description: "List available webhook events",
+	},
+];
 
-			if (!result.success) {
-				console.error(
-					result.error?.userMessage || "Failed to get webhook events",
-				);
-				process.exit(1);
-			}
+const webhookEventsActions: NextAction[] = [
+	{
+		command:
+			"godaddy application add subscription --name <name> --events <events> --url <url>",
+		description: "Add a webhook subscription to config",
+		params: {
+			name: { description: "Subscription name", required: true },
+			events: { description: "Comma-separated event list", required: true },
+			url: { description: "Webhook endpoint", required: true },
+		},
+	},
+	{ command: "godaddy webhook events", description: "Refresh event list" },
+];
 
-			const events = result.data as WebhookEvent[];
+// ---------------------------------------------------------------------------
+// Subcommands
+// ---------------------------------------------------------------------------
 
-			if (options.output === "json") {
-				console.log(JSON.stringify(events, null, 2));
-			} else {
-				if (events.length === 0) {
-					console.log("No webhook events available");
-					return;
-				}
+const webhookEvents = Command.make("events", {}, () =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		const events = yield* webhookEventsEffect();
+		const truncated = truncateList(events, "webhook-events");
 
-				console.log(`Available Webhook Events (${events.length}):`);
-				console.log("");
-				for (const event of events) {
-					console.log(`• ${event.eventType}`);
-					if (event.description) {
-						console.log(`  ${event.description}`);
-					}
-					console.log("");
-				}
-			}
-			process.exit(0);
-		});
+		yield* writer.emitSuccess(
+			"godaddy webhook events",
+			{
+				events: truncated.items,
+				total: truncated.metadata.total,
+				shown: truncated.metadata.shown,
+				truncated: truncated.metadata.truncated,
+				full_output: truncated.metadata.full_output,
+			},
+			webhookEventsActions,
+		);
+	}),
+).pipe(Command.withDescription("List available webhook event types"));
 
-	return webhook;
-}
+// ---------------------------------------------------------------------------
+// Parent command
+// ---------------------------------------------------------------------------
+
+const webhookParent = Command.make("webhook", {}, () =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		yield* writer.emitSuccess(
+			"godaddy webhook",
+			{
+				command: "godaddy webhook",
+				description: "Manage webhook integrations",
+				commands: [
+					{
+						command: "godaddy webhook events",
+						description: "List available webhook event types",
+						usage: "godaddy webhook events",
+					},
+				],
+			},
+			webhookGroupActions,
+		);
+	}),
+).pipe(
+	Command.withDescription("Manage webhook integrations"),
+	Command.withSubcommands([webhookEvents]),
+);
+
+export const webhookCommand = webhookParent;

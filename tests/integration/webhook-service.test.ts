@@ -1,43 +1,55 @@
+import * as Exit from "effect/Exit";
 import { describe, expect, it } from "vitest";
-import { getWebhookEventsTypes } from "../../src/services/webhook-events";
+import { getWebhookEventsTypesEffect } from "../../src/services/webhook-events";
+import {
+	extractFailure,
+	runEffect,
+	runEffectExit,
+} from "../setup/effect-test-utils";
 import { webhookEventTypesFixture } from "../setup/fixtures/webhook-fixtures";
-import { withNoAuth, withValidAuth } from "../setup/test-utils";
+import { withValidAuth } from "../setup/test-utils";
 
 describe("webhook service", () => {
 	describe("getWebhookEventsTypes", () => {
 		it("should return webhook event types with valid auth", async () => {
-			const result = await withValidAuth(async (accessToken) => {
-				return getWebhookEventsTypes({ accessToken });
-			});
+			withValidAuth();
+
+			const result = await runEffect(
+				getWebhookEventsTypesEffect({ accessToken: "test-token-123" }),
+			);
 
 			expect(result).toEqual(webhookEventTypesFixture);
-			expect(result?.events).toHaveLength(8);
-			expect(result?.events[0]).toEqual({
+			expect(result.events).toHaveLength(8);
+			expect(result.events[0]).toEqual({
 				eventType: "application.created",
 				description: "Triggered when a new application is created",
 			});
 		});
 
 		it("should throw error with null access token", async () => {
-			await expect(
-				getWebhookEventsTypes({ accessToken: null }),
-			).rejects.toThrow("Access token is required");
+			const exit = await runEffectExit(
+				getWebhookEventsTypesEffect({ accessToken: null }),
+			);
+			const err = extractFailure(exit) as { message: string };
+			expect(err.message).toContain("Access token is required");
 		});
 
 		it("should throw authentication error with invalid token", async () => {
-			await withNoAuth(async () => {
-				await expect(
-					getWebhookEventsTypes({ accessToken: "invalid-token" }),
-				).rejects.toThrow("Authentication failed");
-			});
+			const exit = await runEffectExit(
+				getWebhookEventsTypesEffect({ accessToken: "invalid-token" }),
+			);
+			const err = extractFailure(exit) as { message: string };
+			expect(err.message).toContain("Authentication failed");
 		});
 
 		it("should return specific event types in response", async () => {
-			const result = await withValidAuth(async (accessToken) => {
-				return getWebhookEventsTypes({ accessToken });
-			});
+			withValidAuth();
 
-			const eventTypes = result?.events.map((event) => event.eventType);
+			const result = await runEffect(
+				getWebhookEventsTypesEffect({ accessToken: "test-token-123" }),
+			);
+
+			const eventTypes = result.events.map((event) => event.eventType);
 			expect(eventTypes).toContain("application.created");
 			expect(eventTypes).toContain("application.updated");
 			expect(eventTypes).toContain("application.deleted");
@@ -49,11 +61,13 @@ describe("webhook service", () => {
 		});
 
 		it("should include descriptions for each event type", async () => {
-			const result = await withValidAuth(async (accessToken) => {
-				return getWebhookEventsTypes({ accessToken });
-			});
+			withValidAuth();
 
-			for (const event of result?.events || []) {
+			const result = await runEffect(
+				getWebhookEventsTypesEffect({ accessToken: "test-token-123" }),
+			);
+
+			for (const event of result.events) {
 				expect(event.description).toBeTruthy();
 				expect(typeof event.description).toBe("string");
 				expect(event.description.length).toBeGreaterThan(0);

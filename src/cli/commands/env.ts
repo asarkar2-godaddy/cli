@@ -1,137 +1,227 @@
-import { Command } from "commander";
+import * as Args from "@effect/cli/Args";
+import * as Command from "@effect/cli/Command";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import {
-	type Environment,
-	type EnvironmentInfo,
-	envGet,
-	envInfo,
-	envList,
-	envSet,
+	envGetEffect,
+	envInfoEffect,
+	envListEffect,
+	envSetEffect,
 	getEnvironmentDisplay,
 } from "../../core/environment";
+import type { NextAction } from "../agent/types";
+import { EnvelopeWriter } from "../services/envelope-writer";
 
-export function createEnvCommand(): Command {
-	const env = new Command("env").description(
-		"Manage GoDaddy environments (ote, prod)",
-	);
+// ---------------------------------------------------------------------------
+// Colocated next_actions
+// ---------------------------------------------------------------------------
 
-	// env list
-	env
-		.command("list")
-		.description("List all available environments")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (options) => {
-			const result = await envList();
+const envGroupActions: NextAction[] = [
+	{ command: "godaddy env get", description: "Get active environment" },
+	{ command: "godaddy env list", description: "List environments" },
+	{
+		command: "godaddy env set <environment>",
+		description: "Set active environment",
+		params: {
+			environment: {
+				description: "Environment name",
+				enum: ["ote", "prod"],
+				default: "ote",
+				required: true,
+			},
+		},
+	},
+];
 
-			if (!result.success) {
-				console.error(
-					result.error?.userMessage || "Failed to list environments",
-				);
-				process.exit(1);
-			}
+const envGetActions: NextAction[] = [
+	{
+		command: "godaddy env set <environment>",
+		description: "Set active environment",
+		params: { environment: { enum: ["ote", "prod"], required: true } },
+	},
+	{
+		command: "godaddy env info [environment]",
+		description: "Show environment details",
+		params: { environment: { enum: ["ote", "prod"], default: "ote" } },
+	},
+];
 
-			if (options.output === "json") {
-				console.log(JSON.stringify(result.data, null, 2));
-			} else {
-				console.log("Available Environments:");
-				result.data?.forEach((environment, index) => {
-					const display = getEnvironmentDisplay(environment);
-					const marker = index === 0 ? "● " : "○ ";
-					const activeText = index === 0 ? " (active)" : "";
-					console.log(`  ${marker}${display.label}${activeText}`);
-				});
-			}
-			process.exit(0);
-		});
+const envSetActions: NextAction[] = [
+	{ command: "godaddy env get", description: "Get active environment" },
+	{
+		command: "godaddy auth status",
+		description: "Check auth for active environment",
+	},
+];
 
-	// env get
-	env
-		.command("get")
-		.description("Get current active environment")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (options) => {
-			const result = await envGet();
+const envListActions: NextAction[] = [
+	{ command: "godaddy env get", description: "Get active environment" },
+	{
+		command: "godaddy env set <environment>",
+		description: "Set active environment",
+		params: {
+			environment: { enum: ["ote", "prod"], default: "ote", required: true },
+		},
+	},
+	{
+		command: "godaddy env info [environment]",
+		description: "Show environment details",
+		params: { environment: { enum: ["ote", "prod"], default: "ote" } },
+	},
+];
 
-			if (!result.success) {
-				console.error(result.error?.userMessage || "Failed to get environment");
-				process.exit(1);
-			}
-
-			if (options.output === "json") {
-				console.log(JSON.stringify({ environment: result.data }, null, 2));
-			} else {
-				const display = getEnvironmentDisplay(result.data as Environment);
-				console.log(`Current active environment: ${display.label}`);
-			}
-			process.exit(0);
-		});
-
-	// env set
-	env
-		.command("set")
-		.description("Set active environment")
-		.argument("<environment>", "Environment to set (ote|prod)")
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (environment: string, options) => {
-			const result = await envSet(environment);
-
-			if (!result.success) {
-				console.error(result.error?.userMessage || "Failed to set environment");
-				process.exit(1);
-			}
-
-			if (options.output === "json") {
-				console.log(JSON.stringify({ success: true, environment }, null, 2));
-			} else {
-				const display = getEnvironmentDisplay(environment as Environment);
-				console.log(`Environment successfully set to ${display.label}`);
-			}
-			process.exit(0);
-		});
-
-	// env info
-	env
-		.command("info")
-		.description("Show detailed information about an environment")
-		.argument(
-			"[environment]",
-			"Environment to show info for (defaults to current)",
-		)
-		.option("-o, --output <format>", "Output format (json|text)", "text")
-		.action(async (environment: string | undefined, options) => {
-			const result = await envInfo(environment);
-
-			if (!result.success) {
-				console.error(
-					result.error?.userMessage || "Failed to get environment info",
-				);
-				process.exit(1);
-			}
-
-			const info = result.data as EnvironmentInfo;
-
-			if (options.output === "json") {
-				console.log(JSON.stringify(info, null, 2));
-			} else {
-				console.log(`Environment: ${info.display.label}`);
-
-				if (info.config) {
-					console.log("\nConfiguration:");
-					console.log(`  Name: ${info.config.name}`);
-					console.log(`  Client ID: ${info.config.client_id}`);
-					console.log(`  Version: ${info.config.version}`);
-					console.log(`  URL: ${info.config.url}`);
-					console.log(`  Proxy URL: ${info.config.proxy_url}`);
-					console.log(
-						`  Auth Scopes: ${info.config.authorization_scopes.join(", ")}`,
-					);
-					console.log(`\nConfig File: ${info.configFile}`);
-				} else {
-					console.log("\nNo configuration file found for this environment.");
-					console.log(`Create one with: godaddy env init ${info.environment}`);
-				}
-			}
-			process.exit(0);
-		});
-
-	return env;
+function envInfoActions(environment?: string): NextAction[] {
+	return [
+		{
+			command: "godaddy env set <environment>",
+			description: "Set active environment",
+			params: {
+				environment: {
+					enum: ["ote", "prod"],
+					value: environment ?? "ote",
+					required: true,
+				},
+			},
+		},
+		{ command: "godaddy auth status", description: "Check auth status" },
+	];
 }
+
+// ---------------------------------------------------------------------------
+// Subcommands
+// ---------------------------------------------------------------------------
+
+const envList = Command.make("list", {}, () =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		const environments = yield* envListEffect();
+		const activeEnvironment = environments[0];
+
+		yield* writer.emitSuccess(
+			"godaddy env list",
+			{
+				active_environment: activeEnvironment,
+				environments: environments.map((environment) => ({
+					environment,
+					display: getEnvironmentDisplay(environment),
+				})),
+			},
+			envListActions,
+		);
+	}),
+).pipe(Command.withDescription("List all available environments"));
+
+const envGet = Command.make("get", {}, () =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		const environment = yield* envGetEffect();
+
+		yield* writer.emitSuccess(
+			"godaddy env get",
+			{ environment },
+			envGetActions,
+		);
+	}),
+).pipe(Command.withDescription("Get current active environment"));
+
+const envSet = Command.make(
+	"set",
+	{
+		environment: Args.text({ name: "environment" }).pipe(
+			Args.withDescription("Environment to set (ote|prod)"),
+		),
+	},
+	({ environment }) =>
+		Effect.gen(function* () {
+			const writer = yield* EnvelopeWriter;
+			const previousEnvironment = yield* envGetEffect();
+			yield* envSetEffect(environment);
+
+			yield* writer.emitSuccess(
+				"godaddy env set",
+				{
+					previous_environment: previousEnvironment,
+					environment,
+				},
+				envSetActions,
+			);
+		}),
+).pipe(Command.withDescription("Set active environment"));
+
+const envInfo = Command.make(
+	"info",
+	{ environment: Args.text({ name: "environment" }).pipe(Args.optional) },
+	({ environment: environmentOpt }) =>
+		Effect.gen(function* () {
+			const writer = yield* EnvelopeWriter;
+			const environment = Option.getOrUndefined(environmentOpt);
+			const info = yield* envInfoEffect(environment);
+
+			yield* writer.emitSuccess(
+				"godaddy env info",
+				{
+					environment: info.environment,
+					display: info.display,
+					config_file: info.configFile,
+					config_summary: info.config
+						? {
+								name: info.config.name,
+								client_id: info.config.client_id,
+								version: info.config.version,
+								url: info.config.url,
+								proxy_url: info.config.proxy_url,
+								authorization_scopes: info.config.authorization_scopes,
+							}
+						: null,
+				},
+				envInfoActions(info.environment),
+			);
+		}),
+).pipe(
+	Command.withDescription("Show detailed information about an environment"),
+);
+
+// ---------------------------------------------------------------------------
+// Parent command
+// ---------------------------------------------------------------------------
+
+const envParent = Command.make("env", {}, () =>
+	Effect.gen(function* () {
+		const writer = yield* EnvelopeWriter;
+		yield* writer.emitSuccess(
+			"godaddy env",
+			{
+				command: "godaddy env",
+				description: "Manage GoDaddy environments (ote, prod)",
+				commands: [
+					{
+						command: "godaddy env list",
+						description: "List all available environments",
+						usage: "godaddy env list",
+					},
+					{
+						command: "godaddy env get",
+						description: "Get current active environment",
+						usage: "godaddy env get",
+					},
+					{
+						command: "godaddy env set <environment>",
+						description: "Set active environment",
+						usage: "godaddy env set <environment>",
+					},
+					{
+						command: "godaddy env info [environment]",
+						description: "Show detailed information about an environment",
+						usage: "godaddy env info [environment]",
+					},
+				],
+			},
+			envGroupActions,
+		);
+	}),
+).pipe(
+	Command.withDescription("Manage GoDaddy environments (ote, prod)"),
+	Command.withSubcommands([envList, envGet, envSet, envInfo]),
+);
+
+export const envCommand = envParent;

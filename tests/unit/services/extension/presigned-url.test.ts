@@ -1,5 +1,11 @@
-import { getUploadTarget } from "@/services/extension/presigned-url";
+import { getUploadTargetEffect } from "@/services/extension/presigned-url";
+import * as Effect from "effect/Effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	extractFailure,
+	runEffect,
+	runEffectExit,
+} from "../../../setup/effect-test-utils";
 
 // Mock logger
 vi.mock("@/services/logger", () => ({
@@ -11,16 +17,23 @@ vi.mock("@/services/logger", () => ({
 	}),
 }));
 
-// Mock the graphql-request module
-vi.mock("graphql-request", () => ({
-	request: vi.fn(),
-}));
+// Shared mock request function used by the fake GraphQLClient
+const mockRequest = vi.fn();
 
-// Mock environment
-vi.mock("@/core/environment", () => ({
-	getActiveEnvironment: vi.fn().mockResolvedValue("dev"),
-	getApiUrl: vi.fn().mockReturnValue("https://api.dev.example.com"),
-}));
+// Mock http-helpers to return a fake GraphQLClient
+vi.mock("@/services/http-helpers", () => {
+	const Effect = require("effect/Effect");
+	return {
+		getRequestHeaders: (token: string) => ({
+			Authorization: `Bearer ${token}`,
+			"X-Request-ID": "test-uuid",
+		}),
+		makeGraphQLClientEffect: () =>
+			Effect.succeed({
+				request: mockRequest,
+			}),
+	};
+});
 
 describe("presigned-url service", () => {
 	beforeEach(() => {
@@ -29,8 +42,7 @@ describe("presigned-url service", () => {
 
 	describe("getUploadTarget", () => {
 		it("should request presigned URL from GraphQL API", async () => {
-			const { request: mockRequest } = await import("graphql-request");
-			vi.mocked(mockRequest).mockResolvedValue({
+			mockRequest.mockResolvedValue({
 				generateReleaseUploadUrl: {
 					uploadId: "test-upload-id",
 					url: "https://s3.example.com/presigned-url",
@@ -41,13 +53,15 @@ describe("presigned-url service", () => {
 				},
 			});
 
-			const result = await getUploadTarget(
-				{
-					applicationId: "app-123",
-					releaseId: "release-456",
-					contentType: "JS",
-				},
-				"test-access-token",
+			const result = await runEffect(
+				getUploadTargetEffect(
+					{
+						applicationId: "app-123",
+						releaseId: "release-456",
+						contentType: "JS",
+					},
+					"test-access-token",
+				),
 			);
 
 			expect(result).toEqual({
@@ -63,8 +77,7 @@ describe("presigned-url service", () => {
 		});
 
 		it("should default to JS content type", async () => {
-			const { request: mockRequest } = await import("graphql-request");
-			vi.mocked(mockRequest).mockResolvedValue({
+			mockRequest.mockResolvedValue({
 				generateReleaseUploadUrl: {
 					uploadId: "test-upload-id",
 					url: "https://s3.example.com/presigned-url",
@@ -75,16 +88,17 @@ describe("presigned-url service", () => {
 				},
 			});
 
-			await getUploadTarget(
-				{
-					applicationId: "app-123",
-					releaseId: "release-456",
-				},
-				"test-access-token",
+			await runEffect(
+				getUploadTargetEffect(
+					{
+						applicationId: "app-123",
+						releaseId: "release-456",
+					},
+					"test-access-token",
+				),
 			);
 
 			expect(mockRequest).toHaveBeenCalledWith(
-				expect.any(String),
 				expect.anything(),
 				expect.objectContaining({
 					input: expect.objectContaining({
@@ -96,8 +110,7 @@ describe("presigned-url service", () => {
 		});
 
 		it("should parse multiple required headers correctly", async () => {
-			const { request: mockRequest } = await import("graphql-request");
-			vi.mocked(mockRequest).mockResolvedValue({
+			mockRequest.mockResolvedValue({
 				generateReleaseUploadUrl: {
 					uploadId: "test-upload-id",
 					url: "https://s3.example.com/presigned-url",
@@ -112,12 +125,14 @@ describe("presigned-url service", () => {
 				},
 			});
 
-			const result = await getUploadTarget(
-				{
-					applicationId: "app-123",
-					releaseId: "release-456",
-				},
-				"test-access-token",
+			const result = await runEffect(
+				getUploadTargetEffect(
+					{
+						applicationId: "app-123",
+						releaseId: "release-456",
+					},
+					"test-access-token",
+				),
 			);
 
 			expect(result.requiredHeaders).toEqual({
@@ -128,20 +143,24 @@ describe("presigned-url service", () => {
 		});
 
 		it("should throw error if response is empty", async () => {
-			const { request: mockRequest } = await import("graphql-request");
-			vi.mocked(mockRequest).mockResolvedValue({
+			mockRequest.mockResolvedValue({
 				generateReleaseUploadUrl: null,
 			});
 
-			await expect(
-				getUploadTarget(
+			const exit = await runEffectExit(
+				getUploadTargetEffect(
 					{
 						applicationId: "app-123",
 						releaseId: "release-456",
 					},
 					"test-access-token",
 				),
-			).rejects.toThrow("Failed to generate upload URL: empty response");
+			);
+
+			const err = extractFailure(exit) as { message: string };
+			expect(err.message).toContain(
+				"Failed to generate upload URL: empty response",
+			);
 		});
 	});
 });

@@ -2,8 +2,9 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { UploadTarget } from "@/services/extension/presigned-url";
-import { uploadArtifact } from "@/services/extension/upload";
+import { uploadArtifactEffect } from "@/services/extension/upload";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { runEffect } from "../../../setup/effect-test-utils";
 
 // Mock logger to avoid undefined errors in tests
 vi.mock("@/services/logger", () => ({
@@ -27,7 +28,7 @@ describe("upload service", () => {
 		vi.restoreAllMocks();
 	});
 
-	describe("uploadArtifact", () => {
+	describe("uploadArtifactEffect", () => {
 		it("should upload artifact successfully", async () => {
 			const artifactPath = join(testDir, "test.js");
 			const artifactContent = "console.log('test');";
@@ -54,7 +55,9 @@ describe("upload service", () => {
 				},
 			};
 
-			const result = await uploadArtifact(target, artifactPath);
+			const result = await runEffect(
+				uploadArtifactEffect(target, artifactPath),
+			);
 
 			expect(result).toEqual({
 				uploadId: "upload-123",
@@ -88,9 +91,15 @@ describe("upload service", () => {
 				requiredHeaders: {},
 			};
 
-			await expect(uploadArtifact(target, artifactPath)).rejects.toThrow(
-				"File size (1000 bytes) exceeds maximum allowed (100 bytes)",
-			);
+			try {
+				await runEffect(uploadArtifactEffect(target, artifactPath));
+				expect.unreachable("Should have thrown");
+			} catch (error: unknown) {
+				const err = error as { message?: string };
+				expect(err.message).toContain(
+					"File size (1000 bytes) exceeds maximum allowed (100 bytes)",
+				);
+			}
 		});
 
 		it("should retry on 5xx server errors", async () => {
@@ -117,9 +126,11 @@ describe("upload service", () => {
 				requiredHeaders: {},
 			};
 
-			const result = await uploadArtifact(target, artifactPath, {
-				baseDelayMs: 10, // Faster for testing
-			});
+			const result = await runEffect(
+				uploadArtifactEffect(target, artifactPath, {
+					baseDelayMs: 10, // Faster for testing
+				}),
+			);
 
 			expect(result.etag).toBe('"retry-success"');
 			expect(fetch).toHaveBeenCalledTimes(2);
@@ -141,12 +152,18 @@ describe("upload service", () => {
 				requiredHeaders: {},
 			};
 
-			await expect(
-				uploadArtifact(target, artifactPath, {
-					maxRetries: 3,
-					baseDelayMs: 10,
-				}),
-			).rejects.toThrow("Upload failed after 3 attempts");
+			try {
+				await runEffect(
+					uploadArtifactEffect(target, artifactPath, {
+						maxRetries: 3,
+						baseDelayMs: 10,
+					}),
+				);
+				expect.unreachable("Should have thrown");
+			} catch (error: unknown) {
+				const err = error as { message?: string };
+				expect(err.message).toContain("Upload failed after 3 attempts");
+			}
 
 			expect(fetch).toHaveBeenCalledTimes(3);
 		});
@@ -167,9 +184,13 @@ describe("upload service", () => {
 				requiredHeaders: {},
 			};
 
-			await expect(uploadArtifact(target, artifactPath)).rejects.toThrow(
-				"Upload failed with status 403",
-			);
+			try {
+				await runEffect(uploadArtifactEffect(target, artifactPath));
+				expect.unreachable("Should have thrown");
+			} catch (error: unknown) {
+				const err = error as { message?: string };
+				expect(err.message).toContain("Upload failed with status 403");
+			}
 
 			expect(fetch).toHaveBeenCalledTimes(1); // No retries
 		});
@@ -192,7 +213,7 @@ describe("upload service", () => {
 				},
 			};
 
-			await uploadArtifact(target, artifactPath);
+			await runEffect(uploadArtifactEffect(target, artifactPath));
 
 			expect(fetch).toHaveBeenCalledWith(
 				target.url,
@@ -225,9 +246,11 @@ describe("upload service", () => {
 				requiredHeaders: {},
 			};
 
-			const result = await uploadArtifact(target, artifactPath, {
-				baseDelayMs: 10,
-			});
+			const result = await runEffect(
+				uploadArtifactEffect(target, artifactPath, {
+					baseDelayMs: 10,
+				}),
+			);
 
 			expect(result.status).toBe(200);
 			expect(fetch).toHaveBeenCalledTimes(2);

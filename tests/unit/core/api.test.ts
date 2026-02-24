@@ -1,0 +1,213 @@
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+	apiRequestEffect,
+	parseFieldsEffect,
+	parseHeadersEffect,
+	readBodyFromFileEffect,
+} from "../../../src/core/api";
+import {
+	extractFailure,
+	runEffect,
+	runEffectExit,
+} from "../../setup/effect-test-utils";
+import { mockKeytar, mockValidToken } from "../../setup/system-mocks";
+
+describe("API Core Functions", () => {
+	beforeEach(() => {
+		mockValidToken();
+		process.env.GODADDY_API_BASE_URL = "";
+		vi.stubGlobal("fetch", vi.fn());
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		process.env.GODADDY_API_BASE_URL = "";
+	});
+
+	describe("apiRequestEffect", () => {
+		test("returns auth error when secure credential storage is unavailable", async () => {
+			mockKeytar.getPassword.mockRejectedValueOnce(
+				new Error("Keychain locked"),
+			);
+
+			const exit = await runEffectExit(
+				apiRequestEffect({ endpoint: "/v1/domains" }),
+			);
+			const err = extractFailure(exit) as {
+				_tag: string;
+				userMessage: string;
+			};
+			expect(err._tag).toBe("AuthenticationError");
+			expect(err.userMessage).toContain("Unable to access secure credentials");
+			expect(fetch).not.toHaveBeenCalled();
+		});
+
+		test("returns validation error for full URL endpoints", async () => {
+			const exit = await runEffectExit(
+				apiRequestEffect({
+					endpoint: "https://api.godaddy.com/v1/domains",
+				}),
+			);
+			const err = extractFailure(exit) as {
+				_tag: string;
+				userMessage: string;
+			};
+			expect(err._tag).toBe("ValidationError");
+			expect(err.userMessage).toContain("Only relative endpoints");
+			expect(fetch).not.toHaveBeenCalled();
+		});
+
+		test("makes authenticated request and returns parsed JSON", async () => {
+			vi.mocked(fetch).mockResolvedValueOnce(
+				new Response(JSON.stringify({ shopperId: "12345" }), {
+					status: 200,
+					headers: {
+						"content-type": "application/json",
+						"x-request-id": "resp-123",
+					},
+				}),
+			);
+
+			const result = await runEffect(
+				apiRequestEffect({ endpoint: "/v1/shoppers/me" }),
+			);
+
+			expect(result.status).toBe(200);
+			expect(result.data).toEqual({ shopperId: "12345" });
+			expect(fetch).toHaveBeenCalledTimes(1);
+			expect(fetch).toHaveBeenCalledWith(
+				"https://api.ote-godaddy.com/v1/shoppers/me",
+				expect.objectContaining({
+					method: "GET",
+					headers: expect.objectContaining({
+						Authorization: "Bearer test-token-123",
+						"X-Request-ID": expect.any(String),
+					}),
+				}),
+			);
+		});
+
+		test("returns auth error on 401 response", async () => {
+			vi.mocked(fetch).mockResolvedValueOnce(
+				new Response(JSON.stringify({ message: "Unauthorized" }), {
+					status: 401,
+					headers: { "content-type": "application/json" },
+				}),
+			);
+
+			const exit = await runEffectExit(
+				apiRequestEffect({ endpoint: "/v1/shoppers/me" }),
+			);
+			const err = extractFailure(exit) as {
+				_tag: string;
+				userMessage: string;
+			};
+			expect(err._tag).toBe("AuthenticationError");
+			expect(err.userMessage).toContain("re-authenticate");
+		});
+	});
+
+	describe("parseFieldsEffect", () => {
+		test("parses single field correctly", async () => {
+			const result = await runEffect(parseFieldsEffect(["name=John"]));
+			expect(result).toEqual({ name: "John" });
+		});
+
+		test("parses multiple fields correctly", async () => {
+			const result = await runEffect(
+				parseFieldsEffect(["name=John", "age=30", "city=NYC"]),
+			);
+			expect(result).toEqual({ name: "John", age: "30", city: "NYC" });
+		});
+
+		test("handles values with equals signs", async () => {
+			const result = await runEffect(parseFieldsEffect(["query=a=b&c=d"]));
+			expect(result).toEqual({ query: "a=b&c=d" });
+		});
+
+		test("handles empty value", async () => {
+			const result = await runEffect(parseFieldsEffect(["key="]));
+			expect(result).toEqual({ key: "" });
+		});
+
+		test("returns error for missing equals sign", async () => {
+			const exit = await runEffectExit(parseFieldsEffect(["invalidfield"]));
+			const err = extractFailure(exit) as { userMessage: string };
+			expect(err.userMessage).toContain("Invalid field format");
+		});
+
+		test("returns error for empty key", async () => {
+			const exit = await runEffectExit(parseFieldsEffect(["=value"]));
+			const err = extractFailure(exit) as { userMessage: string };
+			expect(err.userMessage).toContain("Empty field key");
+		});
+
+		test("handles empty array", async () => {
+			const result = await runEffect(parseFieldsEffect([]));
+			expect(result).toEqual({});
+		});
+	});
+
+	describe("parseHeadersEffect", () => {
+		test("parses single header correctly", async () => {
+			const result = await runEffect(
+				parseHeadersEffect(["Content-Type: application/json"]),
+			);
+			expect(result).toEqual({ "Content-Type": "application/json" });
+		});
+
+		test("parses multiple headers correctly", async () => {
+			const result = await runEffect(
+				parseHeadersEffect([
+					"Content-Type: application/json",
+					"X-Custom: value",
+					"Accept: */*",
+				]),
+			);
+			expect(result).toEqual({
+				"Content-Type": "application/json",
+				"X-Custom": "value",
+				Accept: "*/*",
+			});
+		});
+
+		test("handles header values with colons", async () => {
+			const result = await runEffect(parseHeadersEffect(["X-Time: 12:30:00"]));
+			expect(result).toEqual({ "X-Time": "12:30:00" });
+		});
+
+		test("trims whitespace from key and value", async () => {
+			const result = await runEffect(
+				parseHeadersEffect(["  Content-Type  :  application/json  "]),
+			);
+			expect(result).toEqual({ "Content-Type": "application/json" });
+		});
+
+		test("returns error for missing colon", async () => {
+			const exit = await runEffectExit(parseHeadersEffect(["InvalidHeader"]));
+			const err = extractFailure(exit) as { userMessage: string };
+			expect(err.userMessage).toContain("Invalid header format");
+		});
+
+		test("returns error for empty key", async () => {
+			const exit = await runEffectExit(parseHeadersEffect([": value"]));
+			const err = extractFailure(exit) as { userMessage: string };
+			expect(err.userMessage).toContain("Empty header key");
+		});
+
+		test("handles empty array", async () => {
+			const result = await runEffect(parseHeadersEffect([]));
+			expect(result).toEqual({});
+		});
+	});
+
+	describe("readBodyFromFileEffect", () => {
+		test("returns error for non-existent file", async () => {
+			const exit = await runEffectExit(
+				readBodyFromFileEffect("/non/existent/file.json"),
+			);
+			const err = extractFailure(exit) as { userMessage: string };
+			expect(err.userMessage).toContain("File not found");
+		});
+	});
+});

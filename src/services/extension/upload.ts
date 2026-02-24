@@ -3,8 +3,11 @@
  * Phase 4: HTTP PUT to presigned URLs with retry logic
  */
 
-import { promises as fs } from "node:fs";
 import { getLogger } from "@/services/logger";
+import { Fetch } from "@effect/platform/FetchHttpClient";
+import { FileSystem } from "@effect/platform/FileSystem";
+import * as Effect from "effect/Effect";
+import { NetworkError } from "../../effect/errors";
 import type { UploadTarget } from "./presigned-url";
 
 const logger = getLogger();
@@ -37,45 +40,65 @@ export interface UploadOptions {
 	contentType?: string;
 }
 
+function sleep(ms: number): Effect.Effect<void, never, never> {
+	return Effect.sleep(`${ms} millis`);
+}
+
 /**
- * Upload an artifact to S3 using presigned URL
+ * Upload an artifact to S3 using presigned URL.
  *
  * Implements retry logic with exponential backoff for transient errors (5xx, network).
  * Retries: 250ms, 750ms, 1500ms (by default)
  */
-export async function uploadArtifact(
+export function uploadArtifactEffect(
 	target: UploadTarget,
 	filePath: string,
 	options: UploadOptions = {},
-): Promise<UploadResult> {
-	const maxRetries = options.maxRetries ?? 3;
-	const baseDelay = options.baseDelayMs ?? 250;
-	const contentType = options.contentType ?? "application/javascript";
+): Effect.Effect<UploadResult, NetworkError, FileSystem | Fetch> {
+	return Effect.gen(function* () {
+		const fs = yield* FileSystem;
+		const fetch = yield* Fetch;
+		const maxRetries = options.maxRetries ?? 3;
+		const baseDelay = options.baseDelayMs ?? 250;
+		const _contentType = options.contentType ?? "application/javascript";
 
-	const fileBuffer = await fs.readFile(filePath);
-	const sizeBytes = fileBuffer.byteLength;
-
-	// Validate file size
-	if (sizeBytes > target.maxSizeBytes) {
-		throw new Error(
-			`File size (${sizeBytes} bytes) exceeds maximum allowed (${target.maxSizeBytes} bytes)`,
+		// Read file content via platform FileSystem service
+		const fileContent = yield* fs.readFileString(filePath).pipe(
+			Effect.mapError(
+				(error) =>
+					new NetworkError({
+						message: `Failed to read artifact file: ${error.message}`,
+						userMessage: "Failed to upload extension artifact",
+					}),
+			),
 		);
-	}
 
-	logger.debug(
-		{
-			uploadId: target.uploadId,
-			sizeBytes,
-			maxSizeBytes: target.maxSizeBytes,
-			contentType,
-		},
-		"Starting artifact upload",
-	);
+		const fileBuffer = Buffer.from(fileContent);
+		const sizeBytes = fileBuffer.byteLength;
 
-	let lastError: Error | undefined;
+		// Validate file size
+		if (sizeBytes > target.maxSizeBytes) {
+			return yield* Effect.fail(
+				new NetworkError({
+					message: `File size (${sizeBytes} bytes) exceeds maximum allowed (${target.maxSizeBytes} bytes)`,
+					userMessage: "Failed to upload extension artifact",
+				}),
+			);
+		}
 
-	for (let attempt = 1; attempt <= maxRetries; attempt++) {
-		try {
+		logger.debug(
+			{
+				uploadId: target.uploadId,
+				sizeBytes,
+				maxSizeBytes: target.maxSizeBytes,
+				contentType: _contentType,
+			},
+			"Starting artifact upload",
+		);
+
+		let lastError: Error | undefined;
+
+		for (let attempt = 1; attempt <= maxRetries; attempt++) {
 			// Use only the requiredHeaders from the presigned URL (already signed)
 			// Filter out x-amz-meta-upload-id as it's not signed
 			const { "x-amz-meta-upload-id": _, ...headers } = target.requiredHeaders;
@@ -90,11 +113,49 @@ export async function uploadArtifact(
 				"Attempting upload",
 			);
 
-			const response = await fetch(target.url, {
-				method: "PUT",
-				headers,
-				body: fileBuffer,
-			});
+			const fetchResult = yield* Effect.tryPromise({
+				try: () =>
+					fetch(target.url, {
+						method: "PUT",
+						headers,
+						body: fileBuffer,
+					}),
+				catch: (err) => err as Error,
+			}).pipe(Effect.either);
+
+			if (fetchResult._tag === "Left") {
+				const err = fetchResult.left;
+				// Network errors are retryable
+				if (
+					err instanceof TypeError &&
+					(err.message.includes("fetch") || err.message.includes("network"))
+				) {
+					lastError = err;
+					logger.warn(
+						{
+							uploadId: target.uploadId,
+							attempt,
+							maxRetries,
+							error: err.message,
+						},
+						"Upload failed with network error, retrying",
+					);
+					if (attempt < maxRetries) {
+						const delay = baseDelay * 3 ** (attempt - 1);
+						yield* sleep(delay);
+					}
+					continue;
+				}
+				// Non-retryable error
+				return yield* Effect.fail(
+					new NetworkError({
+						message: err.message,
+						userMessage: "Failed to upload extension artifact",
+					}),
+				);
+			}
+
+			const response = fetchResult.right;
 
 			if (response.ok) {
 				const etag = response.headers.get("etag") ?? undefined;
@@ -120,7 +181,10 @@ export async function uploadArtifact(
 			}
 
 			// Read response body for error details
-			const responseText = await response.text().catch(() => "");
+			const responseText = yield* Effect.tryPromise({
+				try: () => response.text(),
+				catch: () => new Error(""),
+			}).pipe(Effect.orElseSucceed(() => ""));
 			const errorSnippet = responseText.slice(0, 200);
 
 			// Retry on server errors (5xx)
@@ -140,48 +204,27 @@ export async function uploadArtifact(
 					"Upload failed with server error, retrying",
 				);
 
-				// Exponential backoff: 250ms, 750ms, 1500ms
 				if (attempt < maxRetries) {
 					const delay = baseDelay * 3 ** (attempt - 1);
-					await new Promise((resolve) => setTimeout(resolve, delay));
+					yield* sleep(delay);
 				}
 			} else {
 				// Client errors (4xx) are not retryable
-				throw new Error(
-					`Upload failed with status ${response.status}: ${errorSnippet}`,
+				return yield* Effect.fail(
+					new NetworkError({
+						message: `Upload failed with status ${response.status}: ${errorSnippet}`,
+						userMessage: "Failed to upload extension artifact",
+					}),
 				);
-			}
-		} catch (err) {
-			// Network errors are retryable
-			if (
-				err instanceof TypeError &&
-				(err.message.includes("fetch") || err.message.includes("network"))
-			) {
-				lastError = err as Error;
-
-				logger.warn(
-					{
-						uploadId: target.uploadId,
-						attempt,
-						maxRetries,
-						error: err.message,
-					},
-					"Upload failed with network error, retrying",
-				);
-
-				if (attempt < maxRetries) {
-					const delay = baseDelay * 3 ** (attempt - 1);
-					await new Promise((resolve) => setTimeout(resolve, delay));
-				}
-			} else {
-				// Re-throw non-retryable errors
-				throw err;
 			}
 		}
-	}
 
-	// All retries exhausted
-	throw new Error(
-		`Upload failed after ${maxRetries} attempts: ${lastError?.message ?? "unknown error"}`,
-	);
+		// All retries exhausted
+		return yield* Effect.fail(
+			new NetworkError({
+				message: `Upload failed after ${maxRetries} attempts: ${lastError?.message ?? "unknown error"}`,
+				userMessage: "Failed to upload extension artifact",
+			}),
+		);
+	});
 }

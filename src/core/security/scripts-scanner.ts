@@ -1,5 +1,4 @@
-import { readPackageJson } from "../../services/extension/workspace";
-import type { Result } from "../../shared/types";
+import * as nodeFs from "node:fs";
 import type { Finding } from "./types";
 
 /**
@@ -12,16 +11,6 @@ interface SuspiciousPattern {
 	pattern: RegExp;
 	/** Explanation of why this pattern is suspicious */
 	reason: string;
-}
-
-/**
- * package.json structure with scripts field
- */
-interface PackageJson {
-	name?: string;
-	version?: string;
-	scripts?: Record<string, string>;
-	[key: string]: unknown;
 }
 
 /**
@@ -46,29 +35,14 @@ const LIFECYCLE_SCRIPTS = ["install", "postinstall", "preinstall"] as const;
  * }
  * ```
  */
-export function scanPackageScripts(pkgPath: string): Result<Finding[]> {
-	// Read package.json
-	const pkgResult = readPackageJson(pkgPath);
-	if (!pkgResult.success) {
-		return {
-			success: false,
-			error: pkgResult.error || new Error("Failed to read package.json"),
-		};
-	}
-
-	if (!pkgResult.data) {
-		return {
-			success: false,
-			error: new Error("Failed to read package.json"),
-		};
-	}
-
-	const pkg = pkgResult.data;
+export function scanPackageScripts(pkgPath: string): Finding[] {
+	const content = nodeFs.readFileSync(pkgPath, "utf-8");
+	const pkg = JSON.parse(content) as Record<string, unknown>;
 	const findings: Finding[] = [];
 
 	// No scripts to scan
 	if (!pkg.scripts || typeof pkg.scripts !== "object") {
-		return { success: true, data: findings };
+		return findings;
 	}
 
 	// Get suspicious patterns
@@ -91,7 +65,7 @@ export function scanPackageScripts(pkgPath: string): Result<Finding[]> {
 		}
 	}
 
-	return { success: true, data: findings };
+	return findings;
 }
 
 /**

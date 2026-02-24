@@ -1,6 +1,5 @@
-import * as fs from "node:fs";
+import * as nodeFs from "node:fs";
 import { join } from "node:path";
-import type { Result } from "../../shared/types";
 
 /**
  * The type of module system used by the entry point
@@ -80,7 +79,7 @@ export interface ResolveEntryPointOptions {
  */
 export function resolveEntryPoint(
 	options: ResolveEntryPointOptions,
-): Result<EntryPointResolution> {
+): EntryPointResolution {
 	const { packageDir, packageJson } = options;
 	const sourceType = getSourceType(packageJson);
 
@@ -99,12 +98,9 @@ export function resolveEntryPoint(
 				const resolved = tryResolvePath(packageDir, importPath);
 				if (resolved) {
 					return {
-						success: true,
-						data: {
-							entryPath: resolved,
-							sourceType: "module",
-							resolvedFrom: "exports.import",
-						},
+						entryPath: resolved,
+						sourceType: "module",
+						resolvedFrom: "exports.import",
 					};
 				}
 			}
@@ -117,12 +113,9 @@ export function resolveEntryPoint(
 		const resolved = tryResolvePath(packageDir, moduleField);
 		if (resolved) {
 			return {
-				success: true,
-				data: {
-					entryPath: resolved,
-					sourceType: "module",
-					resolvedFrom: "module",
-				},
+				entryPath: resolved,
+				sourceType: "module",
+				resolvedFrom: "module",
 			};
 		}
 	}
@@ -133,12 +126,9 @@ export function resolveEntryPoint(
 		const resolved = tryResolvePath(packageDir, mainField);
 		if (resolved) {
 			return {
-				success: true,
-				data: {
-					entryPath: resolved,
-					sourceType,
-					resolvedFrom: "main",
-				},
+				entryPath: resolved,
+				sourceType,
+				resolvedFrom: "main",
 			};
 		}
 	}
@@ -148,12 +138,9 @@ export function resolveEntryPoint(
 		const resolved = tryResolvePath(packageDir, exports);
 		if (resolved) {
 			return {
-				success: true,
-				data: {
-					entryPath: resolved,
-					sourceType,
-					resolvedFrom: "exports",
-				},
+				entryPath: resolved,
+				sourceType,
+				resolvedFrom: "exports",
 			};
 		}
 	}
@@ -173,23 +160,17 @@ export function resolveEntryPoint(
 		const resolved = tryResolvePath(packageDir, fallbackPath);
 		if (resolved) {
 			return {
-				success: true,
-				data: {
-					entryPath: resolved,
-					sourceType,
-					resolvedFrom: "fallback",
-				},
+				entryPath: resolved,
+				sourceType,
+				resolvedFrom: "fallback",
 			};
 		}
 	}
 
 	// No entry point found
-	return {
-		success: false,
-		error: new Error(
-			`No entry point found for package in ${packageDir}. Add one of the following to package.json: "exports['.'].import", "module", or "main". Or create one of these files: ${fallbackPaths.join(", ")}`,
-		),
-	};
+	throw new Error(
+		`No entry point found for package in ${packageDir}. Add one of the following to package.json: "exports['.'].import", "module", or "main". Or create one of these files: ${fallbackPaths.join(", ")}`,
+	);
 }
 
 /**
@@ -217,7 +198,7 @@ export function tryResolvePath(
 	const absolutePath = join(packageDir, normalized);
 
 	// Check if file exists
-	if (fs.existsSync(absolutePath)) {
+	if (nodeFs.existsSync(absolutePath)) {
 		return absolutePath;
 	}
 

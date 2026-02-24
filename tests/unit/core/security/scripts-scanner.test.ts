@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { scanPackageScripts } from "@/core/security/scripts-scanner";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { nodeFs } from "../../../helpers/node-fs";
 
 describe("Package Scripts Security Scanner", () => {
 	let tempDir: string;
@@ -36,8 +37,7 @@ describe("Package Scripts Security Scanner", () => {
 
 			const result = scanPackageScripts(packageJsonPath);
 
-			expect(result.success).toBe(true);
-			expect(result.data).toEqual([]);
+			expect(result).toEqual([]);
 		});
 
 		it("should return success with empty findings when no scripts exist", () => {
@@ -50,8 +50,7 @@ describe("Package Scripts Security Scanner", () => {
 
 			const result = scanPackageScripts(packageJsonPath);
 
-			expect(result.success).toBe(true);
-			expect(result.data).toEqual([]);
+			expect(result).toEqual([]);
 		});
 
 		it("should detect curl in postinstall script", () => {
@@ -67,15 +66,14 @@ describe("Package Scripts Security Scanner", () => {
 
 			const result = scanPackageScripts(packageJsonPath);
 
-			expect(result.success).toBe(true);
-			expect(result.data).toHaveLength(1);
-			expect(result.data![0]).toMatchObject({
+			expect(result).toHaveLength(1);
+			expect(result[0]).toMatchObject({
 				ruleId: "SEC011",
 				severity: "warn",
 				file: packageJsonPath,
 			});
-			expect(result.data![0].message).toContain("postinstall");
-			expect(result.data![0].message).toContain("curl");
+			expect(result[0].message).toContain("postinstall");
+			expect(result[0].message).toContain("curl");
 		});
 
 		it("should detect wget in install script", () => {
@@ -91,14 +89,13 @@ describe("Package Scripts Security Scanner", () => {
 
 			const result = scanPackageScripts(packageJsonPath);
 
-			expect(result.success).toBe(true);
-			expect(result.data).toHaveLength(1);
-			expect(result.data![0]).toMatchObject({
+			expect(result).toHaveLength(1);
+			expect(result[0]).toMatchObject({
 				ruleId: "SEC011",
 				severity: "warn",
 			});
-			expect(result.data![0].message).toContain("install");
-			expect(result.data![0].message).toContain("wget");
+			expect(result[0].message).toContain("install");
+			expect(result[0].message).toContain("wget");
 		});
 
 		it("should detect bash -c arbitrary execution in preinstall", () => {
@@ -114,10 +111,9 @@ describe("Package Scripts Security Scanner", () => {
 
 			const result = scanPackageScripts(packageJsonPath);
 
-			expect(result.success).toBe(true);
-			expect(result.data).toHaveLength(1);
-			expect(result.data![0].message).toContain("preinstall");
-			expect(result.data![0].message).toMatch(/bash -c|sh -c/i);
+			expect(result).toHaveLength(1);
+			expect(result[0].message).toContain("preinstall");
+			expect(result[0].message).toMatch(/bash -c|sh -c/i);
 		});
 
 		it("should detect sh -c arbitrary execution", () => {
@@ -133,9 +129,8 @@ describe("Package Scripts Security Scanner", () => {
 
 			const result = scanPackageScripts(packageJsonPath);
 
-			expect(result.success).toBe(true);
-			expect(result.data).toHaveLength(1);
-			expect(result.data![0].message).toMatch(/sh -c|bash -c/i);
+			expect(result).toHaveLength(1);
+			expect(result[0].message).toMatch(/sh -c|bash -c/i);
 		});
 
 		it("should detect PowerShell encoded commands", () => {
@@ -151,9 +146,8 @@ describe("Package Scripts Security Scanner", () => {
 
 			const result = scanPackageScripts(packageJsonPath);
 
-			expect(result.success).toBe(true);
-			expect(result.data).toHaveLength(1);
-			expect(result.data![0].message).toContain("powershell");
+			expect(result).toHaveLength(1);
+			expect(result[0].message).toContain("powershell");
 		});
 
 		it("should detect netcat (nc) usage", () => {
@@ -169,9 +163,8 @@ describe("Package Scripts Security Scanner", () => {
 
 			const result = scanPackageScripts(packageJsonPath);
 
-			expect(result.success).toBe(true);
-			expect(result.data).toHaveLength(1);
-			expect(result.data![0].message).toContain("nc");
+			expect(result).toHaveLength(1);
+			expect(result[0].message).toContain("nc");
 		});
 
 		it("should detect mkfifo usage", () => {
@@ -187,9 +180,8 @@ describe("Package Scripts Security Scanner", () => {
 
 			const result = scanPackageScripts(packageJsonPath);
 
-			expect(result.success).toBe(true);
-			expect(result.data).toHaveLength(1);
-			expect(result.data![0].message).toContain("mkfifo");
+			expect(result).toHaveLength(1);
+			expect(result[0].message).toContain("mkfifo");
 		});
 
 		it("should detect eval in shell scripts", () => {
@@ -205,9 +197,8 @@ describe("Package Scripts Security Scanner", () => {
 
 			const result = scanPackageScripts(packageJsonPath);
 
-			expect(result.success).toBe(true);
-			expect(result.data).toHaveLength(1);
-			expect(result.data![0].message).toContain("eval");
+			expect(result).toHaveLength(1);
+			expect(result[0].message).toContain("eval");
 		});
 
 		it("should detect exec in shell scripts", () => {
@@ -223,9 +214,8 @@ describe("Package Scripts Security Scanner", () => {
 
 			const result = scanPackageScripts(packageJsonPath);
 
-			expect(result.success).toBe(true);
-			expect(result.data).toHaveLength(1);
-			expect(result.data![0].message).toContain("exec");
+			expect(result).toHaveLength(1);
+			expect(result[0].message).toContain("exec");
 		});
 
 		it("should only scan lifecycle scripts (install, postinstall, preinstall)", () => {
@@ -248,9 +238,8 @@ describe("Package Scripts Security Scanner", () => {
 
 			const result = scanPackageScripts(packageJsonPath);
 
-			expect(result.success).toBe(true);
 			// Should only detect the 3 lifecycle scripts, not build/test/dev
-			expect(result.data).toHaveLength(3);
+			expect(result).toHaveLength(3);
 		});
 
 		it("should detect multiple violations in single script", () => {
@@ -266,28 +255,21 @@ describe("Package Scripts Security Scanner", () => {
 
 			const result = scanPackageScripts(packageJsonPath);
 
-			expect(result.success).toBe(true);
 			// Should detect at least one finding (may detect first pattern only)
-			expect(result.data!.length).toBeGreaterThan(0);
+			expect(result.length).toBeGreaterThan(0);
 		});
 
-		it("should return error when package.json does not exist", () => {
+		it("should throw when package.json does not exist", () => {
 			const packageJsonPath = path.join(tempDir, "nonexistent.json");
 
-			const result = scanPackageScripts(packageJsonPath);
-
-			expect(result.success).toBe(false);
-			expect(result.error?.message).toContain("not found");
+			expect(() => scanPackageScripts(packageJsonPath)).toThrow();
 		});
 
-		it("should return error when package.json is invalid JSON", () => {
+		it("should throw when package.json is invalid JSON", () => {
 			const packageJsonPath = path.join(tempDir, "package.json");
 			fs.writeFileSync(packageJsonPath, "{ invalid json }");
 
-			const result = scanPackageScripts(packageJsonPath);
-
-			expect(result.success).toBe(false);
-			expect(result.error).toBeDefined();
+			expect(() => scanPackageScripts(packageJsonPath)).toThrow();
 		});
 
 		it("should handle package.json with empty scripts object", () => {
@@ -301,8 +283,7 @@ describe("Package Scripts Security Scanner", () => {
 
 			const result = scanPackageScripts(packageJsonPath);
 
-			expect(result.success).toBe(true);
-			expect(result.data).toEqual([]);
+			expect(result).toEqual([]);
 		});
 
 		it("should be case-insensitive for PowerShell variants", () => {
@@ -318,8 +299,7 @@ describe("Package Scripts Security Scanner", () => {
 
 			const result = scanPackageScripts(packageJsonPath);
 
-			expect(result.success).toBe(true);
-			expect(result.data).toHaveLength(1);
+			expect(result).toHaveLength(1);
 		});
 
 		it("should include remediation in findings", () => {
@@ -335,10 +315,9 @@ describe("Package Scripts Security Scanner", () => {
 
 			const result = scanPackageScripts(packageJsonPath);
 
-			expect(result.success).toBe(true);
-			expect(result.data).toHaveLength(1);
+			expect(result).toHaveLength(1);
 			// Finding should have relevant information for remediation
-			expect(result.data![0].message).toBeTruthy();
+			expect(result[0].message).toBeTruthy();
 		});
 	});
 });

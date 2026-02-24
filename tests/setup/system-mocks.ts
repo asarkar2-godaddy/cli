@@ -1,10 +1,11 @@
 import { vi } from "vitest";
 
-// Mock keytar for secure storage
+// Mock keychain for secure storage (replaces keytar)
 export const mockKeytar = {
 	setPassword: vi.fn().mockResolvedValue(undefined),
 	getPassword: vi.fn().mockResolvedValue(null),
 	deletePassword: vi.fn().mockResolvedValue(true),
+	findCredentials: vi.fn().mockResolvedValue([]),
 };
 
 // Mock open for browser launching
@@ -19,8 +20,10 @@ export const mockEnv = {
 		"https://test-api.godaddy.com/v1/apps/app-registry-subgraph",
 };
 
-// Global mock setup
-vi.mock("keytar", () => ({ default: mockKeytar }));
+// Mock the native keychain factory so tests never hit real OS credential stores
+vi.mock("../../src/effect/layers/keychain-native", () => ({
+	createNativeKeychain: () => mockKeytar,
+}));
 vi.mock("open", () => ({ default: mockOpen }));
 
 // Environment setup helpers

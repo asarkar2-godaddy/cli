@@ -1,24 +1,20 @@
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 
 const CLI_PATH = join(process.cwd(), "dist", "cli.js");
 
-function isKeytarAvailable(): boolean {
-	try {
-		require.resolve("keytar");
-		const keytarPath = join(
-			process.cwd(),
-			"node_modules/.pnpm/keytar@7.9.0/node_modules/keytar/build/Release/keytar.node",
-		);
-		return existsSync(keytarPath);
-	} catch {
-		return false;
-	}
+function runCli(args: string[]) {
+	const result = spawnSync("node", [CLI_PATH, ...args], {
+		encoding: "utf-8",
+	});
+	return {
+		stdout: result.stdout.trim(),
+		stderr: result.stderr.trim(),
+		status: result.status ?? 0,
+	};
 }
-
-const keytarAvailable = isKeytarAvailable();
 
 describe("CLI Smoke Tests", () => {
 	beforeAll(() => {
@@ -27,64 +23,200 @@ describe("CLI Smoke Tests", () => {
 		}
 	});
 
-	describe("--help", () => {
-		it.skipIf(!keytarAvailable)(
-			"should display help and exit with code 0",
-			() => {
-				const result = execSync(`node ${CLI_PATH} --help`, {
-					encoding: "utf-8",
-				});
+	it("root command returns JSON discovery envelope", () => {
+		const result = runCli([]);
+		expect(result.status).toBe(0);
 
-				expect(result).toContain("GoDaddy");
-				expect(result).toContain("application");
-				expect(result).toContain("auth");
-				expect(result).toContain("env");
-			},
+		const payload = JSON.parse(result.stdout);
+		expect(payload.ok).toBe(true);
+		expect(payload.command).toBe("godaddy");
+		expect(payload.result.command_tree.command).toBe("godaddy");
+		expect(Array.isArray(payload.next_actions)).toBe(true);
+	});
+
+	it("discovery tree includes --follow on application deploy", () => {
+		const result = runCli([]);
+		expect(result.status).toBe(0);
+
+		const payload = JSON.parse(result.stdout) as {
+			result: { command_tree: { children?: Array<Record<string, unknown>> } };
+		};
+		const rootChildren = payload.result.command_tree.children ?? [];
+		const applicationNode = rootChildren.find(
+			(node) => node.id === "application.group",
+		) as { children?: Array<Record<string, unknown>> } | undefined;
+		const applicationChildren = applicationNode?.children ?? [];
+		const deployNode = applicationChildren.find(
+			(node) => node.id === "application.deploy",
 		);
 
-		it.skipIf(!keytarAvailable)("should display subcommand help", () => {
-			const result = execSync(`node ${CLI_PATH} application --help`, {
-				encoding: "utf-8",
-			});
-
-			expect(result).toContain("info");
-			expect(result).toContain("deploy");
-			expect(result).toContain("release");
-		});
+		expect(deployNode).toBeDefined();
+		expect(String(deployNode?.command)).toContain("[--follow]");
+		expect(String(deployNode?.usage)).toContain("[--follow]");
 	});
 
-	describe("--version", () => {
-		it.skipIf(!keytarAvailable)(
-			"should display version and exit with code 0",
-			() => {
-				const result = execSync(`node ${CLI_PATH} --version`, {
-					encoding: "utf-8",
-				});
+	it("--pretty formats success envelopes with indentation", () => {
+		const result = runCli(["--pretty"]);
+		expect(result.status).toBe(0);
+		expect(result.stdout).toContain('\n  "ok": true');
+		expect(result.stdout).toContain('\n  "result": {');
 
-				expect(result.trim()).toMatch(/^\d+\.\d+\.\d+$/);
-			},
-		);
+		const payload = JSON.parse(result.stdout);
+		expect(payload.ok).toBe(true);
 	});
 
-	describe("invalid environment", () => {
-		it("should exit with error for invalid --env value", () => {
-			expect(() => {
-				execSync(`node ${CLI_PATH} --env invalid-env env get`, {
-					encoding: "utf-8",
-					stdio: "pipe",
-				});
-			}).toThrow();
-		});
+	it("--env overrides active environment for command execution", () => {
+		const result = runCli(["--env", "prod", "env", "get"]);
+		expect(result.status).toBe(0);
+
+		const payload = JSON.parse(result.stdout) as {
+			ok: boolean;
+			result: { environment: string };
+		};
+		expect(payload.ok).toBe(true);
+		expect(payload.result.environment).toBe("prod");
 	});
 
-	describe("unknown command", () => {
-		it("should show error for unknown command", () => {
-			expect(() => {
-				execSync(`node ${CLI_PATH} nonexistent-command`, {
-					encoding: "utf-8",
-					stdio: "pipe",
-				});
-			}).toThrow();
-		});
+	it("application parent command returns subtree discovery envelope", () => {
+		const result = runCli(["application"]);
+		expect(result.status).toBe(0);
+
+		const payload = JSON.parse(result.stdout);
+		expect(payload.ok).toBe(true);
+		expect(payload.result.command).toBe("godaddy application");
+		expect(Array.isArray(payload.result.commands)).toBe(true);
+	});
+
+	it("unknown command returns structured error envelope", () => {
+		const result = runCli(["nonexistent-command"]);
+		expect(result.status).toBe(1);
+
+		const payload = JSON.parse(result.stdout);
+		expect(payload.ok).toBe(false);
+		expect(payload.error.code).toBe("COMMAND_NOT_FOUND");
+		expect(payload.fix).toContain("godaddy");
+	});
+
+	it("--pretty formats structured error envelopes with indentation", () => {
+		const result = runCli(["--pretty", "nonexistent-command"]);
+		expect(result.status).toBe(1);
+		expect(result.stdout).toContain('\n  "ok": false');
+		expect(result.stdout).toContain('\n  "error": {');
+
+		const payload = JSON.parse(result.stdout);
+		expect(payload.error.code).toBe("COMMAND_NOT_FOUND");
+	});
+
+	it("unsupported --output option returns structured error envelope", () => {
+		const result = runCli(["env", "get", "--output", "json"]);
+		expect(result.status).toBe(1);
+
+		const payload = JSON.parse(result.stdout);
+		expect(payload.ok).toBe(false);
+		expect(payload.error.code).toBe("UNSUPPORTED_OPTION");
+	});
+
+	it("application info requires <name> at parse-time", () => {
+		const result = runCli(["application", "info"]);
+		expect(result.status).toBe(1);
+
+		const payload = JSON.parse(result.stdout);
+		expect(payload.ok).toBe(false);
+		expect(payload.error.code).toBe("VALIDATION_ERROR");
+		expect(payload.error.message).toContain("Missing argument <name>");
+	});
+
+	it("application validate requires <name> at parse-time", () => {
+		const result = runCli(["application", "validate"]);
+		expect(result.status).toBe(1);
+
+		const payload = JSON.parse(result.stdout);
+		expect(payload.ok).toBe(false);
+		expect(payload.error.code).toBe("VALIDATION_ERROR");
+		expect(payload.error.message).toContain("Missing argument <name>");
+	});
+
+	it("deploy --follow emits start before terminal error on preflight failure", () => {
+		const result = runCli([
+			"application",
+			"deploy",
+			"demo",
+			"--follow",
+			"--environment",
+			"invalid",
+		]);
+		expect(result.status).toBe(1);
+
+		const lines = result.stdout.split("\n").filter((line) => line.length > 0);
+		expect(lines.length).toBeGreaterThanOrEqual(2);
+
+		const firstEvent = JSON.parse(lines[0]) as { type: string };
+		const lastEvent = JSON.parse(lines[lines.length - 1]) as {
+			type: string;
+			error?: { code: string };
+		};
+
+		expect(firstEvent.type).toBe("start");
+		expect(lastEvent.type).toBe("error");
+		expect(lastEvent.error?.code).toBe("VALIDATION_ERROR");
+	});
+
+	it("--help still prints framework help text", () => {
+		const result = runCli(["--help"]);
+		expect(result.status).toBe(0);
+		expect(result.stdout).toContain("COMMANDS");
+		expect(result.stdout).toContain("application");
+	});
+
+	it("-v enables basic verbose mode", () => {
+		const result = runCli(["-v"]);
+		expect(result.status).toBe(0);
+
+		const payload = JSON.parse(result.stdout);
+		expect(payload.ok).toBe(true);
+		expect(payload.command).toBe("godaddy -v");
+		expect(result.stderr).toContain("(verbose output enabled)");
+		expect(result.stderr).not.toContain("full details");
+	});
+
+	it("-vv enables full verbose mode", () => {
+		const result = runCli(["-vv"]);
+		expect(result.status).toBe(0);
+
+		const payload = JSON.parse(result.stdout);
+		expect(payload.ok).toBe(true);
+		expect(payload.command).toBe("godaddy -vv");
+		expect(result.stderr).toContain("(verbose output enabled: full details)");
+	});
+
+	it("repeated -v flags enable full verbose mode", () => {
+		const result = runCli(["-v", "-v"]);
+		expect(result.status).toBe(0);
+
+		const payload = JSON.parse(result.stdout);
+		expect(payload.ok).toBe(true);
+		expect(payload.command).toBe("godaddy -v -v");
+		expect(result.stderr).toContain("(verbose output enabled: full details)");
+	});
+
+	it("--info aliases to basic verbose mode", () => {
+		const result = runCli(["--info"]);
+		expect(result.status).toBe(0);
+
+		const payload = JSON.parse(result.stdout);
+		expect(payload.ok).toBe(true);
+		expect(payload.command).toBe("godaddy --info");
+		expect(result.stderr).toContain("(verbose output enabled)");
+		expect(result.stderr).not.toContain("full details");
+	});
+
+	it("--debug aliases to full verbose mode", () => {
+		const result = runCli(["--debug"]);
+		expect(result.status).toBe(0);
+
+		const payload = JSON.parse(result.stdout);
+		expect(payload.ok).toBe(true);
+		expect(payload.command).toBe("godaddy --debug");
+		expect(result.stderr).toContain("(verbose output enabled: full details)");
 	});
 });

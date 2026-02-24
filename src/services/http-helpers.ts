@@ -2,31 +2,59 @@
  * Shared HTTP helpers for API requests
  */
 
+import { Fetch } from "@effect/platform/FetchHttpClient";
+import type { FileSystem } from "@effect/platform/FileSystem";
+import * as Effect from "effect/Effect";
+import { GraphQLClient } from "graphql-request";
 import { v7 as uuid } from "uuid";
-import { type Environment, envGet, getApiUrl } from "../core/environment";
-
-// Cached API base URL
-let apiBaseUrl: string | null = null;
+import { type Environment, envGetEffect, getApiUrl } from "../core/environment";
+import { ConfigurationError } from "../effect/errors";
 
 /**
- * Get or initialize the API base URL based on the environment
+ * Resolve the API base URL from environment variables or the active environment.
+ * Pure function — no caching.
  */
-export async function initApiBaseUrl(): Promise<string> {
-	if (apiBaseUrl) return apiBaseUrl;
-
-	// Use environment variable if set, otherwise determine from active environment
-	if (process.env.APPLICATIONS_GRAPHQL_URL) {
-		apiBaseUrl = process.env.APPLICATIONS_GRAPHQL_URL;
-	} else {
-		const result = await envGet();
-		if (!result.success || !result.data) {
-			throw result.error ?? new Error("Failed to get environment");
+export function initApiBaseUrlEffect(): Effect.Effect<
+	string,
+	ConfigurationError,
+	FileSystem
+> {
+	return Effect.gen(function* () {
+		if (process.env.APPLICATIONS_GRAPHQL_URL) {
+			return process.env.APPLICATIONS_GRAPHQL_URL;
 		}
-		const env = result.data as Environment;
-		apiBaseUrl = `${getApiUrl(env)}/v1/apps/app-registry-subgraph`;
-	}
 
-	return apiBaseUrl;
+		const env: Environment = yield* envGetEffect();
+		return `${getApiUrl(env)}/v1/apps/app-registry-subgraph`;
+	}).pipe(
+		Effect.catchAll((error) =>
+			Effect.fail(
+				"_tag" in error && error._tag === "ConfigurationError"
+					? (error as ConfigurationError)
+					: new ConfigurationError({
+							message: `Failed to initialize API base URL: ${error}`,
+							userMessage: "Could not determine API base URL",
+						}),
+			),
+		),
+	);
+}
+
+/**
+ * Create a GraphQLClient wired to the injectable Fetch service.
+ * This ensures all GraphQL requests go through the same fetch implementation
+ * that the rest of the codebase uses, making them interceptable in tests.
+ */
+export function makeGraphQLClientEffect(): Effect.Effect<
+	GraphQLClient,
+	ConfigurationError,
+	FileSystem | Fetch
+> {
+	return Effect.gen(function* () {
+		const baseUrl = yield* initApiBaseUrlEffect();
+		const fetch = yield* Fetch;
+		return new GraphQLClient(baseUrl, { fetch });
+	});
 }
 
 /**

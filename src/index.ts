@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
-import { createCliProgram } from "./cli-entry";
-
 /**
- * Main entry point for the GoDaddy CLI
+ * Main entry point for the GoDaddy CLI (@effect/cli native).
+ *
+ * All output goes through the EnvelopeWriter service.
+ * Errors are caught by the centralized boundary in cli-entry.ts.
  */
-async function main(): Promise<void> {
-	const program = createCliProgram();
-	program.parse();
-}
+
+// Side-effect import: cli-entry executes at the module level
+import "./cli-entry";
 
 // Restore cursor visibility on exit or signals
 const restoreCursor = () => {
@@ -28,11 +28,4 @@ process.on("SIGINT", () => {
 process.on("SIGTERM", () => {
 	restoreCursor();
 	process.exit(143);
-});
-
-// Start the application
-main().catch((error) => {
-	console.error("Failed to start application:");
-	console.error(error instanceof Error ? error.message : String(error));
-	process.exit(1);
 });

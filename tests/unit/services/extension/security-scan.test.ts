@@ -4,10 +4,11 @@ import { join } from "node:path";
 import {
 	buildSummary,
 	formatFindings,
-	scanBundle,
-	scanExtension,
+	scanBundleEffect,
+	scanExtensionEffect,
 } from "@/services/extension/security-scan";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { runEffect } from "../../../setup/effect-test-utils";
 
 describe("Security Scan Orchestrator", () => {
 	let testDir: string;
@@ -47,7 +48,7 @@ describe("Security Scan Orchestrator", () => {
 				`
         // SEC001 - eval usage
         eval("malicious code");
-        
+
         // SEC008 - external URL
         const url = "https://evil.com/api";
       `,
@@ -62,23 +63,19 @@ describe("Security Scan Orchestrator", () => {
       `,
 			);
 
-			const result = await scanExtension(testDir);
+			const result = await runEffect(scanExtensionEffect(testDir));
 
-			expect(result.success).toBe(true);
-			expect(result.data).toBeDefined();
-
-			const report = result.data!;
-			expect(report.scannedFiles).toBe(2);
-			expect(report.findings.length).toBeGreaterThan(0);
+			expect(result.scannedFiles).toBe(2);
+			expect(result.findings.length).toBeGreaterThan(0);
 
 			// Should have findings from multiple sources
-			const ruleIds = new Set(report.findings.map((f) => f.ruleId));
+			const ruleIds = new Set(result.findings.map((f) => f.ruleId));
 			expect(ruleIds.size).toBeGreaterThan(1);
 
 			// Findings should be sorted by file, then line
-			for (let i = 1; i < report.findings.length; i++) {
-				const prev = report.findings[i - 1];
-				const curr = report.findings[i];
+			for (let i = 1; i < result.findings.length; i++) {
+				const prev = result.findings[i - 1];
+				const curr = result.findings[i];
 
 				if (prev.file === curr.file) {
 					expect(curr.line).toBeGreaterThanOrEqual(prev.line);
@@ -104,14 +101,10 @@ describe("Security Scan Orchestrator", () => {
       `,
 			);
 
-			const result = await scanExtension(testDir);
+			const result = await runEffect(scanExtensionEffect(testDir));
 
-			expect(result.success).toBe(true);
-			expect(result.data).toBeDefined();
-
-			const report = result.data!;
-			expect(report.blocked).toBe(true);
-			expect(report.findings.some((f) => f.severity === "block")).toBe(true);
+			expect(result.blocked).toBe(true);
+			expect(result.findings.some((f) => f.severity === "block")).toBe(true);
 		});
 
 		it("should not block extension with only warn-level findings", async () => {
@@ -133,14 +126,10 @@ describe("Security Scan Orchestrator", () => {
       `,
 			);
 
-			const result = await scanExtension(testDir);
+			const result = await runEffect(scanExtensionEffect(testDir));
 
-			expect(result.success).toBe(true);
-			expect(result.data).toBeDefined();
-
-			const report = result.data!;
-			expect(report.blocked).toBe(false);
-			expect(report.findings.every((f) => f.severity !== "block")).toBe(true);
+			expect(result.blocked).toBe(false);
+			expect(result.findings.every((f) => f.severity !== "block")).toBe(true);
 		});
 
 		it("should pass empty extension with no violations", async () => {
@@ -167,16 +156,12 @@ describe("Security Scan Orchestrator", () => {
       `,
 			);
 
-			const result = await scanExtension(testDir);
+			const result = await runEffect(scanExtensionEffect(testDir));
 
-			expect(result.success).toBe(true);
-			expect(result.data).toBeDefined();
-
-			const report = result.data!;
-			expect(report.findings).toHaveLength(0);
-			expect(report.blocked).toBe(false);
-			expect(report.scannedFiles).toBe(1);
-			expect(report.summary.total).toBe(0);
+			expect(result.findings).toHaveLength(0);
+			expect(result.blocked).toBe(false);
+			expect(result.scannedFiles).toBe(1);
+			expect(result.summary.total).toBe(0);
 		});
 
 		it("should scan nested directory structures", async () => {
@@ -196,11 +181,9 @@ describe("Security Scan Orchestrator", () => {
 			await writeFile(join(srcDir, "main.ts"), "export const b = 2;");
 			await writeFile(join(libDir, "utils.ts"), "export const c = 3;");
 
-			const result = await scanExtension(testDir);
+			const result = await runEffect(scanExtensionEffect(testDir));
 
-			expect(result.success).toBe(true);
-			expect(result.data).toBeDefined();
-			expect(result.data!.scannedFiles).toBe(3);
+			expect(result.scannedFiles).toBe(3);
 		});
 
 		it("should handle extension with no source files", async () => {
@@ -217,12 +200,10 @@ describe("Security Scan Orchestrator", () => {
 				JSON.stringify({}, null, 2),
 			);
 
-			const result = await scanExtension(testDir);
+			const result = await runEffect(scanExtensionEffect(testDir));
 
-			expect(result.success).toBe(true);
-			expect(result.data).toBeDefined();
-			expect(result.data!.scannedFiles).toBe(0);
-			expect(result.data!.findings).toHaveLength(0);
+			expect(result.scannedFiles).toBe(0);
+			expect(result.findings).toHaveLength(0);
 		});
 
 		it("should include package.json script findings in report", async () => {
@@ -240,13 +221,9 @@ describe("Security Scan Orchestrator", () => {
 
 			await writeFile(join(testDir, "index.ts"), "export const a = 1;");
 
-			const result = await scanExtension(testDir);
+			const result = await runEffect(scanExtensionEffect(testDir));
 
-			expect(result.success).toBe(true);
-			expect(result.data).toBeDefined();
-
-			const report = result.data!;
-			const scriptFindings = report.findings.filter(
+			const scriptFindings = result.findings.filter(
 				(f) => f.ruleId === "SEC011",
 			);
 			expect(scriptFindings.length).toBeGreaterThan(0);
@@ -269,12 +246,9 @@ describe("Security Scan Orchestrator", () => {
       `,
 			);
 
-			const result = await scanExtension(testDir);
+			const result = await runEffect(scanExtensionEffect(testDir));
 
-			expect(result.success).toBe(true);
-			expect(result.data).toBeDefined();
-
-			const { summary } = result.data!;
+			const { summary } = result;
 			expect(summary.total).toBeGreaterThan(0);
 			expect(summary.byRuleId).toBeDefined();
 			expect(summary.bySeverity).toBeDefined();
@@ -406,10 +380,9 @@ describe("Security Scan Orchestrator", () => {
       `,
 			);
 
-			const result = await scanExtension(testDir);
-			expect(result.success).toBe(true);
+			const result = await runEffect(scanExtensionEffect(testDir));
 
-			const sec001Findings = result.data!.findings.filter(
+			const sec001Findings = result.findings.filter(
 				(f) => f.ruleId === "SEC001",
 			);
 			expect(sec001Findings.length).toBeGreaterThan(0);
@@ -431,10 +404,9 @@ describe("Security Scan Orchestrator", () => {
       `,
 			);
 
-			const result = await scanExtension(testDir);
-			expect(result.success).toBe(true);
+			const result = await runEffect(scanExtensionEffect(testDir));
 
-			const sec002Findings = result.data!.findings.filter(
+			const sec002Findings = result.findings.filter(
 				(f) => f.ruleId === "SEC002",
 			);
 			expect(sec002Findings.length).toBeGreaterThan(0);
@@ -456,10 +428,9 @@ describe("Security Scan Orchestrator", () => {
       `,
 			);
 
-			const result = await scanExtension(testDir);
-			expect(result.success).toBe(true);
+			const result = await runEffect(scanExtensionEffect(testDir));
 
-			const sec003Findings = result.data!.findings.filter(
+			const sec003Findings = result.findings.filter(
 				(f) => f.ruleId === "SEC003",
 			);
 			expect(sec003Findings.length).toBeGreaterThan(0);
@@ -481,10 +452,9 @@ describe("Security Scan Orchestrator", () => {
       `,
 			);
 
-			const result = await scanExtension(testDir);
-			expect(result.success).toBe(true);
+			const result = await runEffect(scanExtensionEffect(testDir));
 
-			const sec004Findings = result.data!.findings.filter(
+			const sec004Findings = result.findings.filter(
 				(f) => f.ruleId === "SEC004",
 			);
 			expect(sec004Findings.length).toBeGreaterThan(0);
@@ -506,10 +476,9 @@ describe("Security Scan Orchestrator", () => {
       `,
 			);
 
-			const result = await scanExtension(testDir);
-			expect(result.success).toBe(true);
+			const result = await runEffect(scanExtensionEffect(testDir));
 
-			const sec005Findings = result.data!.findings.filter(
+			const sec005Findings = result.findings.filter(
 				(f) => f.ruleId === "SEC005",
 			);
 			expect(sec005Findings.length).toBeGreaterThan(0);
@@ -532,10 +501,9 @@ describe("Security Scan Orchestrator", () => {
       `,
 			);
 
-			const result = await scanExtension(testDir);
-			expect(result.success).toBe(true);
+			const result = await runEffect(scanExtensionEffect(testDir));
 
-			const sec006Findings = result.data!.findings.filter(
+			const sec006Findings = result.findings.filter(
 				(f) => f.ruleId === "SEC006",
 			);
 			expect(sec006Findings.length).toBeGreaterThan(0);
@@ -557,10 +525,9 @@ describe("Security Scan Orchestrator", () => {
       `,
 			);
 
-			const result = await scanExtension(testDir);
-			expect(result.success).toBe(true);
+			const result = await runEffect(scanExtensionEffect(testDir));
 
-			const sec007Findings = result.data!.findings.filter(
+			const sec007Findings = result.findings.filter(
 				(f) => f.ruleId === "SEC007",
 			);
 			expect(sec007Findings.length).toBeGreaterThan(0);
@@ -582,10 +549,9 @@ describe("Security Scan Orchestrator", () => {
       `,
 			);
 
-			const result = await scanExtension(testDir);
-			expect(result.success).toBe(true);
+			const result = await runEffect(scanExtensionEffect(testDir));
 
-			const sec008Findings = result.data!.findings.filter(
+			const sec008Findings = result.findings.filter(
 				(f) => f.ruleId === "SEC008",
 			);
 			expect(sec008Findings.length).toBeGreaterThan(0);
@@ -608,10 +574,9 @@ describe("Security Scan Orchestrator", () => {
       `,
 			);
 
-			const result = await scanExtension(testDir);
-			expect(result.success).toBe(true);
+			const result = await runEffect(scanExtensionEffect(testDir));
 
-			const sec009Findings = result.data!.findings.filter(
+			const sec009Findings = result.findings.filter(
 				(f) => f.ruleId === "SEC009",
 			);
 			expect(sec009Findings.length).toBeGreaterThan(0);
@@ -634,10 +599,9 @@ describe("Security Scan Orchestrator", () => {
       `,
 			);
 
-			const result = await scanExtension(testDir);
-			expect(result.success).toBe(true);
+			const result = await runEffect(scanExtensionEffect(testDir));
 
-			const sec010Findings = result.data!.findings.filter(
+			const sec010Findings = result.findings.filter(
 				(f) => f.ruleId === "SEC010",
 			);
 			expect(sec010Findings.length).toBeGreaterThan(0);
@@ -659,10 +623,9 @@ describe("Security Scan Orchestrator", () => {
 
 			await writeFile(join(testDir, "index.ts"), "export const a = 1;");
 
-			const result = await scanExtension(testDir);
-			expect(result.success).toBe(true);
+			const result = await runEffect(scanExtensionEffect(testDir));
 
-			const sec011Findings = result.data!.findings.filter(
+			const sec011Findings = result.findings.filter(
 				(f) => f.ruleId === "SEC011",
 			);
 			expect(sec011Findings.length).toBeGreaterThan(0);
@@ -782,9 +745,12 @@ describe("Security Scan Orchestrator", () => {
 
 	describe("scanBundle", () => {
 		it("should return error if bundle file does not exist", async () => {
-			const result = await scanBundle("/nonexistent/bundle.mjs");
-			expect(result.success).toBe(false);
-			expect(result.error).toBeDefined();
+			try {
+				await runEffect(scanBundleEffect("/nonexistent/bundle.mjs"));
+				expect.unreachable("Should have thrown");
+			} catch (error: unknown) {
+				expect(error).toBeDefined();
+			}
 		});
 
 		it("should scan malicious bundle fixture and return findings", async () => {
@@ -793,16 +759,14 @@ describe("Security Scan Orchestrator", () => {
 				"tests/fixtures/malicious-bundle.mjs",
 			);
 
-			const result = await scanBundle(fixturePath);
+			const result = await runEffect(scanBundleEffect(fixturePath));
 
-			expect(result.success).toBe(true);
-			expect(result.data).toBeDefined();
-			expect(result.data!.scannedFiles).toBe(1);
-			expect(result.data!.blocked).toBe(true);
-			expect(result.data!.findings.length).toBeGreaterThan(0);
+			expect(result.scannedFiles).toBe(1);
+			expect(result.blocked).toBe(true);
+			expect(result.findings.length).toBeGreaterThan(0);
 
 			// Should detect SEC101 (eval) and SEC102 (child_process)
-			const ruleIds = result.data!.findings.map((f) => f.ruleId);
+			const ruleIds = result.findings.map((f) => f.ruleId);
 			expect(ruleIds).toContain("SEC101");
 			expect(ruleIds).toContain("SEC102");
 		});
@@ -815,13 +779,10 @@ describe("Security Scan Orchestrator", () => {
 				"utf-8",
 			);
 
-			const result = await scanBundle(tmpBundle);
+			const result = await runEffect(scanBundleEffect(tmpBundle));
 
-			expect(result.success).toBe(true);
-			expect(result.data?.blocked).toBe(true);
-			expect(result.data?.findings.some((f) => f.severity === "block")).toBe(
-				true,
-			);
+			expect(result.blocked).toBe(true);
+			expect(result.findings.some((f) => f.severity === "block")).toBe(true);
 		});
 
 		it("should return blocked=false for clean bundle", async () => {
@@ -830,11 +791,10 @@ describe("Security Scan Orchestrator", () => {
 				"tests/fixtures/clean-bundle.mjs",
 			);
 
-			const result = await scanBundle(fixturePath);
+			const result = await runEffect(scanBundleEffect(fixturePath));
 
-			expect(result.success).toBe(true);
-			expect(result.data?.blocked).toBe(false);
-			expect(result.data?.findings).toHaveLength(0);
+			expect(result.blocked).toBe(false);
+			expect(result.findings).toHaveLength(0);
 		});
 
 		it("should detect patterns in realistic esbuild bundle", async () => {
@@ -856,25 +816,21 @@ export { maliciousFunction };
 			const tmpBundle = join(testDir, "bundled.mjs");
 			await writeFile(tmpBundle, esmBundle, "utf-8");
 
-			const result = await scanBundle(tmpBundle);
+			const result = await runEffect(scanBundleEffect(tmpBundle));
 
-			expect(result.success).toBe(true);
-			expect(result.data?.blocked).toBe(true);
-			expect(result.data?.findings.some((f) => f.ruleId === "SEC102")).toBe(
-				true,
-			);
+			expect(result.blocked).toBe(true);
+			expect(result.findings.some((f) => f.ruleId === "SEC102")).toBe(true);
 		});
 
 		it("should include summary statistics", async () => {
 			const tmpBundle = join(testDir, "multi.mjs");
 			await writeFile(tmpBundle, 'eval("x"); require("vm");', "utf-8");
 
-			const result = await scanBundle(tmpBundle);
+			const result = await runEffect(scanBundleEffect(tmpBundle));
 
-			expect(result.success).toBe(true);
-			expect(result.data?.summary).toBeDefined();
-			expect(result.data?.summary.total).toBeGreaterThan(0);
-			expect(result.data?.summary.bySeverity).toBeDefined();
+			expect(result.summary).toBeDefined();
+			expect(result.summary.total).toBeGreaterThan(0);
+			expect(result.summary.bySeverity).toBeDefined();
 		});
 
 		it("should scan multiple bundle files (code-split bundles)", async () => {
@@ -884,14 +840,13 @@ export { maliciousFunction };
 			await writeFile(bundle1, 'eval("malicious");', "utf-8");
 			await writeFile(bundle2, 'require("child_process");', "utf-8");
 
-			const result = await scanBundle([bundle1, bundle2]);
+			const result = await runEffect(scanBundleEffect([bundle1, bundle2]));
 
-			expect(result.success).toBe(true);
-			expect(result.data?.scannedFiles).toBe(2);
-			expect(result.data?.findings.length).toBeGreaterThan(0);
+			expect(result.scannedFiles).toBe(2);
+			expect(result.findings.length).toBeGreaterThan(0);
 
 			// Should have findings from both files
-			const files = new Set(result.data?.findings.map((f) => f.file));
+			const files = new Set(result.findings.map((f) => f.file));
 			expect(files.size).toBe(2);
 		});
 
@@ -900,12 +855,11 @@ export { maliciousFunction };
 			const tmpBundle = join(testDir, "with-lines.mjs");
 			await writeFile(tmpBundle, code, "utf-8");
 
-			const result = await scanBundle(tmpBundle);
+			const result = await runEffect(scanBundleEffect(tmpBundle));
 
-			expect(result.success).toBe(true);
-			expect(result.data?.findings.length).toBeGreaterThan(0);
+			expect(result.findings.length).toBeGreaterThan(0);
 
-			const finding = result.data!.findings[0];
+			const finding = result.findings[0];
 			expect(finding.line).toBeGreaterThan(0);
 			expect(finding.snippet).toBeTruthy();
 		});
@@ -915,10 +869,9 @@ export { maliciousFunction };
 			const tmpBundle = join(testDir, "sorted.mjs");
 			await writeFile(tmpBundle, code, "utf-8");
 
-			const result = await scanBundle(tmpBundle);
+			const result = await runEffect(scanBundleEffect(tmpBundle));
 
-			expect(result.success).toBe(true);
-			const findings = result.data!.findings;
+			const findings = result.findings;
 
 			if (findings.length > 1) {
 				for (let i = 1; i < findings.length; i++) {

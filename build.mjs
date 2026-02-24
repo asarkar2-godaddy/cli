@@ -70,7 +70,7 @@ if (isDevBuild) {
 
 esbuild
 	.build({
-		entryPoints: ["src/index.tsx"],
+		entryPoints: ["src/index.ts"],
 		bundle: true,
 		format: "esm",
 		platform: "node",
@@ -83,9 +83,10 @@ esbuild
 		external: [
 			// Exclude native modules from bundling
 			"*.node",
-			"keytar",
 			// TypeScript is a peer dependency and should not be bundled
 			"typescript",
+			// pino-pretty uses worker threads and must be external
+			"pino-pretty",
 		],
 	})
 	.catch((e) => {

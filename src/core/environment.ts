@@ -1,16 +1,16 @@
-import * as fs from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { FileSystem } from "@effect/platform/FileSystem";
+import type { ArkErrors } from "arktype";
+import * as Effect from "effect/Effect";
+import { CliConfig } from "../cli/services/cli-config";
+import { ConfigurationError, ValidationError } from "../effect/errors";
+import { fileExists } from "../effect/fs-utils";
 import {
 	type Config,
-	getConfigFile,
+	getConfigFileEffect as getConfigFile,
 	getConfigFilePath,
 } from "../services/config";
-import {
-	type CmdResult,
-	ConfigurationError,
-	ValidationError,
-} from "../shared/types";
 
 export type Environment = "ote" | "prod";
 
@@ -31,135 +31,169 @@ const ENV_PATH = join(homedir(), ENV_FILE);
 const ALL_ENVIRONMENTS: Environment[] = ["ote", "prod"];
 
 /**
+ * Test-only escape hatch. Production code reads CliConfig.environmentOverride.
+ * @internal
+ */
+let _testEnvironmentOverride: Environment | null = null;
+
+/** @internal For tests only. Production code uses CliConfig.environmentOverride. */
+export function setRuntimeEnvironmentOverride(env: Environment | null): void {
+	_testEnvironmentOverride = env;
+}
+
+function isConfigValidationErrorResult(
+	value: Config | ArkErrors | null,
+): value is ArkErrors {
+	return typeof value === "object" && value !== null && "summary" in value;
+}
+
+/**
+ * Read the environment override.
+ * Priority: CliConfig service > test escape hatch > null.
+ */
+function getEnvironmentOverride(): Effect.Effect<
+	Environment | null,
+	never,
+	never
+> {
+	return Effect.map(Effect.serviceOption(CliConfig), (option) => {
+		if (option._tag === "Some" && option.value.environmentOverride) {
+			return option.value.environmentOverride;
+		}
+		return _testEnvironmentOverride;
+	});
+}
+
+/**
+ * Get the current active environment (internal helper).
+ * Reads override from CliConfig service, then falls back to persisted file.
+ */
+function getActiveEnvironmentInternalEffect(): Effect.Effect<
+	Environment,
+	never,
+	FileSystem
+> {
+	return Effect.gen(function* () {
+		const override = yield* getEnvironmentOverride();
+		if (override) {
+			return override;
+		}
+
+		const fs = yield* FileSystem;
+		const exists = yield* fileExists(ENV_PATH);
+		if (exists) {
+			const file = yield* fs
+				.readFileString(ENV_PATH)
+				.pipe(Effect.orElseSucceed(() => ""));
+			if (file.trim()) {
+				return yield* Effect.try(() => validateEnvironment(file.trim())).pipe(
+					Effect.orElseSucceed(() => "ote" as Environment),
+				);
+			}
+		}
+		return "ote" as Environment;
+	});
+}
+
+/**
  * Get all available environments
  */
-export async function envList(): Promise<CmdResult<Environment[]>> {
-	try {
-		const activeEnv = await getActiveEnvironmentInternal();
-		// Return environments with active one first
+export function envListEffect(): Effect.Effect<
+	Environment[],
+	ConfigurationError,
+	FileSystem
+> {
+	return Effect.gen(function* () {
+		const activeEnv = yield* getActiveEnvironmentInternalEffect();
 		const sorted = [
 			activeEnv,
 			...ALL_ENVIRONMENTS.filter((e) => e !== activeEnv),
 		];
-		return { success: true, data: sorted };
-	} catch (error) {
-		return {
-			success: false,
-			error: new ConfigurationError(
-				`Failed to get environment list: ${error}`,
-				"Could not retrieve environment list",
+		return sorted;
+	}).pipe(
+		Effect.catchAll((error) =>
+			Effect.fail(
+				new ConfigurationError({
+					message: `Failed to get environment list: ${error}`,
+					userMessage: "Could not retrieve environment list",
+				}),
 			),
-		};
-	}
+		),
+	);
 }
 
 /**
  * Get current active environment or specific environment info
  */
-export async function envGet(
+export function envGetEffect(
 	name?: string,
-): Promise<CmdResult<Environment | Environment[]>> {
-	try {
+): Effect.Effect<
+	Environment,
+	ConfigurationError | ValidationError,
+	FileSystem
+> {
+	return Effect.gen(function* () {
 		if (name) {
-			const validEnv = validateEnvironment(name);
-			return { success: true, data: validEnv };
+			return yield* validateEnvironmentEffect(name);
 		}
-
-		const activeEnv = await getActiveEnvironmentInternal();
-		return { success: true, data: activeEnv };
-	} catch (error) {
-		return {
-			success: false,
-			error:
-				error instanceof ValidationError
-					? error
-					: new ConfigurationError(
-							`Failed to get environment: ${error}`,
-							"Could not retrieve environment information",
-						),
-		};
-	}
+		return yield* getActiveEnvironmentInternalEffect();
+	}).pipe(
+		Effect.mapError((error): ConfigurationError | ValidationError => error),
+	);
 }
 
 /**
  * Set active environment
  */
-export async function envSet(name: string): Promise<CmdResult<void>> {
-	try {
-		const validEnv = validateEnvironment(name);
-		fs.writeFileSync(ENV_PATH, validEnv);
-		return { success: true };
-	} catch (error) {
-		return {
-			success: false,
-			error:
-				error instanceof ValidationError
-					? error
-					: new ConfigurationError(
-							`Failed to set environment: ${error}`,
-							"Could not set active environment",
-						),
-		};
-	}
+export function envSetEffect(
+	name: string,
+): Effect.Effect<void, ConfigurationError | ValidationError, FileSystem> {
+	return Effect.gen(function* () {
+		const validEnv = yield* validateEnvironmentEffect(name);
+		const fs = yield* FileSystem;
+		yield* fs.writeFileString(ENV_PATH, validEnv).pipe(
+			Effect.mapError(
+				() =>
+					new ConfigurationError({
+						message: `Failed to write environment file: ${ENV_PATH}`,
+						userMessage: "Could not save environment setting",
+					}),
+			),
+		);
+	}).pipe(
+		Effect.mapError((error): ConfigurationError | ValidationError => error),
+	);
 }
 
 /**
  * Get detailed environment information
  */
-export async function envInfo(
+export function envInfoEffect(
 	name?: string,
-): Promise<CmdResult<EnvironmentInfo>> {
-	try {
+): Effect.Effect<
+	EnvironmentInfo,
+	ConfigurationError | ValidationError,
+	FileSystem
+> {
+	return Effect.gen(function* () {
 		const env = name
-			? validateEnvironment(name)
-			: await getActiveEnvironmentInternal();
+			? yield* validateEnvironmentEffect(name)
+			: yield* getActiveEnvironmentInternalEffect();
 		const display = getEnvironmentDisplay(env);
 		const configFilePath = getConfigFilePath(env);
 
 		let config: Config | undefined;
-		try {
-			config = getConfigFile({ env });
-		} catch {
-			// Config file doesn't exist, which is fine
+		const configResult = yield* getConfigFile({ env }).pipe(
+			Effect.catchAll(() => Effect.succeed(null)),
+		);
+		if (configResult && !isConfigValidationErrorResult(configResult)) {
+			config = configResult;
 		}
 
-		return {
-			success: true,
-			data: {
-				environment: env,
-				display,
-				configFile: configFilePath,
-				config,
-			},
-		};
-	} catch (error) {
-		return {
-			success: false,
-			error:
-				error instanceof ValidationError
-					? error
-					: new ConfigurationError(
-							`Failed to get environment info: ${error}`,
-							"Could not retrieve environment information",
-						),
-		};
-	}
-}
-
-/**
- * Get the current active environment (internal helper)
- */
-async function getActiveEnvironmentInternal(): Promise<Environment> {
-	try {
-		if (fs.existsSync(ENV_PATH)) {
-			const file = fs.readFileSync(ENV_PATH, "utf-8");
-			const env = file.trim();
-			return validateEnvironment(env);
-		}
-		return "ote";
-	} catch (error) {
-		return "ote";
-	}
+		return { environment: env, display, configFile: configFilePath, config };
+	}).pipe(
+		Effect.mapError((error): ConfigurationError | ValidationError => error),
+	);
 }
 
 /**
@@ -172,10 +206,22 @@ export function validateEnvironment(env: string): Environment {
 		return normalizedEnv as Environment;
 	}
 
-	throw new ValidationError(
-		`Invalid environment: ${env}. Must be one of: ${ALL_ENVIRONMENTS.join(", ")}`,
-		`Invalid environment: ${env}. Must be one of: ${ALL_ENVIRONMENTS.join(", ")}`,
-	);
+	throw new ValidationError({
+		message: `Invalid environment: ${env}. Must be one of: ${ALL_ENVIRONMENTS.join(", ")}`,
+		userMessage: `Invalid environment: ${env}. Must be one of: ${ALL_ENVIRONMENTS.join(", ")}`,
+	});
+}
+
+/**
+ * Effect-based version of validateEnvironment that produces a typed error
+ */
+function validateEnvironmentEffect(
+	env: string,
+): Effect.Effect<Environment, ValidationError> {
+	return Effect.try({
+		try: () => validateEnvironment(env),
+		catch: (e) => e as ValidationError,
+	});
 }
 
 /**
