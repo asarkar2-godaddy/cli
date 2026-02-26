@@ -87,6 +87,88 @@ describe("CLI Smoke Tests", () => {
 		expect(Array.isArray(payload.result.commands)).toBe(true);
 	});
 
+	it("api list returns catalog domains", () => {
+		const result = runCli(["api", "list"]);
+		expect(result.status).toBe(0);
+
+		const payload = JSON.parse(result.stdout) as {
+			ok: boolean;
+			command: string;
+			result: { domains: Array<{ name: string }> };
+		};
+		expect(payload.ok).toBe(true);
+		expect(payload.command).toBe("godaddy api list");
+		expect(
+			payload.result.domains.some(
+				(domain) => domain.name === "location-addresses",
+			),
+		).toBe(true);
+	});
+
+	it("api describe returns endpoint details", () => {
+		const result = runCli([
+			"api",
+			"describe",
+			"commerce.location.verify-address",
+		]);
+		expect(result.status).toBe(0);
+
+		const payload = JSON.parse(result.stdout) as {
+			ok: boolean;
+			command: string;
+			result: { operationId: string; method: string; path: string };
+			next_actions: Array<{
+				command: string;
+				params?: Record<string, { value?: string }>;
+			}>;
+		};
+		expect(payload.ok).toBe(true);
+		expect(payload.command).toBe("godaddy api describe");
+		expect(payload.result.operationId).toBe("commerce.location.verify-address");
+		expect(payload.result.method).toBe("POST");
+		expect(payload.result.path).toBe("/location/address-verifications");
+		expect(payload.next_actions[0]?.command).toBe(
+			"godaddy api call <endpoint>",
+		);
+		expect(payload.next_actions[0]?.params?.endpoint?.value).toBe(
+			"/v1/commerce/location/address-verifications",
+		);
+	});
+
+	it("api search returns matching endpoints", () => {
+		const result = runCli(["api", "search", "address"]);
+		expect(result.status).toBe(0);
+
+		const payload = JSON.parse(result.stdout) as {
+			ok: boolean;
+			command: string;
+			result: { results: Array<{ operationId: string }> };
+			next_actions: Array<{
+				command: string;
+				params?: Record<string, { value?: string }>;
+			}>;
+		};
+		expect(payload.ok).toBe(true);
+		expect(payload.command).toBe("godaddy api search");
+		expect(
+			payload.result.results.some(
+				(item) => item.operationId === "commerce.location.verify-address",
+			),
+		).toBe(true);
+		expect(payload.next_actions[0]?.command).toBe(
+			"godaddy api describe <endpoint>",
+		);
+	});
+
+	it("legacy api endpoint syntax routes to api call", () => {
+		const result = runCli(["api", "/v1/commerce/location/addresses", "--help"]);
+		expect(result.status).toBe(0);
+		expect(result.stdout).toContain(
+			"Make authenticated requests to the GoDaddy API",
+		);
+		expect(result.stdout).toContain("<endpoint>");
+	});
+
 	it("unknown command returns structured error envelope", () => {
 		const result = runCli(["nonexistent-command"]);
 		expect(result.status).toBe(1);

@@ -41,10 +41,23 @@ function slugify(commandId: string): string {
 
 function writeFullOutput(commandId: string, payload: unknown): string {
 	const dir = join(tmpdir(), "godaddy-cli");
-	fs.mkdirSync(dir, { recursive: true });
+	fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+	try {
+		fs.chmodSync(dir, 0o700);
+	} catch {
+		// Best-effort on platforms that don't honor POSIX modes.
+	}
 	const filename = `${Date.now()}-${slugify(commandId)}.json`;
 	const fullPath = join(dir, filename);
-	fs.writeFileSync(fullPath, JSON.stringify(payload, null, 2), "utf8");
+	fs.writeFileSync(fullPath, JSON.stringify(payload, null, 2), {
+		encoding: "utf8",
+		mode: 0o600,
+	});
+	try {
+		fs.chmodSync(fullPath, 0o600);
+	} catch {
+		// Best-effort on platforms that don't honor POSIX modes.
+	}
 	return fullPath;
 }
 

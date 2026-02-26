@@ -85,4 +85,29 @@ describe("Config Environment Routing", () => {
 		expect(fs.existsSync(path.join(tempDir, ".env.test"))).toBe(true);
 		expect(fs.existsSync(path.join(tempDir, ".env.ote"))).toBe(false);
 	});
+
+	test("quotes env values to prevent multiline/env injection", async () => {
+		await runEffect(
+			createEnvFileEffect(
+				{
+					secret: "line1\nINJECTED_KEY=evil",
+					publicKey: "public#key",
+					clientId: 'client"id',
+					clientSecret: "client\\secret",
+				},
+				"ote",
+			),
+		);
+
+		const envPath = path.join(tempDir, ".env.ote");
+		const content = fs.readFileSync(envPath, "utf-8");
+
+		expect(content).toContain(
+			'GODADDY_WEBHOOK_SECRET="line1\\nINJECTED_KEY=evil"',
+		);
+		expect(content).toContain('GODADDY_PUBLIC_KEY="public#key"');
+		expect(content).toContain('GODADDY_CLIENT_ID="client\\"id"');
+		expect(content).toContain('GODADDY_CLIENT_SECRET="client\\\\secret"');
+		expect(content).not.toMatch(/^INJECTED_KEY=/m);
+	});
 });

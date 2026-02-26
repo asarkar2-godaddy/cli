@@ -33,7 +33,7 @@ describe("CLI command tree coverage", () => {
 		const ids = children.map((c: { id: string }) => c.id);
 		expect(ids).toContain("auth.group");
 		expect(ids).toContain("env.group");
-		expect(ids).toContain("api.request");
+		expect(ids).toContain("api.group");
 		expect(ids).toContain("actions.group");
 		expect(ids).toContain("webhook.group");
 		expect(ids).toContain("application.group");
@@ -65,7 +65,7 @@ describe("CLI command tree coverage", () => {
 	});
 
 	it("sub-group envelopes include next_actions", () => {
-		const groupCommands = ["application", "auth", "env", "actions", "webhook"];
+		const groupCommands = ["application", "auth", "env", "actions", "webhook", "api"];
 		for (const group of groupCommands) {
 			const result = runCli([group]);
 			if (result.status === 0) {

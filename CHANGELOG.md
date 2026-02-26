@@ -4,6 +4,7 @@
 
 ### Patch Changes
 
+- Add API catalog discovery commands (`api list`, `api describe`, `api search`) and preserve backward compatibility by routing legacy `godaddy api <endpoint>` usage to `godaddy api call <endpoint>`. Also add the public `godaddy-cli` agent skill documentation.
 - b3cba2f: Security hardening: bind OAuth server to 127.0.0.1, sanitize headers in debug and --include output, HTML-escape OAuth error page, harden PowerShell keychain escaping, stop forwarding raw server errors to userMessage, redact sensitive fields in debug request body, add 120s OAuth timeout.
 
 ## 0.2.0

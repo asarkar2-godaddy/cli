@@ -76,9 +76,31 @@ const COMMAND_TREE: CommandNode = {
 			description: "Manage GoDaddy environments (ote, prod)",
 		},
 		{
-			id: "api.request",
-			command: "godaddy api <endpoint>",
-			description: "Make authenticated requests to GoDaddy APIs",
+			id: "api.group",
+			command: "godaddy api",
+			description: "Explore and call GoDaddy API endpoints",
+			children: [
+				{
+					id: "api.list",
+					command: "godaddy api list",
+					description: "List all API domains and their endpoints",
+				},
+				{
+					id: "api.describe",
+					command: "godaddy api describe <endpoint>",
+					description: "Show detailed schema information for an API endpoint",
+				},
+				{
+					id: "api.search",
+					command: "godaddy api search <query>",
+					description: "Search for API endpoints by keyword",
+				},
+				{
+					id: "api.call",
+					command: "godaddy api call <endpoint>",
+					description: "Make an authenticated API request",
+				},
+			],
 		},
 		{
 			id: "actions.group",
@@ -194,6 +216,67 @@ function normalizeVerbosityArgs(argv: readonly string[]): string[] {
 	if (norm >= 2) return ["--debug", ...retained];
 	if (norm === 1) return ["--verbose", ...retained];
 	return retained;
+}
+
+const API_SUBCOMMANDS = new Set(["list", "describe", "search", "call"]);
+const ROOT_FLAG_WITH_VALUE = new Set([
+	"--env",
+	"-e",
+	"--log-level",
+	"--completions",
+]);
+const ROOT_BOOLEAN_FLAGS = new Set([
+	"--pretty",
+	"--verbose",
+	"-v",
+	"--info",
+	"--debug",
+	"--help",
+	"-h",
+	"--version",
+	"--wizard",
+]);
+
+function rewriteLegacyApiEndpointArgs(argv: readonly string[]): string[] {
+	const rewritten = [...argv];
+	let index = 0;
+
+	while (index < rewritten.length) {
+		const token = rewritten[index];
+
+		if (ROOT_FLAG_WITH_VALUE.has(token)) {
+			index += 2;
+			continue;
+		}
+
+		if (ROOT_BOOLEAN_FLAGS.has(token)) {
+			index += 1;
+			continue;
+		}
+
+		if (token.startsWith("-")) {
+			index += 1;
+			continue;
+		}
+
+		if (token !== "api") {
+			return rewritten;
+		}
+
+		const maybeSubcommandOrEndpoint = rewritten[index + 1];
+		if (
+			!maybeSubcommandOrEndpoint ||
+			maybeSubcommandOrEndpoint.startsWith("-") ||
+			API_SUBCOMMANDS.has(maybeSubcommandOrEndpoint)
+		) {
+			return rewritten;
+		}
+
+		rewritten.splice(index + 1, 0, "call");
+		return rewritten;
+	}
+
+	return rewritten;
 }
 
 // ---------------------------------------------------------------------------
@@ -323,6 +406,7 @@ export function runCli(rawArgv: ReadonlyArray<string>): Promise<void> {
 	}
 
 	const frameworkArgs = normalized.filter((_, i) => !stripIndices.has(i));
+	const rewrittenFrameworkArgs = rewriteLegacyApiEndpointArgs(frameworkArgs);
 
 	// Detect unsupported --output option before handing to framework
 	const outputIdx = normalized.indexOf("--output");
@@ -377,7 +461,7 @@ export function runCli(rawArgv: ReadonlyArray<string>): Promise<void> {
 		// We pass a synthetic prefix so the framework strips the first two.
 		// Use frameworkArgs (global flags already stripped) so @effect/cli
 		// doesn't reject them as unknown options on subcommands.
-		["node", "godaddy", ...frameworkArgs],
+		["node", "godaddy", ...rewrittenFrameworkArgs],
 	).pipe(
 		// Centralized error boundary: catch ALL errors, emit JSON envelope
 		Effect.catchAll((error) =>
