@@ -1,5 +1,11 @@
 # @godaddy/cli
 
+## 0.2.3
+
+### Patch Changes
+
+- 1de3a3a: Fix `-c` config option handling so custom config paths are applied correctly.
+
 ## 0.2.2
 
 ### Patch Changes
