@@ -76,9 +76,32 @@ const COMMAND_TREE: CommandNode = {
 			description: "Manage GoDaddy environments (ote, prod)",
 		},
 		{
-			id: "api.request",
-			command: "godaddy api <endpoint>",
-			description: "Make authenticated requests to GoDaddy APIs",
+			id: "api.group",
+			command: "godaddy api",
+			description: "Explore and call GoDaddy API endpoints",
+			children: [
+				{
+					id: "api.list",
+					command: "godaddy api list",
+					description: "List all API domains and their endpoints",
+				},
+				{
+					id: "api.describe",
+					command: "godaddy api describe <endpoint>",
+					description:
+						"Show detailed schema information for an API endpoint",
+				},
+				{
+					id: "api.search",
+					command: "godaddy api search <query>",
+					description: "Search for API endpoints by keyword",
+				},
+				{
+					id: "api.call",
+					command: "godaddy api call <endpoint>",
+					description: "Make an authenticated API request",
+				},
+			],
 		},
 		{
 			id: "actions.group",

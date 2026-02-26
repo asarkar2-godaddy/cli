@@ -19,6 +19,7 @@
 		"format": "pnpm biome format --write",
 		"lint": "pnpm biome lint  --write",
 		"check": "pnpm biome check --fix --unsafe",
+		"generate:api-catalog": "pnpm tsx scripts/generate-api-catalog.ts",
 		"build": "node build.mjs",
 		"build:dev": "NODE_ENV=development node build.mjs --dev && NODE_OPTIONS=--enable-source-maps node dist/cli-dev.js",
 		"prepare": "pnpm run build",
@@ -43,7 +44,8 @@
 		"ms": "^2.1.3",
 		"msw": "^2.4.0",
 		"tsx": "^4.19.3",
-		"vitest": "^3.2.2"
+		"vitest": "^3.2.2",
+		"yaml": "^2.8.2"
 	},
 	"peerDependencies": {
 		"typescript": "^5.0.0"
