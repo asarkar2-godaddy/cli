@@ -390,6 +390,62 @@ exec('dangerous command'); // SEC001
 		}
 	});
 
+	test("deployment rejects extension handle traversal outside ./extensions", async () => {
+		const originalCwd = process.cwd();
+		process.chdir(testDir);
+
+		try {
+			getExtensionsFromConfigSpy.mockReturnValue(
+				Effect.succeed([
+					{
+						type: "embed",
+						name: "@test/bad-handle",
+						handle: "../outside",
+						source: "index.ts",
+						targets: [{ target: "body.start" }],
+					},
+				]),
+			);
+
+			const exit = await runEffectExit(applicationDeployEffect("test-app"));
+			const err = extractFailure(exit) as { userMessage: string };
+			expect(err.userMessage).toContain("handle path");
+			expect(
+				applicationsService.updateApplicationEffect,
+			).not.toHaveBeenCalled();
+		} finally {
+			process.chdir(originalCwd);
+		}
+	});
+
+	test("deployment rejects extension source traversal outside extension directory", async () => {
+		const originalCwd = process.cwd();
+		process.chdir(testDir);
+
+		try {
+			getExtensionsFromConfigSpy.mockReturnValue(
+				Effect.succeed([
+					{
+						type: "embed",
+						name: "@test/bad-source",
+						handle: "bad-source",
+						source: "../outside.ts",
+						targets: [{ target: "body.start" }],
+					},
+				]),
+			);
+
+			const exit = await runEffectExit(applicationDeployEffect("test-app"));
+			const err = extractFailure(exit) as { userMessage: string };
+			expect(err.userMessage).toContain("source path");
+			expect(
+				applicationsService.updateApplicationEffect,
+			).not.toHaveBeenCalled();
+		} finally {
+			process.chdir(originalCwd);
+		}
+	});
+
 	test("deployment cleans bundle artifacts when upload fails", async () => {
 		const originalCwd = process.cwd();
 		process.chdir(testDir);

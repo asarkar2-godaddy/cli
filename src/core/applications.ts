@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 import type { Fetch } from "@effect/platform/FetchHttpClient";
 import { FileSystem } from "@effect/platform/FileSystem";
 import { type ArkErrors, type } from "arktype";
@@ -24,6 +24,7 @@ import {
 import {
 	type ActionConfig,
 	type Config,
+	type ConfigExtensionInfo,
 	type SubscriptionConfig,
 	createConfigFileEffect,
 	createEnvFileEffect,
@@ -235,6 +236,46 @@ function emitProgress(
 		} catch {
 			// Progress callbacks are best-effort and must not affect deployment.
 		}
+	});
+}
+
+function isPathWithin(basePath: string, candidatePath: string): boolean {
+	const rel = relative(basePath, candidatePath);
+	return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function resolveExtensionPathsEffect(
+	repoRoot: string,
+	extension: ConfigExtensionInfo,
+): Effect.Effect<
+	{ extensionDir: string; sourcePath: string },
+	ValidationError
+> {
+	return Effect.gen(function* () {
+		const extensionsRoot = resolve(repoRoot, "extensions");
+		const extensionDir = resolve(extensionsRoot, extension.handle);
+		if (!isPathWithin(extensionsRoot, extensionDir)) {
+			return yield* Effect.fail(
+				new ValidationError({
+					message: `Invalid extension handle path: ${extension.handle}`,
+					userMessage:
+						"Invalid extension handle path. Extension directories must stay within ./extensions.",
+				}),
+			);
+		}
+
+		const sourcePath = resolve(extensionDir, extension.source);
+		if (!isPathWithin(extensionDir, sourcePath)) {
+			return yield* Effect.fail(
+				new ValidationError({
+					message: `Invalid extension source path for '${extension.name}': ${extension.source}`,
+					userMessage:
+						"Invalid extension source path. Source files must stay within the extension directory.",
+				}),
+			);
+		}
+
+		return { extensionDir, sourcePath };
 	});
 }
 
@@ -1014,7 +1055,10 @@ export function applicationDeployEffect(
 
 		// Scan each extension (scan the directory containing the source file)
 		for (const [index, extension] of extensions.entries()) {
-			const extensionDir = resolve(repoRoot, "extensions", extension.handle);
+			const { extensionDir } = yield* resolveExtensionPathsEffect(
+				repoRoot,
+				extension,
+			);
 			yield* emitProgress(options, {
 				type: "step",
 				name: "scan.prebundle",
@@ -1090,8 +1134,10 @@ export function applicationDeployEffect(
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 
 		for (const [index, extension] of extensions.entries()) {
-			const extensionDir = resolve(repoRoot, "extensions", extension.handle);
-			const sourcePath = resolve(extensionDir, extension.source);
+			const { extensionDir, sourcePath } = yield* resolveExtensionPathsEffect(
+				repoRoot,
+				extension,
+			);
 			yield* emitProgress(options, {
 				type: "step",
 				name: "bundle",

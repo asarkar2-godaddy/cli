@@ -167,6 +167,11 @@ function toConfigError(
 	});
 }
 
+function formatEnvValue(value: string): string {
+	// Always quote to prevent newline/comment/env injection in .env files.
+	return JSON.stringify(value.replace(/\0/g, ""));
+}
+
 function resolveConfigEnvironment(
 	env?: ConfigEnvironment,
 ): ConfigEnvironment | undefined {
@@ -704,10 +709,10 @@ export function createEnvFileEffect(
 					}
 				}
 
-				envVars.GODADDY_WEBHOOK_SECRET = secret;
-				envVars.GODADDY_PUBLIC_KEY = publicKey;
-				envVars.GODADDY_CLIENT_ID = clientId;
-				envVars.GODADDY_CLIENT_SECRET = clientSecret;
+				envVars.GODADDY_WEBHOOK_SECRET = formatEnvValue(secret);
+				envVars.GODADDY_PUBLIC_KEY = formatEnvValue(publicKey);
+				envVars.GODADDY_CLIENT_ID = formatEnvValue(clientId);
+				envVars.GODADDY_CLIENT_SECRET = formatEnvValue(clientSecret);
 
 				envContent = Object.entries(envVars)
 					.map(([key, value]) => `${key}=${value}`)
@@ -719,10 +724,10 @@ export function createEnvFileEffect(
 					}
 				}
 			} else {
-				envContent = `GODADDY_WEBHOOK_SECRET=${secret}\nGODADDY_PUBLIC_KEY=${publicKey}\nGODADDY_CLIENT_ID=${clientId}\nGODADDY_CLIENT_SECRET=${clientSecret}`;
+				envContent = `GODADDY_WEBHOOK_SECRET=${formatEnvValue(secret)}\nGODADDY_PUBLIC_KEY=${formatEnvValue(publicKey)}\nGODADDY_CLIENT_ID=${formatEnvValue(clientId)}\nGODADDY_CLIENT_SECRET=${formatEnvValue(clientSecret)}`;
 			}
 		} else {
-			envContent = `GODADDY_WEBHOOK_SECRET=${secret}\nGODADDY_PUBLIC_KEY=${publicKey}\nGODADDY_CLIENT_ID=${clientId}\nGODADDY_CLIENT_SECRET=${clientSecret}`;
+			envContent = `GODADDY_WEBHOOK_SECRET=${formatEnvValue(secret)}\nGODADDY_PUBLIC_KEY=${formatEnvValue(publicKey)}\nGODADDY_CLIENT_ID=${formatEnvValue(clientId)}\nGODADDY_CLIENT_SECRET=${formatEnvValue(clientSecret)}`;
 		}
 
 		yield* fs.writeFileString(envPath, envContent);
