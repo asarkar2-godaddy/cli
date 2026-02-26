@@ -288,18 +288,27 @@ Compatibility behavior:
 
 As with other large result sets, `api list` may be truncated in the inline JSON response. When `truncated: true`, read the `full_output` file path for complete results.
 
+Address task rule:
+- For requests like "find/search/verify an address", start with:
+  `godaddy api search address`
+  `godaddy api list --domain location`
+  `godaddy api describe /location/addresses`
+- Do not use `godaddy actions describe` for generic API endpoint discovery.
+
 ### Actions
+
+`godaddy actions` is only for developers discovering action hook contracts they can integrate with as providers (or consume as a contract in app configuration). It is not for API endpoint discovery or API calls.
 
 ```bash
 # List all available actions
 godaddy actions list
 
 # Describe an action's request/response contract
-godaddy actions describe location.address.verify
 godaddy actions describe commerce.taxes.calculate
+godaddy actions describe commerce.payment.process
 ```
 
-Available actions: `location.address.verify`, `commerce.taxes.calculate`, `commerce.shipping-rates.calculate`, `commerce.price-adjustment.apply`, `commerce.price-adjustment.list`, `notifications.email.send`, `commerce.payment.get`, `commerce.payment.cancel`, `commerce.payment.refund`, `commerce.payment.process`, `commerce.payment.auth`.
+Use `godaddy actions list` to discover current action names and then `godaddy actions describe <action>` to inspect request/response schemas for that hook contract.
 
 ### Webhooks
 
