@@ -117,12 +117,22 @@ describe("CLI Smoke Tests", () => {
 			ok: boolean;
 			command: string;
 			result: { operationId: string; method: string; path: string };
+			next_actions: Array<{
+				command: string;
+				params?: Record<string, { value?: string }>;
+			}>;
 		};
 		expect(payload.ok).toBe(true);
 		expect(payload.command).toBe("godaddy api describe");
 		expect(payload.result.operationId).toBe("commerce.location.verify-address");
 		expect(payload.result.method).toBe("POST");
 		expect(payload.result.path).toBe("/location/address-verifications");
+		expect(payload.next_actions[0]?.command).toBe(
+			"godaddy api call <endpoint>",
+		);
+		expect(payload.next_actions[0]?.params?.endpoint?.value).toBe(
+			"/v1/commerce/location/address-verifications",
+		);
 	});
 
 	it("api search returns matching endpoints", () => {
@@ -133,6 +143,10 @@ describe("CLI Smoke Tests", () => {
 			ok: boolean;
 			command: string;
 			result: { results: Array<{ operationId: string }> };
+			next_actions: Array<{
+				command: string;
+				params?: Record<string, { value?: string }>;
+			}>;
 		};
 		expect(payload.ok).toBe(true);
 		expect(payload.command).toBe("godaddy api search");
@@ -141,6 +155,9 @@ describe("CLI Smoke Tests", () => {
 				(item) => item.operationId === "commerce.location.verify-address",
 			),
 		).toBe(true);
+		expect(payload.next_actions[0]?.command).toBe(
+			"godaddy api describe <endpoint>",
+		);
 	});
 
 	it("legacy api endpoint syntax routes to api call", () => {

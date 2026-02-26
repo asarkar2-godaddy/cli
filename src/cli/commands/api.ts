@@ -13,8 +13,8 @@ import {
 } from "../../core/api";
 import { authLoginEffect, getTokenInfoEffect } from "../../core/auth";
 import { AuthenticationError, ValidationError } from "../../effect/errors";
-import type { NextAction } from "../agent/types";
 import { protectPayload, truncateList } from "../agent/truncation";
+import type { NextAction } from "../agent/types";
 import {
 	type CatalogDomain,
 	type CatalogEndpoint,
@@ -79,18 +79,35 @@ function describeNextActions(
 	domain: CatalogDomain,
 	endpoint: CatalogEndpoint,
 ): NextAction[] {
-	// Build a ready-to-run call command from the endpoint spec
+	// Build a call template with strongly-typed params instead of embedding
+	// schema-sourced values directly into an executable command string.
 	const fullPath = `${domain.baseUrl}${endpoint.path}`.replace(
 		/^https:\/\/api\.godaddy\.com/,
 		"",
 	);
-	const scopeFlag =
-		endpoint.scopes.length > 0 ? ` -s ${endpoint.scopes[0]}` : "";
+	const callParams: NonNullable<NextAction["params"]> = {
+		endpoint: {
+			description: "Relative API endpoint",
+			value: fullPath,
+			required: true,
+		},
+		method: {
+			description: "HTTP method",
+			value: endpoint.method,
+		},
+	};
+	if (endpoint.scopes.length > 0) {
+		callParams.scope = {
+			description: "Required OAuth scope",
+			value: endpoint.scopes[0],
+		};
+	}
 
 	const actions: NextAction[] = [
 		{
-			command: `godaddy api call ${fullPath} -X ${endpoint.method}${scopeFlag}`,
+			command: "godaddy api call <endpoint>",
 			description: `Execute ${endpoint.method} ${endpoint.path}`,
+			params: callParams,
 		},
 		{
 			command: "godaddy api list",
@@ -105,8 +122,15 @@ function describeNextActions(
 	if (otherEndpoints.length > 0) {
 		const next = otherEndpoints[0];
 		actions.push({
-			command: `godaddy api describe ${next.operationId}`,
+			command: "godaddy api describe <endpoint>",
 			description: `Describe ${next.summary}`,
+			params: {
+				endpoint: {
+					description: "Operation ID or path",
+					value: next.operationId,
+					required: true,
+				},
+			},
 		});
 	}
 
@@ -140,8 +164,15 @@ function searchNextActions(firstOperationId?: string): NextAction[] {
 	const actions: NextAction[] = [];
 	if (firstOperationId) {
 		actions.push({
-			command: `godaddy api describe ${firstOperationId}`,
+			command: "godaddy api describe <endpoint>",
 			description: "Describe this endpoint",
+			params: {
+				endpoint: {
+					description: "Operation ID or path",
+					value: firstOperationId,
+					required: true,
+				},
+			},
 		});
 	}
 	actions.push({
@@ -315,8 +346,15 @@ const apiList = Command.make(
 					endpointSummaries.length > 0
 						? [
 								{
-									command: `godaddy api describe ${endpointSummaries[0].operationId}`,
+									command: "godaddy api describe <endpoint>",
 									description: `Describe ${endpointSummaries[0].summary}`,
+									params: {
+										endpoint: {
+											description: "Operation ID or path",
+											value: endpointSummaries[0].operationId,
+											required: true,
+										},
+									},
 								},
 								{
 									command: "godaddy api list",
@@ -350,9 +388,7 @@ const apiList = Command.make(
 				);
 			}
 		}),
-).pipe(
-	Command.withDescription("List available API domains and endpoints"),
-);
+).pipe(Command.withDescription("List available API domains and endpoints"));
 
 // ---------------------------------------------------------------------------
 // Subcommand: api describe
@@ -401,8 +437,15 @@ const apiDescribe = Command.make(
 							matches,
 						},
 						matches.map((m) => ({
-							command: `godaddy api describe ${m.operationId}`,
+							command: "godaddy api describe <endpoint>",
 							description: `${m.method} ${m.path} — ${m.summary}`,
+							params: {
+								endpoint: {
+									description: "Operation ID or path",
+									value: m.operationId,
+									required: true,
+								},
+							},
 						})),
 					);
 					return;
