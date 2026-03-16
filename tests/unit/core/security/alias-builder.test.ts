@@ -62,9 +62,9 @@ describe("Alias Map Builder", () => {
 
       it("should track multiple imports from same module", () => {
         const code = `
-					import fs from 'fs';
-					import { readFileSync, writeFileSync as write } from 'fs';
-				`;
+          import fs from 'fs';
+          import { readFileSync, writeFileSync as write } from 'fs';
+        `;
         const sourceFile = createSourceFile(code);
         const maps = buildAliasMaps(sourceFile);
 
@@ -133,9 +133,9 @@ describe("Alias Map Builder", () => {
 
       it("should ignore dynamic computed property names", () => {
         const code = `
-					const key = 'exec';
-					const { [key]: execute } = require('child_process');
-				`;
+          const key = 'exec';
+          const { [key]: execute } = require('child_process');
+        `;
         const sourceFile = createSourceFile(code);
         const maps = buildAliasMaps(sourceFile);
 
@@ -145,9 +145,9 @@ describe("Alias Map Builder", () => {
 
       it("should track mixed require patterns", () => {
         const code = `
-					const fs = require('fs');
-					const { readFileSync } = require('fs');
-				`;
+          const fs = require('fs');
+          const { readFileSync } = require('fs');
+        `;
         const sourceFile = createSourceFile(code);
         const maps = buildAliasMaps(sourceFile);
 
@@ -169,9 +169,9 @@ describe("Alias Map Builder", () => {
 
       it("should ignore dynamic imports with variables", () => {
         const code = `
-					const moduleName = 'crypto';
-					const mod = import(moduleName);
-				`;
+          const moduleName = 'crypto';
+          const mod = import(moduleName);
+        `;
         const sourceFile = createSourceFile(code);
         const maps = buildAliasMaps(sourceFile);
 
@@ -183,11 +183,11 @@ describe("Alias Map Builder", () => {
     describe("Mixed Import Styles", () => {
       it("should handle ESM and CJS in same file", () => {
         const code = `
-					import fs from 'fs';
-					const cp = require('child_process');
-					import * as path from 'path';
-					const { promisify } = require('util');
-				`;
+          import fs from 'fs';
+          const cp = require('child_process');
+          import * as path from 'path';
+          const { promisify } = require('util');
+        `;
         const sourceFile = createSourceFile(code);
         const maps = buildAliasMaps(sourceFile);
 
@@ -201,10 +201,10 @@ describe("Alias Map Builder", () => {
 
       it("should track multiple aliases for same module", () => {
         const code = `
-					import fs from 'fs';
-					const fileSystem = require('fs');
-					import * as FS from 'fs';
-				`;
+          import fs from 'fs';
+          const fileSystem = require('fs');
+          import * as FS from 'fs';
+        `;
         const sourceFile = createSourceFile(code);
         const maps = buildAliasMaps(sourceFile);
 
@@ -228,9 +228,9 @@ describe("Alias Map Builder", () => {
 
       it("should handle files with no imports", () => {
         const code = `
-					const x = 5;
-					function test() { return x; }
-				`;
+          const x = 5;
+          function test() { return x; }
+        `;
         const sourceFile = createSourceFile(code);
         const maps = buildAliasMaps(sourceFile);
 
@@ -309,11 +309,11 @@ describe("Alias Map Builder", () => {
 
     it("should handle multiple aliases correctly", () => {
       const code = `
-				import fs from 'fs';
-				const fileSystem = require('fs');
-				import * as FS from 'fs';
-				import { readFileSync as read } from 'fs';
-			`;
+        import fs from 'fs';
+        const fileSystem = require('fs');
+        import * as FS from 'fs';
+        import { readFileSync as read } from 'fs';
+      `;
       const sourceFile = createSourceFile(code);
       const maps = buildAliasMaps(sourceFile);
 

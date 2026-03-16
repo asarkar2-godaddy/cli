@@ -97,20 +97,20 @@ export const authHandlers = [
 
     // For testing, return HTML that simulates authorization page
     const authPageHtml = `
-			<html>
-				<head><title>OAuth Authorization (Test)</title></head>
-				<body>
-					<h1>Authorize Application</h1>
-					<p>Test authorization page for client: ${clientId}</p>
-					<script>
-						// Simulate successful authorization after 1 second
-						setTimeout(() => {
-							window.location.href = '${redirectUri}?code=test-auth-code&state=${state}';
-						}, 1000);
-					</script>
-				</body>
-			</html>
-		`;
+      <html>
+        <head><title>OAuth Authorization (Test)</title></head>
+        <body>
+          <h1>Authorize Application</h1>
+          <p>Test authorization page for client: ${clientId}</p>
+          <script>
+            // Simulate successful authorization after 1 second
+            setTimeout(() => {
+              window.location.href = '${redirectUri}?code=test-auth-code&state=${state}';
+            }, 1000);
+          </script>
+        </body>
+      </html>
+    `;
 
     return HttpResponse.html(authPageHtml);
   }),
@@ -125,37 +125,37 @@ export const authHandlers = [
     if (error) {
       return HttpResponse.html(
         `
-				<html>
-					<body>
-						<h1>Authorization Failed</h1>
-						<p>Error: ${error}</p>
-					</body>
-				</html>
-			`,
+        <html>
+          <body>
+            <h1>Authorization Failed</h1>
+            <p>Error: ${error}</p>
+          </body>
+        </html>
+      `,
         { status: 400 },
       );
     }
 
     if (code && state) {
       return HttpResponse.html(`
-				<html>
-					<body>
-						<h1>Authorization Successful!</h1>
-						<p>You can close this window now.</p>
-					</body>
-				</html>
-			`);
+        <html>
+          <body>
+            <h1>Authorization Successful!</h1>
+            <p>You can close this window now.</p>
+          </body>
+        </html>
+      `);
     }
 
     return HttpResponse.html(
       `
-			<html>
-				<body>
-					<h1>Invalid Request</h1>
-					<p>Missing required parameters</p>
-				</body>
-			</html>
-		`,
+      <html>
+        <body>
+          <h1>Invalid Request</h1>
+          <p>Missing required parameters</p>
+        </body>
+      </html>
+    `,
       { status: 400 },
     );
   }),

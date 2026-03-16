@@ -172,8 +172,8 @@ describe("bundler service", () => {
 
       // Mock or spy on tsconfig resolution
       // const result = await bundleExtension(pkg, entryPath, {
-      // 	repoRoot: fixtureDir,
-      // 	timestamp: "20250128143022",
+      //   repoRoot: fixtureDir,
+      //   timestamp: "20250128143022",
       // });
 
       // expect(result.success).toBe(true);
@@ -198,8 +198,8 @@ describe("bundler service", () => {
       const repoRoot = process.cwd();
 
       // const result = await bundleExtension(pkg, entryPath, {
-      // 	repoRoot,
-      // 	timestamp: "20250128143022",
+      //   repoRoot,
+      //   timestamp: "20250128143022",
       // });
 
       // expect(result.success).toBe(true);
@@ -224,8 +224,8 @@ describe("bundler service", () => {
 
       // Use temp directory with no tsconfig
       // const result = await bundleExtension(pkg, entryPath, {
-      // 	repoRoot: tempTestDir,
-      // 	timestamp: "20250128143022",
+      //   repoRoot: tempTestDir,
+      //   timestamp: "20250128143022",
       // });
 
       // expect(result.success).toBe(true);
@@ -244,8 +244,8 @@ describe("bundler service", () => {
       };
 
       // const result = await bundleExtension(pkg, entryPath, {
-      // 	repoRoot: fixtureDir,
-      // 	timestamp: "20250128143022",
+      //   repoRoot: fixtureDir,
+      //   timestamp: "20250128143022",
       // });
 
       // expect(result.success).toBe(false);
@@ -266,8 +266,8 @@ describe("bundler service", () => {
       };
 
       // const result = await bundleExtension(pkg, entryPath, {
-      // 	repoRoot: fixtureDir,
-      // 	timestamp: "20250128143022",
+      //   repoRoot: fixtureDir,
+      //   timestamp: "20250128143022",
       // });
 
       // expect(result.success).toBe(false);
@@ -345,8 +345,8 @@ describe("bundler service", () => {
       };
 
       // const result = await bundleExtension(pkg, entryPath, {
-      // 	repoRoot: fixtureDir,
-      // 	timestamp: "20250128143022",
+      //   repoRoot: fixtureDir,
+      //   timestamp: "20250128143022",
       // });
 
       // expect(result.success).toBe(true);
@@ -369,8 +369,8 @@ describe("bundler service", () => {
       };
 
       // const result = await bundleExtension(pkg, entryPath, {
-      // 	repoRoot: fixtureDir,
-      // 	timestamp: "20250128143022",
+      //   repoRoot: fixtureDir,
+      //   timestamp: "20250128143022",
       // });
 
       // expect(result.success).toBe(false);
@@ -384,8 +384,8 @@ describe("bundler service", () => {
     it("should return local tsconfig when it exists", async () => {
       // const { resolveTsConfig } = await import("@services/extension/bundler");
       // const extensionDir = join(
-      // 	process.cwd(),
-      // 	"tests/fixtures/extensions/with-local-tsconfig",
+      //   process.cwd(),
+      //   "tests/fixtures/extensions/with-local-tsconfig",
       // );
       // const repoRoot = process.cwd();
       // const result = resolveTsConfig(extensionDir, repoRoot);
@@ -395,8 +395,8 @@ describe("bundler service", () => {
     it("should return root tsconfig when local does not exist", async () => {
       // const { resolveTsConfig } = await import("@services/extension/bundler");
       // const extensionDir = join(
-      // 	process.cwd(),
-      // 	"tests/fixtures/extensions/simple-ts",
+      //   process.cwd(),
+      //   "tests/fixtures/extensions/simple-ts",
       // );
       // const repoRoot = process.cwd();
       // const result = resolveTsConfig(extensionDir, repoRoot);
@@ -415,7 +415,7 @@ describe("bundler service", () => {
   describe("createTempDirectory", () => {
     it("should create temp directory with correct structure", async () => {
       // const { createTempDirectory } = await import(
-      // 	"@services/extension/bundler"
+      //   "@services/extension/bundler"
       // );
       // const repoRoot = "/path/to/my-repo";
       // const timestamp = "20250128143022";
@@ -428,7 +428,7 @@ describe("bundler service", () => {
 
     it("should create temp directory with repo name from path", async () => {
       // const { createTempDirectory } = await import(
-      // 	"@services/extension/bundler"
+      //   "@services/extension/bundler"
       // );
       // const repoRoot = "/Users/alice/projects/godaddy-extensions";
       // const timestamp = "20250128143022";
@@ -441,7 +441,7 @@ describe("bundler service", () => {
   describe("cleanupTempDirectory", () => {
     it("should remove temp directory and all contents", async () => {
       // const { cleanupTempDirectory } = await import(
-      // 	"@services/extension/bundler"
+      //   "@services/extension/bundler"
       // );
       // // Create temp directory with files
       // const testDir = join(tempTestDir, "cleanup-test");
@@ -455,7 +455,7 @@ describe("bundler service", () => {
 
     it("should not throw if directory does not exist", async () => {
       // const { cleanupTempDirectory } = await import(
-      // 	"@services/extension/bundler"
+      //   "@services/extension/bundler"
       // );
       // const nonexistentDir = join(tempTestDir, "does-not-exist");
       // expect(existsSync(nonexistentDir)).toBe(false);

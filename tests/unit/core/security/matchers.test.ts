@@ -162,9 +162,9 @@ describe("Shared Matchers Library", () => {
   describe("isMemberCall", () => {
     it("should detect member calls on aliased modules (ESM)", () => {
       const code = `
-				import cp from 'child_process';
-				cp.exec('ls');
-			`;
+        import cp from 'child_process';
+        cp.exec('ls');
+      `;
       const sourceFile = createSourceFile(code);
       const aliasMaps = buildAliasMaps(sourceFile);
       const node = findNode(sourceFile, (n) => ts.isCallExpression(n));
@@ -181,9 +181,9 @@ describe("Shared Matchers Library", () => {
 
     it("should detect member calls on aliased modules (CJS)", () => {
       const code = `
-		const cp = require('child_process');
-		cp.spawn('node');
-		`;
+    const cp = require('child_process');
+    cp.spawn('node');
+    `;
       const sourceFile = createSourceFile(code);
       const aliasMaps = buildAliasMaps(sourceFile);
       // Find the cp.spawn() call, not the require() call
@@ -205,9 +205,9 @@ describe("Shared Matchers Library", () => {
 
     it("should detect namespace member calls", () => {
       const code = `
-				import * as VM from 'vm';
-				VM.runInContext('code', {});
-			`;
+        import * as VM from 'vm';
+        VM.runInContext('code', {});
+      `;
       const sourceFile = createSourceFile(code);
       const aliasMaps = buildAliasMaps(sourceFile);
       const node = findNode(sourceFile, (n) => ts.isCallExpression(n));
@@ -223,9 +223,9 @@ describe("Shared Matchers Library", () => {
 
     it("should not match calls on non-aliased objects", () => {
       const code = `
-				const obj = { exec: () => {} };
-				obj.exec('ls');
-			`;
+        const obj = { exec: () => {} };
+        obj.exec('ls');
+      `;
       const sourceFile = createSourceFile(code);
       const aliasMaps = buildAliasMaps(sourceFile);
       const node = findNode(sourceFile, (n) => ts.isCallExpression(n));
@@ -241,9 +241,9 @@ describe("Shared Matchers Library", () => {
 
     it("should not match different method names", () => {
       const code = `
-				import cp from 'child_process';
-				cp.fork('script.js');
-			`;
+        import cp from 'child_process';
+        cp.fork('script.js');
+      `;
       const sourceFile = createSourceFile(code);
       const aliasMaps = buildAliasMaps(sourceFile);
       const node = findNode(sourceFile, (n) => ts.isCallExpression(n));
@@ -259,9 +259,9 @@ describe("Shared Matchers Library", () => {
 
     it("should not match non-call expressions", () => {
       const code = `
-				import cp from 'child_process';
-				cp.exec;
-			`;
+        import cp from 'child_process';
+        cp.exec;
+      `;
       const sourceFile = createSourceFile(code);
       const aliasMaps = buildAliasMaps(sourceFile);
       const node = findNode(

@@ -293,14 +293,14 @@ function createWindowsKeychain(): KeychainService {
       assertSafePSValue(password, "password");
       // Remove existing entry first (PasswordVault throws on duplicate)
       const removeScript = `
-				${vaultInit}
-				try {
-					$old = $vault.Retrieve('${escapePS(service)}','${escapePS(account)}')
-					$vault.Remove($old)
-				} catch {}
-				$cred = New-Object Windows.Security.Credentials.PasswordCredential('${escapePS(service)}','${escapePS(account)}','${escapePS(password)}')
-				$vault.Add($cred)
-			`;
+        ${vaultInit}
+        try {
+          $old = $vault.Retrieve('${escapePS(service)}','${escapePS(account)}')
+          $vault.Remove($old)
+        } catch {}
+        $cred = New-Object Windows.Security.Credentials.PasswordCredential('${escapePS(service)}','${escapePS(account)}','${escapePS(password)}')
+        $vault.Add($cred)
+      `;
       const result = await powershell(removeScript);
       if (result.code !== 0) {
         throw new Error(
@@ -313,15 +313,15 @@ function createWindowsKeychain(): KeychainService {
       assertSafePSValue(service, "service");
       assertSafePSValue(account, "account");
       const script = `
-				${vaultInit}
-				try {
-					$cred = $vault.Retrieve('${escapePS(service)}','${escapePS(account)}')
-					$cred.RetrievePassword()
-					Write-Output $cred.Password
-				} catch {
-					exit 1
-				}
-			`;
+        ${vaultInit}
+        try {
+          $cred = $vault.Retrieve('${escapePS(service)}','${escapePS(account)}')
+          $cred.RetrievePassword()
+          Write-Output $cred.Password
+        } catch {
+          exit 1
+        }
+      `;
       const result = await powershell(script);
       if (result.code !== 0 || result.stdout.trim().length === 0) {
         return null;
@@ -333,14 +333,14 @@ function createWindowsKeychain(): KeychainService {
       assertSafePSValue(service, "service");
       assertSafePSValue(account, "account");
       const script = `
-				${vaultInit}
-				try {
-					$cred = $vault.Retrieve('${escapePS(service)}','${escapePS(account)}')
-					$vault.Remove($cred)
-				} catch {
-					exit 1
-				}
-			`;
+        ${vaultInit}
+        try {
+          $cred = $vault.Retrieve('${escapePS(service)}','${escapePS(account)}')
+          $vault.Remove($cred)
+        } catch {
+          exit 1
+        }
+      `;
       const result = await powershell(script);
       return result.code === 0;
     },
@@ -348,17 +348,17 @@ function createWindowsKeychain(): KeychainService {
     async findCredentials(service) {
       assertSafePSValue(service, "service");
       const script = `
-				${vaultInit}
-				try {
-					$creds = $vault.FindAllByResource('${escapePS(service)}')
-					foreach ($c in $creds) {
-						$c.RetrievePassword()
-						Write-Output "$($c.UserName)|$($c.Password)"
-					}
-				} catch {
-					# No credentials found — not an error
-				}
-			`;
+        ${vaultInit}
+        try {
+          $creds = $vault.FindAllByResource('${escapePS(service)}')
+          foreach ($c in $creds) {
+            $c.RetrievePassword()
+            Write-Output "$($c.UserName)|$($c.Password)"
+          }
+        } catch {
+          # No credentials found — not an error
+        }
+      `;
       const result = await powershell(script);
       if (result.code !== 0 || result.stdout.trim().length === 0) {
         return [];

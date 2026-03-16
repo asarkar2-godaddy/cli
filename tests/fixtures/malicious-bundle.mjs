@@ -3,7 +3,7 @@
 
 // SEC101: eval usage
 function executeCode(userInput) {
-	eval(userInput);
+  eval(userInput);
 }
 
 // SEC102: child_process require

@@ -44,16 +44,16 @@ export interface GetUploadTargetParams {
 }
 
 const GenerateReleaseUploadUrlMutation = graphql(`
-	mutation GenerateReleaseUploadUrl($input: MutationGenerateReleaseUploadUrlInput!) {
-		generateReleaseUploadUrl(input: $input) {
-			uploadId
-			url
-			key
-			expiresAt
-			maxSizeBytes
-			requiredHeaders
-		}
-	}
+  mutation GenerateReleaseUploadUrl($input: MutationGenerateReleaseUploadUrlInput!) {
+    generateReleaseUploadUrl(input: $input) {
+      uploadId
+      url
+      key
+      expiresAt
+      maxSizeBytes
+      requiredHeaders
+    }
+  }
 `);
 
 /**
