@@ -19,11 +19,11 @@ export const FetchLive = Layer.sync(Fetch, () => globalThis.fetch);
 export const KeychainLive = Layer.sync(Keychain, () => createNativeKeychain());
 
 export const BrowserLive = Layer.sync(Browser, () => ({
-	open: async (url: string) => {
-		const mod = await import("open");
-		const openFn = (mod.default ?? mod) as (url: string) => Promise<unknown>;
-		return openFn(url);
-	},
+  open: async (url: string) => {
+    const mod = await import("open");
+    const openFn = (mod.default ?? mod) as (url: string) => Promise<unknown>;
+    return openFn(url);
+  },
 }));
 
 /**
@@ -32,9 +32,9 @@ export const BrowserLive = Layer.sync(Browser, () => ({
  * The Fetch tag provides globalThis.fetch for HTTP calls.
  */
 export const NodeLiveLayer = Layer.mergeAll(
-	FetchLive,
-	KeychainLive,
-	BrowserLive,
+  FetchLive,
+  KeychainLive,
+  BrowserLive,
 );
 
 export type CliServices = Fetch | Keychain | Browser;

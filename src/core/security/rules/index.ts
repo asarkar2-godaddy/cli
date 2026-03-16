@@ -17,28 +17,28 @@ import { SEC010 } from "./SEC010-sensitive-paths.ts";
  * Each rule defines which SyntaxKind nodes it's interested in.
  */
 export const RULES: Rule[] = [
-	SEC001, // eval() and Function constructor
-	SEC002, // child_process module
-	SEC003, // vm module
-	SEC004, // process internals
-	SEC005, // native addons
-	SEC006, // module patching
-	SEC007, // inspector module
-	SEC008, // external URLs (warn)
-	SEC009, // large encoded blobs (warn)
-	SEC010, // sensitive paths (warn)
+  SEC001, // eval() and Function constructor
+  SEC002, // child_process module
+  SEC003, // vm module
+  SEC004, // process internals
+  SEC005, // native addons
+  SEC006, // module patching
+  SEC007, // inspector module
+  SEC008, // external URLs (warn)
+  SEC009, // large encoded blobs (warn)
+  SEC010, // sensitive paths (warn)
 ];
 
 /**
  * Get rules by severity
  */
 export function getRulesBySeverity(severity: "block" | "warn" | "off"): Rule[] {
-	return RULES.filter((rule) => rule.meta.defaultSeverity === severity);
+  return RULES.filter((rule) => rule.meta.defaultSeverity === severity);
 }
 
 /**
  * Get rule by ID
  */
 export function getRuleById(id: string): Rule | undefined {
-	return RULES.find((rule) => rule.meta.id === id);
+  return RULES.find((rule) => rule.meta.id === id);
 }

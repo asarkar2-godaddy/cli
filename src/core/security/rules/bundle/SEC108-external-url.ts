@@ -17,25 +17,25 @@ import type { BundleRule } from "../../types.ts";
  * - Computed URLs are not detected
  */
 export const SEC108_EXTERNAL_URL: BundleRule = {
-	id: "SEC108",
-	severity: "warn",
-	title: "External URL in bundle",
-	description: "Bundled code contains HTTP(S) URLs to external domains",
-	sourceRuleId: "SEC008",
-	signalPatterns: [
-		/require\s*\(\s*['"](?:node:)?https?['"]\s*\)/g,
-		/from\s*['"](?:node:)?https?['"]/g,
-		/require\s*\(\s*['"]axios['"]\s*\)/g,
-		/from\s*['"]axios['"]/g,
-	],
-	patterns: [
-		// Extract all HTTP(S) URLs
-		/https?:\/\/[^\s"'`<>]+/g,
+  id: "SEC108",
+  severity: "warn",
+  title: "External URL in bundle",
+  description: "Bundled code contains HTTP(S) URLs to external domains",
+  sourceRuleId: "SEC008",
+  signalPatterns: [
+    /require\s*\(\s*['"](?:node:)?https?['"]\s*\)/g,
+    /from\s*['"](?:node:)?https?['"]/g,
+    /require\s*\(\s*['"]axios['"]\s*\)/g,
+    /from\s*['"]axios['"]/g,
+  ],
+  patterns: [
+    // Extract all HTTP(S) URLs
+    /https?:\/\/[^\s"'`<>]+/g,
 
-		// new URL() constructor
-		/new\s+URL\s*\(\s*['"]https?:[^'"]+['"]\s*\)/g,
+    // new URL() constructor
+    /new\s+URL\s*\(\s*['"]https?:[^'"]+['"]\s*\)/g,
 
-		// fetch() calls
-		/fetch\s*\(\s*['"]https?:[^'"]+['"]\s*\)/g,
-	],
+    // fetch() calls
+    /fetch\s*\(\s*['"]https?:[^'"]+['"]\s*\)/g,
+  ],
 };

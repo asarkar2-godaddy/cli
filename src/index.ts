@@ -12,20 +12,20 @@ import "./cli-entry";
 
 // Restore cursor visibility on exit or signals
 const restoreCursor = () => {
-	const terminal = process.stderr.isTTY
-		? process.stderr
-		: process.stdout.isTTY
-			? process.stdout
-			: undefined;
-	terminal?.write("\u001B[?25h");
+  const terminal = process.stderr.isTTY
+    ? process.stderr
+    : process.stdout.isTTY
+      ? process.stdout
+      : undefined;
+  terminal?.write("\u001B[?25h");
 };
 
 process.on("exit", restoreCursor);
 process.on("SIGINT", () => {
-	restoreCursor();
-	process.exit(130);
+  restoreCursor();
+  process.exit(130);
 });
 process.on("SIGTERM", () => {
-	restoreCursor();
-	process.exit(143);
+  restoreCursor();
+  process.exit(143);
 });

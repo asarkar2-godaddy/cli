@@ -1,9 +1,9 @@
 {
-	"location.address.verify": "location-address-verify.json",
-	"commerce.taxes.calculate": "commerce-taxes-calculate.json",
-	"commerce.shipping-rates.calculate": "commerce-shipping-rates-calculate.json",
-	"commerce.price-adjustment.apply": "commerce-price-adjustment-apply.json",
-	"notifications.email.send": "notifications-email-send.json",
-	"commerce.payment.process": "commerce-payment-process.json",
-	"commerce.payment.refund": "commerce-payment-refund.json"
+  "location.address.verify": "location-address-verify.json",
+  "commerce.taxes.calculate": "commerce-taxes-calculate.json",
+  "commerce.shipping-rates.calculate": "commerce-shipping-rates-calculate.json",
+  "commerce.price-adjustment.apply": "commerce-price-adjustment-apply.json",
+  "notifications.email.send": "notifications-email-send.json",
+  "commerce.payment.process": "commerce-payment-process.json",
+  "commerce.payment.refund": "commerce-payment-refund.json"
 }

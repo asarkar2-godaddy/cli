@@ -4,8 +4,8 @@
  */
 
 import {
-	getRequestHeaders,
-	makeGraphQLClientEffect,
+  getRequestHeaders,
+  makeGraphQLClientEffect,
 } from "@/services/http-helpers";
 import { getLogger } from "@/services/logger";
 import type { Fetch } from "@effect/platform/FetchHttpClient";
@@ -13,9 +13,9 @@ import type { FileSystem } from "@effect/platform/FileSystem";
 import * as Effect from "effect/Effect";
 import { graphql } from "gql.tada";
 import {
-	type ConfigurationError,
-	NetworkError,
-	type ValidationError,
+  type ConfigurationError,
+  NetworkError,
+  type ValidationError,
 } from "../../effect/errors";
 
 const logger = getLogger();
@@ -24,23 +24,23 @@ const logger = getLogger();
  * Upload target information from GraphQL
  */
 export interface UploadTarget {
-	uploadId: string;
-	url: string;
-	key: string;
-	expiresAt: string;
-	maxSizeBytes: number;
-	requiredHeaders: Record<string, string>;
+  uploadId: string;
+  url: string;
+  key: string;
+  expiresAt: string;
+  maxSizeBytes: number;
+  requiredHeaders: Record<string, string>;
 }
 
 /**
  * Parameters for requesting an upload URL
  */
 export interface GetUploadTargetParams {
-	applicationId: string;
-	releaseId: string;
-	contentType?: "JS" | "ZIP" | "TAR";
-	/** Target location for the extension (e.g., "body.end") - becomes filename {target}.js */
-	target?: string;
+  applicationId: string;
+  releaseId: string;
+  contentType?: "JS" | "ZIP" | "TAR";
+  /** Target location for the extension (e.g., "body.end") - becomes filename {target}.js */
+  target?: string;
 }
 
 const GenerateReleaseUploadUrlMutation = graphql(`
@@ -61,83 +61,83 @@ const GenerateReleaseUploadUrlMutation = graphql(`
  * Requires FileSystem service (via initApiBaseUrlEffect).
  */
 export function getUploadTargetEffect(
-	params: GetUploadTargetParams,
-	accessToken: string,
+  params: GetUploadTargetParams,
+  accessToken: string,
 ): Effect.Effect<
-	UploadTarget,
-	NetworkError | ConfigurationError | ValidationError,
-	FileSystem | Fetch
+  UploadTarget,
+  NetworkError | ConfigurationError | ValidationError,
+  FileSystem | Fetch
 > {
-	return Effect.gen(function* () {
-		logger.debug(
-			{
-				applicationId: params.applicationId,
-				releaseId: params.releaseId,
-				contentType: params.contentType ?? "JS",
-			},
-			"Requesting presigned upload URL",
-		);
+  return Effect.gen(function* () {
+    logger.debug(
+      {
+        applicationId: params.applicationId,
+        releaseId: params.releaseId,
+        contentType: params.contentType ?? "JS",
+      },
+      "Requesting presigned upload URL",
+    );
 
-		const client = yield* makeGraphQLClientEffect();
+    const client = yield* makeGraphQLClientEffect();
 
-		const response = yield* Effect.tryPromise({
-			try: () =>
-				client.request(
-					GenerateReleaseUploadUrlMutation,
-					{
-						input: {
-							applicationId: params.applicationId,
-							releaseId: params.releaseId,
-							contentType: params.contentType ?? "JS",
-							target: params.target,
-						},
-					},
-					getRequestHeaders(accessToken),
-				),
-			catch: (error) =>
-				new NetworkError({
-					message: `Failed to get upload URL: ${error instanceof Error ? error.message : String(error)}`,
-					userMessage: "Failed to generate presigned upload URL",
-				}),
-		});
+    const response = yield* Effect.tryPromise({
+      try: () =>
+        client.request(
+          GenerateReleaseUploadUrlMutation,
+          {
+            input: {
+              applicationId: params.applicationId,
+              releaseId: params.releaseId,
+              contentType: params.contentType ?? "JS",
+              target: params.target,
+            },
+          },
+          getRequestHeaders(accessToken),
+        ),
+      catch: (error) =>
+        new NetworkError({
+          message: `Failed to get upload URL: ${error instanceof Error ? error.message : String(error)}`,
+          userMessage: "Failed to generate presigned upload URL",
+        }),
+    });
 
-		if (!response.generateReleaseUploadUrl) {
-			return yield* Effect.fail(
-				new NetworkError({
-					message: "Failed to generate upload URL: empty response",
-					userMessage: "Failed to generate presigned upload URL",
-				}),
-			);
-		}
+    if (!response.generateReleaseUploadUrl) {
+      return yield* Effect.fail(
+        new NetworkError({
+          message: "Failed to generate upload URL: empty response",
+          userMessage: "Failed to generate presigned upload URL",
+        }),
+      );
+    }
 
-		const data = response.generateReleaseUploadUrl;
+    const data = response.generateReleaseUploadUrl;
 
-		// Parse requiredHeaders from array of "key:value" strings to Record
-		const headersMap: Record<string, string> = {};
-		for (const header of data.requiredHeaders) {
-			const [key, ...valueParts] = header.split(":");
-			if (key && valueParts.length > 0) {
-				headersMap[key.trim()] = valueParts.join(":").trim();
-			}
-		}
+    // Parse requiredHeaders from array of "key:value" strings to Record
+    const headersMap: Record<string, string> = {};
+    for (const header of data.requiredHeaders) {
+      const [key, ...valueParts] = header.split(":");
+      if (key && valueParts.length > 0) {
+        headersMap[key.trim()] = valueParts.join(":").trim();
+      }
+    }
 
-		logger.debug(
-			{
-				uploadId: data.uploadId,
-				key: data.key,
-				expiresAt: data.expiresAt,
-				maxSizeBytes: data.maxSizeBytes,
-			},
-			"Received presigned upload URL",
-		);
+    logger.debug(
+      {
+        uploadId: data.uploadId,
+        key: data.key,
+        expiresAt: data.expiresAt,
+        maxSizeBytes: data.maxSizeBytes,
+      },
+      "Received presigned upload URL",
+    );
 
-		return {
-			uploadId: data.uploadId,
-			url: data.url,
-			key: data.key,
-			expiresAt: data.expiresAt,
-			maxSizeBytes: data.maxSizeBytes,
-			requiredHeaders: headersMap,
-		};
-	});
+    return {
+      uploadId: data.uploadId,
+      url: data.url,
+      key: data.key,
+      expiresAt: data.expiresAt,
+      maxSizeBytes: data.maxSizeBytes,
+      requiredHeaders: headersMap,
+    };
+  });
 }

@@ -5,12 +5,12 @@ import type { Finding } from "./types";
  * Suspicious command patterns detected in package.json scripts
  */
 interface SuspiciousPattern {
-	/** Pattern name for error messages */
-	name: string;
-	/** Regex to match against script content */
-	pattern: RegExp;
-	/** Explanation of why this pattern is suspicious */
-	reason: string;
+  /** Pattern name for error messages */
+  name: string;
+  /** Regex to match against script content */
+  pattern: RegExp;
+  /** Explanation of why this pattern is suspicious */
+  reason: string;
 }
 
 /**
@@ -36,36 +36,36 @@ const LIFECYCLE_SCRIPTS = ["install", "postinstall", "preinstall"] as const;
  * ```
  */
 export function scanPackageScripts(pkgPath: string): Finding[] {
-	const content = nodeFs.readFileSync(pkgPath, "utf-8");
-	const pkg = JSON.parse(content) as Record<string, unknown>;
-	const findings: Finding[] = [];
+  const content = nodeFs.readFileSync(pkgPath, "utf-8");
+  const pkg = JSON.parse(content) as Record<string, unknown>;
+  const findings: Finding[] = [];
 
-	// No scripts to scan
-	if (!pkg.scripts || typeof pkg.scripts !== "object") {
-		return findings;
-	}
+  // No scripts to scan
+  if (!pkg.scripts || typeof pkg.scripts !== "object") {
+    return findings;
+  }
 
-	// Get suspicious patterns
-	const patterns = getSuspiciousPatterns();
+  // Get suspicious patterns
+  const patterns = getSuspiciousPatterns();
 
-	// Scan only lifecycle scripts
-	const scripts = pkg.scripts as Record<string, string>;
-	for (const scriptName of LIFECYCLE_SCRIPTS) {
-		const scriptContent = scripts[scriptName];
-		if (scriptContent && typeof scriptContent === "string") {
-			const finding = checkScriptForPatterns(
-				scriptName,
-				scriptContent,
-				patterns,
-				pkgPath,
-			);
-			if (finding) {
-				findings.push(finding);
-			}
-		}
-	}
+  // Scan only lifecycle scripts
+  const scripts = pkg.scripts as Record<string, string>;
+  for (const scriptName of LIFECYCLE_SCRIPTS) {
+    const scriptContent = scripts[scriptName];
+    if (scriptContent && typeof scriptContent === "string") {
+      const finding = checkScriptForPatterns(
+        scriptName,
+        scriptContent,
+        patterns,
+        pkgPath,
+      );
+      if (finding) {
+        findings.push(finding);
+      }
+    }
+  }
 
-	return findings;
+  return findings;
 }
 
 /**
@@ -75,53 +75,53 @@ export function scanPackageScripts(pkgPath: string): Finding[] {
  * @returns Array of suspicious pattern definitions
  */
 function getSuspiciousPatterns(): SuspiciousPattern[] {
-	return [
-		{
-			name: "curl",
-			pattern: /\bcurl\b/i,
-			reason: "Download tool that can fetch remote payloads",
-		},
-		{
-			name: "wget",
-			pattern: /\bwget\b/i,
-			reason: "Download tool that can fetch remote payloads",
-		},
-		{
-			name: "bash -c",
-			pattern: /\bbash\s+-c\b/i,
-			reason: "Arbitrary command execution via bash",
-		},
-		{
-			name: "sh -c",
-			pattern: /\bsh\s+-c\b/i,
-			reason: "Arbitrary command execution via shell",
-		},
-		{
-			name: "powershell -enc",
-			pattern: /\bpowershell\s+-enc\b/i,
-			reason: "Encoded PowerShell command execution",
-		},
-		{
-			name: "nc",
-			pattern: /\bnc\b/i,
-			reason: "Network utility that can create backdoors",
-		},
-		{
-			name: "mkfifo",
-			pattern: /\bmkfifo\b/i,
-			reason: "Create named pipes for inter-process communication",
-		},
-		{
-			name: "eval",
-			pattern: /\beval\b/i,
-			reason: "Dynamic code evaluation in shell context",
-		},
-		{
-			name: "exec",
-			pattern: /\bexec\b/i,
-			reason: "Command execution in shell context",
-		},
-	];
+  return [
+    {
+      name: "curl",
+      pattern: /\bcurl\b/i,
+      reason: "Download tool that can fetch remote payloads",
+    },
+    {
+      name: "wget",
+      pattern: /\bwget\b/i,
+      reason: "Download tool that can fetch remote payloads",
+    },
+    {
+      name: "bash -c",
+      pattern: /\bbash\s+-c\b/i,
+      reason: "Arbitrary command execution via bash",
+    },
+    {
+      name: "sh -c",
+      pattern: /\bsh\s+-c\b/i,
+      reason: "Arbitrary command execution via shell",
+    },
+    {
+      name: "powershell -enc",
+      pattern: /\bpowershell\s+-enc\b/i,
+      reason: "Encoded PowerShell command execution",
+    },
+    {
+      name: "nc",
+      pattern: /\bnc\b/i,
+      reason: "Network utility that can create backdoors",
+    },
+    {
+      name: "mkfifo",
+      pattern: /\bmkfifo\b/i,
+      reason: "Create named pipes for inter-process communication",
+    },
+    {
+      name: "eval",
+      pattern: /\beval\b/i,
+      reason: "Dynamic code evaluation in shell context",
+    },
+    {
+      name: "exec",
+      pattern: /\bexec\b/i,
+      reason: "Command execution in shell context",
+    },
+  ];
 }
 
 /**
@@ -134,17 +134,17 @@ function getSuspiciousPatterns(): SuspiciousPattern[] {
  * @returns Finding if pattern detected, undefined otherwise
  */
 function checkScriptForPatterns(
-	scriptName: string,
-	scriptContent: string,
-	patterns: SuspiciousPattern[],
-	pkgPath: string,
+  scriptName: string,
+  scriptContent: string,
+  patterns: SuspiciousPattern[],
+  pkgPath: string,
 ): Finding | undefined {
-	for (const pattern of patterns) {
-		if (pattern.pattern.test(scriptContent)) {
-			return createScriptFinding(scriptName, pattern, pkgPath);
-		}
-	}
-	return undefined;
+  for (const pattern of patterns) {
+    if (pattern.pattern.test(scriptContent)) {
+      return createScriptFinding(scriptName, pattern, pkgPath);
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -156,16 +156,16 @@ function checkScriptForPatterns(
  * @returns Finding object with SEC011 rule ID
  */
 function createScriptFinding(
-	scriptName: string,
-	pattern: SuspiciousPattern,
-	pkgPath: string,
+  scriptName: string,
+  pattern: SuspiciousPattern,
+  pkgPath: string,
 ): Finding {
-	return {
-		ruleId: "SEC011",
-		severity: "warn",
-		message: `Suspicious command '${pattern.name}' in ${scriptName} script: ${pattern.reason}`,
-		file: pkgPath,
-		line: 0,
-		col: 0,
-	};
+  return {
+    ruleId: "SEC011",
+    severity: "warn",
+    message: `Suspicious command '${pattern.name}' in ${scriptName} script: ${pattern.reason}`,
+    file: pkgPath,
+    line: 0,
+    col: 0,
+  };
 }

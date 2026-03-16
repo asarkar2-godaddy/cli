@@ -18,9 +18,9 @@ const TestLayer = Layer.merge(NodeContext.layer, NodeLiveLayer);
  * `Effect<A,E,unknown>` — TypeScript can't prove that unknown minus X = never.
  */
 function provideTestLayer<A, E>(
-	effect: Effect.Effect<A, E, unknown>,
+  effect: Effect.Effect<A, E, unknown>,
 ): Effect.Effect<A, E, never> {
-	return effect.pipe(Effect.provide(TestLayer)) as Effect.Effect<A, E, never>;
+  return effect.pipe(Effect.provide(TestLayer)) as Effect.Effect<A, E, never>;
 }
 
 /**
@@ -28,32 +28,32 @@ function provideTestLayer<A, E>(
  * On failure the **original tagged error** is thrown (not a FiberFailure wrapper).
  */
 export function runEffect<A>(
-	effect: Effect.Effect<A, unknown, unknown>,
+  effect: Effect.Effect<A, unknown, unknown>,
 ): Promise<A> {
-	return Effect.runPromise(provideTestLayer(effect));
+  return Effect.runPromise(provideTestLayer(effect));
 }
 
 /**
  * Run an Effect and return an Exit so tests can pattern-match success/failure.
  */
 export function runEffectExit<A, E>(
-	effect: Effect.Effect<A, E, unknown>,
+  effect: Effect.Effect<A, E, unknown>,
 ): Promise<Exit.Exit<A, E>> {
-	return Effect.runPromise(Effect.exit(provideTestLayer(effect)));
+  return Effect.runPromise(Effect.exit(provideTestLayer(effect)));
 }
 
 /**
  * Extract the typed failure from a failed Exit, or throw if the Exit is a success.
  */
 export function extractFailure<A, E>(exit: Exit.Exit<A, E>): E {
-	if (Exit.isSuccess(exit)) {
-		throw new Error("Expected failure but got success");
-	}
-	const option = Cause.failureOption(exit.cause);
-	if (Option.isNone(option)) {
-		throw new Error(
-			`Expected typed failure but got defect: ${Cause.pretty(exit.cause)}`,
-		);
-	}
-	return option.value;
+  if (Exit.isSuccess(exit)) {
+    throw new Error("Expected failure but got success");
+  }
+  const option = Cause.failureOption(exit.cause);
+  if (Option.isNone(option)) {
+    throw new Error(
+      `Expected typed failure but got defect: ${Cause.pretty(exit.cause)}`,
+    );
+  }
+  return option.value;
 }

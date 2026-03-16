@@ -31,33 +31,33 @@ import type { Rule } from "../types.ts";
  * // Use standard debugging tools
  */
 export const SEC007: Rule = {
-	meta: {
-		id: "SEC007",
-		defaultSeverity: "block",
-		title: "No inspector module",
-		description:
-			"Detects inspector module usage which provides programmatic debugging capabilities",
-		remediation:
-			"Remove inspector module usage. Use standard debugging tools instead.",
-	},
-	create: (ctx) => {
-		return {
-			[ts.SyntaxKind.ImportDeclaration]: (node: ts.Node) => {
-				if (isImportOf(node, "inspector")) {
-					ctx.report(
-						"Blocked: 'inspector' module provides programmatic debugging. Use standard debugging tools instead.",
-						node,
-					);
-				}
-			},
-			[ts.SyntaxKind.CallExpression]: (node: ts.Node) => {
-				if (isRequireOf(node, /^inspector$/)) {
-					ctx.report(
-						"Blocked: require('inspector') provides programmatic debugging. Use standard debugging tools instead.",
-						node,
-					);
-				}
-			},
-		};
-	},
+  meta: {
+    id: "SEC007",
+    defaultSeverity: "block",
+    title: "No inspector module",
+    description:
+      "Detects inspector module usage which provides programmatic debugging capabilities",
+    remediation:
+      "Remove inspector module usage. Use standard debugging tools instead.",
+  },
+  create: (ctx) => {
+    return {
+      [ts.SyntaxKind.ImportDeclaration]: (node: ts.Node) => {
+        if (isImportOf(node, "inspector")) {
+          ctx.report(
+            "Blocked: 'inspector' module provides programmatic debugging. Use standard debugging tools instead.",
+            node,
+          );
+        }
+      },
+      [ts.SyntaxKind.CallExpression]: (node: ts.Node) => {
+        if (isRequireOf(node, /^inspector$/)) {
+          ctx.report(
+            "Blocked: require('inspector') provides programmatic debugging. Use standard debugging tools instead.",
+            node,
+          );
+        }
+      },
+    };
+  },
 };

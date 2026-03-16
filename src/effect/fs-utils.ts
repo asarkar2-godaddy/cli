@@ -10,9 +10,9 @@ import * as Effect from "effect/Effect";
  * Eliminates the repeated `fs.exists(path).pipe(Effect.orElseSucceed(() => false))` pattern.
  */
 export function fileExists(
-	path: string,
+  path: string,
 ): Effect.Effect<boolean, never, FileSystem> {
-	return Effect.flatMap(FileSystem, (fs) =>
-		fs.exists(path).pipe(Effect.orElseSucceed(() => false)),
-	);
+  return Effect.flatMap(FileSystem, (fs) =>
+    fs.exists(path).pipe(Effect.orElseSucceed(() => false)),
+  );
 }

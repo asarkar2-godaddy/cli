@@ -26,37 +26,37 @@ import type { Rule } from "../types.ts";
  * // Use standard require/import
  */
 export const SEC004: Rule = {
-	meta: {
-		id: "SEC004",
-		defaultSeverity: "block",
-		title: "No process internals access",
-		description:
-			"Detects access to internal Node.js APIs (process.binding, process.dlopen) that bypass normal module loading",
-		remediation:
-			"Remove process.binding() and process.dlopen(). Use standard require/import instead.",
-	},
-	create: (ctx) => {
-		// NOTE: Current scope covers process.binding and process.dlopen as the most dangerous internals.
-		// Future improvement: Consider adding other internal process properties that could pose security risks:
-		// - process._debugProcess, process._debugEnd (debugging internals)
-		// - process._rawDebug (low-level debugging)
-		// Monitor Node.js internal API changes for new dangerous properties.
+  meta: {
+    id: "SEC004",
+    defaultSeverity: "block",
+    title: "No process internals access",
+    description:
+      "Detects access to internal Node.js APIs (process.binding, process.dlopen) that bypass normal module loading",
+    remediation:
+      "Remove process.binding() and process.dlopen(). Use standard require/import instead.",
+  },
+  create: (ctx) => {
+    // NOTE: Current scope covers process.binding and process.dlopen as the most dangerous internals.
+    // Future improvement: Consider adding other internal process properties that could pose security risks:
+    // - process._debugProcess, process._debugEnd (debugging internals)
+    // - process._rawDebug (low-level debugging)
+    // Monitor Node.js internal API changes for new dangerous properties.
 
-		return {
-			[ts.SyntaxKind.PropertyAccessExpression]: (node: ts.Node) => {
-				if (isProcessProperty(node, "binding")) {
-					ctx.report(
-						"Blocked: process.binding() is an internal Node.js API. Use standard require/import instead.",
-						node,
-					);
-				}
-				if (isProcessProperty(node, "dlopen")) {
-					ctx.report(
-						"Blocked: process.dlopen() is an internal Node.js API. Use standard require/import instead.",
-						node,
-					);
-				}
-			},
-		};
-	},
+    return {
+      [ts.SyntaxKind.PropertyAccessExpression]: (node: ts.Node) => {
+        if (isProcessProperty(node, "binding")) {
+          ctx.report(
+            "Blocked: process.binding() is an internal Node.js API. Use standard require/import instead.",
+            node,
+          );
+        }
+        if (isProcessProperty(node, "dlopen")) {
+          ctx.report(
+            "Blocked: process.dlopen() is an internal Node.js API. Use standard require/import instead.",
+            node,
+          );
+        }
+      },
+    };
+  },
 };

@@ -141,37 +141,37 @@ export const ArchiveApplicationMutation = graphql(`
 `);
 
 export const applicationInput = type({
-	label: "string",
-	name: "string",
-	description: "string",
-	url: type.keywords.string.url.root,
-	proxyUrl: type.keywords.string.url.root,
-	authorizationScopes: type.string.array().moreThanLength(0),
+  label: "string",
+  name: "string",
+  description: "string",
+  url: type.keywords.string.url.root,
+  proxyUrl: type.keywords.string.url.root,
+  authorizationScopes: type.string.array().moreThanLength(0),
 });
 
 export const updateApplicationInput = type({
-	label: "string?",
-	description: "string?",
-	status: '"ACTIVE" | "INACTIVE"?',
+  label: "string?",
+  description: "string?",
+  status: '"ACTIVE" | "INACTIVE"?',
 });
 
 export const actionInput = type({
-	name: "string",
-	url: "string",
+  name: "string",
+  url: "string",
 });
 
 export const subscriptionInput = type({
-	name: "string",
-	events: "string[]",
-	url: "string",
+  name: "string",
+  events: "string[]",
+  url: "string",
 });
 
 export const releaseInput = type({
-	applicationId: "string",
-	version: "string",
-	description: "string?",
-	actions: actionInput.array().optional(),
-	subscriptions: subscriptionInput.array().optional(),
+  applicationId: "string",
+  version: "string",
+  description: "string?",
+  actions: actionInput.array().optional(),
+  subscriptions: subscriptionInput.array().optional(),
 });
 
 /**
@@ -179,15 +179,15 @@ export const releaseInput = type({
  * This may include server-side messages and extension codes.
  */
 function extractGraphQLError(err: unknown): string {
-	if (err instanceof ClientError) {
-		const graphqlErrors = err.response.errors;
-		if (graphqlErrors?.length) {
-			const error = graphqlErrors[0];
-			const errorCode = error.extensions?.code;
-			return errorCode ? `${error.message} (${errorCode})` : error.message;
-		}
-	}
-	return "An unexpected error occurred";
+  if (err instanceof ClientError) {
+    const graphqlErrors = err.response.errors;
+    if (graphqlErrors?.length) {
+      const error = graphqlErrors[0];
+      const errorCode = error.extensions?.code;
+      return errorCode ? `${error.message} (${errorCode})` : error.message;
+    }
+  }
+  return "An unexpected error occurred";
 }
 
 /**
@@ -195,334 +195,333 @@ function extractGraphQLError(err: unknown): string {
  * Avoids leaking internal server details in the CLI JSON envelope.
  */
 function safeGraphQLUserMessage(err: unknown): string {
-	if (err instanceof ClientError) {
-		const status = err.response.status;
-		if (status === 401 || status === 403)
-			return "Authentication failed. Run 'godaddy auth login'.";
-		if (status === 404)
-			return "The requested resource was not found.";
-		if (status && status >= 500)
-			return "The server encountered an error. Please try again later.";
-		// For 4xx with GraphQL-level error messages, allow the first message
-		// through since these are validation-style errors the user can act on.
-		const graphqlErrors = err.response.errors;
-		if (graphqlErrors?.length && graphqlErrors[0].message) {
-			return graphqlErrors[0].message;
-		}
-	}
-	return "An unexpected error occurred";
+  if (err instanceof ClientError) {
+    const status = err.response.status;
+    if (status === 401 || status === 403)
+      return "Authentication failed. Run 'godaddy auth login'.";
+    if (status === 404) return "The requested resource was not found.";
+    if (status && status >= 500)
+      return "The server encountered an error. Please try again later.";
+    // For 4xx with GraphQL-level error messages, allow the first message
+    // through since these are validation-style errors the user can act on.
+    const graphqlErrors = err.response.errors;
+    if (graphqlErrors?.length && graphqlErrors[0].message) {
+      return graphqlErrors[0].message;
+    }
+  }
+  return "An unexpected error occurred";
 }
 
 export function createApplicationEffect(
-	input: typeof applicationInput.infer,
-	{ accessToken }: { accessToken: string | null },
+  input: typeof applicationInput.infer,
+  { accessToken }: { accessToken: string | null },
 ) {
-	return Effect.gen(function* () {
-		if (!accessToken) {
-			return yield* Effect.fail(
-				new AuthenticationError({
-					message: "Access token is required",
-					userMessage: "Authentication required",
-				}),
-			);
-		}
+  return Effect.gen(function* () {
+    if (!accessToken) {
+      return yield* Effect.fail(
+        new AuthenticationError({
+          message: "Access token is required",
+          userMessage: "Authentication required",
+        }),
+      );
+    }
 
-		const inputParseResult = applicationInput(input);
-		if (inputParseResult instanceof type.errors) {
-			return yield* Effect.fail(
-				new NetworkError({
-					message: inputParseResult.summary,
-					userMessage: inputParseResult.summary,
-				}),
-			);
-		}
+    const inputParseResult = applicationInput(input);
+    if (inputParseResult instanceof type.errors) {
+      return yield* Effect.fail(
+        new NetworkError({
+          message: inputParseResult.summary,
+          userMessage: inputParseResult.summary,
+        }),
+      );
+    }
 
-		const client = yield* makeGraphQLClientEffect();
+    const client = yield* makeGraphQLClientEffect();
 
-		return yield* Effect.tryPromise({
-			try: () =>
-				client.request(
-					CreateApplicationMutation,
-					{ input: inputParseResult },
-					getRequestHeaders(accessToken),
-				),
-			catch: (err) =>
-				new NetworkError({
-					message: extractGraphQLError(err),
-					userMessage: safeGraphQLUserMessage(err),
-				}),
-		});
-	});
+    return yield* Effect.tryPromise({
+      try: () =>
+        client.request(
+          CreateApplicationMutation,
+          { input: inputParseResult },
+          getRequestHeaders(accessToken),
+        ),
+      catch: (err) =>
+        new NetworkError({
+          message: extractGraphQLError(err),
+          userMessage: safeGraphQLUserMessage(err),
+        }),
+    });
+  });
 }
 
 export function updateApplicationEffect(
-	id: string,
-	input: typeof updateApplicationInput.infer,
-	{ accessToken }: { accessToken: string | null },
+  id: string,
+  input: typeof updateApplicationInput.infer,
+  { accessToken }: { accessToken: string | null },
 ) {
-	return Effect.gen(function* () {
-		if (!accessToken) {
-			return yield* Effect.fail(
-				new AuthenticationError({
-					message: "Access token is required",
-					userMessage: "Authentication required",
-				}),
-			);
-		}
+  return Effect.gen(function* () {
+    if (!accessToken) {
+      return yield* Effect.fail(
+        new AuthenticationError({
+          message: "Access token is required",
+          userMessage: "Authentication required",
+        }),
+      );
+    }
 
-		const client = yield* makeGraphQLClientEffect();
+    const client = yield* makeGraphQLClientEffect();
 
-		return yield* Effect.tryPromise({
-			try: () =>
-				client.request(
-					UpdateApplicationMutation,
-					{ id, input },
-					getRequestHeaders(accessToken),
-				),
-			catch: (err) =>
-				new NetworkError({
-					message: extractGraphQLError(err),
-					userMessage: safeGraphQLUserMessage(err),
-				}),
-		});
-	});
+    return yield* Effect.tryPromise({
+      try: () =>
+        client.request(
+          UpdateApplicationMutation,
+          { id, input },
+          getRequestHeaders(accessToken),
+        ),
+      catch: (err) =>
+        new NetworkError({
+          message: extractGraphQLError(err),
+          userMessage: safeGraphQLUserMessage(err),
+        }),
+    });
+  });
 }
 
 export function getApplicationEffect(
-	name: string,
-	{ accessToken }: { accessToken: string | null },
+  name: string,
+  { accessToken }: { accessToken: string | null },
 ) {
-	return Effect.gen(function* () {
-		if (!accessToken) {
-			return yield* Effect.fail(
-				new AuthenticationError({
-					message: "Access token is required",
-					userMessage: "Authentication required",
-				}),
-			);
-		}
+  return Effect.gen(function* () {
+    if (!accessToken) {
+      return yield* Effect.fail(
+        new AuthenticationError({
+          message: "Access token is required",
+          userMessage: "Authentication required",
+        }),
+      );
+    }
 
-		const client = yield* makeGraphQLClientEffect();
+    const client = yield* makeGraphQLClientEffect();
 
-		return yield* Effect.tryPromise({
-			try: () =>
-				client.request(
-					ApplicationQuery,
-					{ name },
-					getRequestHeaders(accessToken),
-				),
-			catch: (err) =>
-				new NetworkError({
-					message: extractGraphQLError(err),
-					userMessage: safeGraphQLUserMessage(err),
-				}),
-		});
-	});
+    return yield* Effect.tryPromise({
+      try: () =>
+        client.request(
+          ApplicationQuery,
+          { name },
+          getRequestHeaders(accessToken),
+        ),
+      catch: (err) =>
+        new NetworkError({
+          message: extractGraphQLError(err),
+          userMessage: safeGraphQLUserMessage(err),
+        }),
+    });
+  });
 }
 
 export function getApplicationAndLatestReleaseEffect(
-	name: string,
-	{ accessToken }: { accessToken: string | null },
+  name: string,
+  { accessToken }: { accessToken: string | null },
 ) {
-	return Effect.gen(function* () {
-		if (!accessToken) {
-			return yield* Effect.fail(
-				new AuthenticationError({
-					message: "Access token is required",
-					userMessage: "Authentication required",
-				}),
-			);
-		}
+  return Effect.gen(function* () {
+    if (!accessToken) {
+      return yield* Effect.fail(
+        new AuthenticationError({
+          message: "Access token is required",
+          userMessage: "Authentication required",
+        }),
+      );
+    }
 
-		const client = yield* makeGraphQLClientEffect();
+    const client = yield* makeGraphQLClientEffect();
 
-		return yield* Effect.tryPromise({
-			try: () =>
-				client.request(
-					ApplicationWithLatestReleaseQuery,
-					{ name },
-					getRequestHeaders(accessToken),
-				),
-			catch: (err) =>
-				new NetworkError({
-					message: extractGraphQLError(err),
-					userMessage: safeGraphQLUserMessage(err),
-				}),
-		});
-	});
+    return yield* Effect.tryPromise({
+      try: () =>
+        client.request(
+          ApplicationWithLatestReleaseQuery,
+          { name },
+          getRequestHeaders(accessToken),
+        ),
+      catch: (err) =>
+        new NetworkError({
+          message: extractGraphQLError(err),
+          userMessage: safeGraphQLUserMessage(err),
+        }),
+    });
+  });
 }
 
 export function createReleaseEffect(
-	input: typeof releaseInput.infer,
-	{ accessToken }: { accessToken: string | null },
+  input: typeof releaseInput.infer,
+  { accessToken }: { accessToken: string | null },
 ) {
-	return Effect.gen(function* () {
-		if (!accessToken) {
-			return yield* Effect.fail(
-				new AuthenticationError({
-					message: "Access token is required",
-					userMessage: "Authentication required",
-				}),
-			);
-		}
+  return Effect.gen(function* () {
+    if (!accessToken) {
+      return yield* Effect.fail(
+        new AuthenticationError({
+          message: "Access token is required",
+          userMessage: "Authentication required",
+        }),
+      );
+    }
 
-		const inputParseResult = releaseInput(input);
-		if (inputParseResult instanceof type.errors) {
-			return yield* Effect.fail(
-				new NetworkError({
-					message: inputParseResult.summary,
-					userMessage: inputParseResult.summary,
-				}),
-			);
-		}
+    const inputParseResult = releaseInput(input);
+    if (inputParseResult instanceof type.errors) {
+      return yield* Effect.fail(
+        new NetworkError({
+          message: inputParseResult.summary,
+          userMessage: inputParseResult.summary,
+        }),
+      );
+    }
 
-		// Default actions to empty array if undefined
-		const releaseData = {
-			...inputParseResult,
-			actions: inputParseResult.actions ?? [],
-		};
+    // Default actions to empty array if undefined
+    const releaseData = {
+      ...inputParseResult,
+      actions: inputParseResult.actions ?? [],
+    };
 
-		const client = yield* makeGraphQLClientEffect();
+    const client = yield* makeGraphQLClientEffect();
 
-		return yield* Effect.tryPromise({
-			try: () =>
-				client.request(
-					CreateReleaseMutation,
-					{ input: releaseData },
-					getRequestHeaders(accessToken),
-				),
-			catch: (err) =>
-				new NetworkError({
-					message: extractGraphQLError(err),
-					userMessage: safeGraphQLUserMessage(err),
-				}),
-		});
-	});
+    return yield* Effect.tryPromise({
+      try: () =>
+        client.request(
+          CreateReleaseMutation,
+          { input: releaseData },
+          getRequestHeaders(accessToken),
+        ),
+      catch: (err) =>
+        new NetworkError({
+          message: extractGraphQLError(err),
+          userMessage: safeGraphQLUserMessage(err),
+        }),
+    });
+  });
 }
 
 export function enableApplicationEffect(
-	input: { applicationName: string; storeId: string },
-	{ accessToken }: { accessToken: string | null },
+  input: { applicationName: string; storeId: string },
+  { accessToken }: { accessToken: string | null },
 ) {
-	return Effect.gen(function* () {
-		if (!accessToken) {
-			return yield* Effect.fail(
-				new AuthenticationError({
-					message: "Access token is required",
-					userMessage: "Authentication required",
-				}),
-			);
-		}
+  return Effect.gen(function* () {
+    if (!accessToken) {
+      return yield* Effect.fail(
+        new AuthenticationError({
+          message: "Access token is required",
+          userMessage: "Authentication required",
+        }),
+      );
+    }
 
-		const client = yield* makeGraphQLClientEffect();
+    const client = yield* makeGraphQLClientEffect();
 
-		return yield* Effect.tryPromise({
-			try: () =>
-				client.request(
-					EnableApplicationMutation,
-					{ input },
-					getRequestHeaders(accessToken),
-				),
-			catch: (err) =>
-				new NetworkError({
-					message: extractGraphQLError(err),
-					userMessage: safeGraphQLUserMessage(err),
-				}),
-		});
-	});
+    return yield* Effect.tryPromise({
+      try: () =>
+        client.request(
+          EnableApplicationMutation,
+          { input },
+          getRequestHeaders(accessToken),
+        ),
+      catch: (err) =>
+        new NetworkError({
+          message: extractGraphQLError(err),
+          userMessage: safeGraphQLUserMessage(err),
+        }),
+    });
+  });
 }
 
 export function disableApplicationEffect(
-	input: { applicationName: string; storeId: string },
-	{ accessToken }: { accessToken: string | null },
+  input: { applicationName: string; storeId: string },
+  { accessToken }: { accessToken: string | null },
 ) {
-	return Effect.gen(function* () {
-		if (!accessToken) {
-			return yield* Effect.fail(
-				new AuthenticationError({
-					message: "Access token is required",
-					userMessage: "Authentication required",
-				}),
-			);
-		}
+  return Effect.gen(function* () {
+    if (!accessToken) {
+      return yield* Effect.fail(
+        new AuthenticationError({
+          message: "Access token is required",
+          userMessage: "Authentication required",
+        }),
+      );
+    }
 
-		const client = yield* makeGraphQLClientEffect();
+    const client = yield* makeGraphQLClientEffect();
 
-		return yield* Effect.tryPromise({
-			try: () =>
-				client.request(
-					DisableApplicationMutation,
-					{ input },
-					getRequestHeaders(accessToken),
-				),
-			catch: (err) =>
-				new NetworkError({
-					message: extractGraphQLError(err),
-					userMessage: safeGraphQLUserMessage(err),
-				}),
-		});
-	});
+    return yield* Effect.tryPromise({
+      try: () =>
+        client.request(
+          DisableApplicationMutation,
+          { input },
+          getRequestHeaders(accessToken),
+        ),
+      catch: (err) =>
+        new NetworkError({
+          message: extractGraphQLError(err),
+          userMessage: safeGraphQLUserMessage(err),
+        }),
+    });
+  });
 }
 
 export function listApplicationsEffect({
-	accessToken,
+  accessToken,
 }: { accessToken: string | null }) {
-	return Effect.gen(function* () {
-		if (!accessToken) {
-			return yield* Effect.fail(
-				new AuthenticationError({
-					message: "Access token is required",
-					userMessage: "Authentication required",
-				}),
-			);
-		}
+  return Effect.gen(function* () {
+    if (!accessToken) {
+      return yield* Effect.fail(
+        new AuthenticationError({
+          message: "Access token is required",
+          userMessage: "Authentication required",
+        }),
+      );
+    }
 
-		const client = yield* makeGraphQLClientEffect();
+    const client = yield* makeGraphQLClientEffect();
 
-		return yield* Effect.tryPromise({
-			try: () =>
-				client.request(
-					ApplicationsListQuery,
-					{},
-					getRequestHeaders(accessToken),
-				),
-			catch: (err) =>
-				new NetworkError({
-					message: extractGraphQLError(err),
-					userMessage: safeGraphQLUserMessage(err),
-				}),
-		});
-	});
+    return yield* Effect.tryPromise({
+      try: () =>
+        client.request(
+          ApplicationsListQuery,
+          {},
+          getRequestHeaders(accessToken),
+        ),
+      catch: (err) =>
+        new NetworkError({
+          message: extractGraphQLError(err),
+          userMessage: safeGraphQLUserMessage(err),
+        }),
+    });
+  });
 }
 
 export function archiveApplicationEffect(
-	id: string,
-	{ accessToken }: { accessToken: string | null },
+  id: string,
+  { accessToken }: { accessToken: string | null },
 ) {
-	return Effect.gen(function* () {
-		if (!accessToken) {
-			return yield* Effect.fail(
-				new AuthenticationError({
-					message: "Access token is required",
-					userMessage: "Authentication required",
-				}),
-			);
-		}
+  return Effect.gen(function* () {
+    if (!accessToken) {
+      return yield* Effect.fail(
+        new AuthenticationError({
+          message: "Access token is required",
+          userMessage: "Authentication required",
+        }),
+      );
+    }
 
-		const client = yield* makeGraphQLClientEffect();
+    const client = yield* makeGraphQLClientEffect();
 
-		return yield* Effect.tryPromise({
-			try: () =>
-				client.request(
-					ArchiveApplicationMutation,
-					{ id },
-					getRequestHeaders(accessToken),
-				),
-			catch: (err) =>
-				new NetworkError({
-					message: extractGraphQLError(err),
-					userMessage: safeGraphQLUserMessage(err),
-				}),
-		});
-	});
+    return yield* Effect.tryPromise({
+      try: () =>
+        client.request(
+          ArchiveApplicationMutation,
+          { id },
+          getRequestHeaders(accessToken),
+        ),
+      catch: (err) =>
+        new NetworkError({
+          message: extractGraphQLError(err),
+          userMessage: safeGraphQLUserMessage(err),
+        }),
+    });
+  });
 }
