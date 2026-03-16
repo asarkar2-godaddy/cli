@@ -10,22 +10,22 @@ import type { BundleRule } from "../../types.ts";
  * **Source Rule**: SEC007
  */
 export const SEC107_INSPECTOR: BundleRule = {
-	id: "SEC107",
-	severity: "block",
-	title: "inspector module usage in bundle",
-	description:
-		"Bundled code uses inspector module which can enable remote debugging access",
-	sourceRuleId: "SEC007",
-	signalPatterns: [
-		/require\s*\(\s*['"](?:node:)?inspector['"]\s*\)/g,
-		/from\s*['"](?:node:)?inspector['"]/g,
-		/import\s*\(\s*['"](?:node:)?inspector['"]\s*\)/g,
-		/require_inspector\s*\(/g,
-	],
-	patterns: [
-		/inspector\.open\s*\(/g,
-		/inspector\.url\s*\(/g,
-		/inspector\.waitForDebugger\s*\(/g,
-		/inspector\[['"]open['"]]\s*\(/g,
-	],
+  id: "SEC107",
+  severity: "block",
+  title: "inspector module usage in bundle",
+  description:
+    "Bundled code uses inspector module which can enable remote debugging access",
+  sourceRuleId: "SEC007",
+  signalPatterns: [
+    /require\s*\(\s*['"](?:node:)?inspector['"]\s*\)/g,
+    /from\s*['"](?:node:)?inspector['"]/g,
+    /import\s*\(\s*['"](?:node:)?inspector['"]\s*\)/g,
+    /require_inspector\s*\(/g,
+  ],
+  patterns: [
+    /inspector\.open\s*\(/g,
+    /inspector\.url\s*\(/g,
+    /inspector\.waitForDebugger\s*\(/g,
+    /inspector\[['"]open['"]]\s*\(/g,
+  ],
 };

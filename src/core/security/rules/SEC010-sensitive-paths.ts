@@ -30,26 +30,26 @@ import type { Rule } from "../types.ts";
  * const config = await platform.getConfig();
  */
 export const SEC010: Rule = {
-	meta: {
-		id: "SEC010",
-		defaultSeverity: "warn",
-		title: "Sensitive file path detection",
-		description:
-			"Warns about string literals containing paths to sensitive files (~/.ssh, /etc/passwd, /var/run/secrets)",
-		remediation:
-			"Remove sensitive path access. Use platform APIs for configuration and secrets.",
-	},
-	create: (ctx) => {
-		return {
-			[ts.SyntaxKind.StringLiteral]: (node: ts.Node) => {
-				const literal = node as ts.StringLiteral;
-				if (matchesSensitivePath(literal.text)) {
-					ctx.report(
-						`Warning: Sensitive file path '${literal.text}' detected. Use platform APIs for configuration and secrets.`,
-						node,
-					);
-				}
-			},
-		};
-	},
+  meta: {
+    id: "SEC010",
+    defaultSeverity: "warn",
+    title: "Sensitive file path detection",
+    description:
+      "Warns about string literals containing paths to sensitive files (~/.ssh, /etc/passwd, /var/run/secrets)",
+    remediation:
+      "Remove sensitive path access. Use platform APIs for configuration and secrets.",
+  },
+  create: (ctx) => {
+    return {
+      [ts.SyntaxKind.StringLiteral]: (node: ts.Node) => {
+        const literal = node as ts.StringLiteral;
+        if (matchesSensitivePath(literal.text)) {
+          ctx.report(
+            `Warning: Sensitive file path '${literal.text}' detected. Use platform APIs for configuration and secrets.`,
+            node,
+          );
+        }
+      },
+    };
+  },
 };

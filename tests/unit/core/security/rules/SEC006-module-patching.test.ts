@@ -6,134 +6,134 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 function createSourceFile(code: string): ts.SourceFile {
-	return ts.createSourceFile(
-		"test.ts",
-		code,
-		ts.ScriptTarget.Latest,
-		true,
-		ts.ScriptKind.TS,
-	);
+  return ts.createSourceFile(
+    "test.ts",
+    code,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
 }
 
 const mockConfig: SecurityConfig = {
-	mode: "strict",
-	trustedDomains: ["*.godaddy.com"],
-	exclude: [],
+  mode: "strict",
+  trustedDomains: ["*.godaddy.com"],
+  exclude: [],
 };
 
 describe("SEC006: No module system patching", () => {
-	describe("Module._load", () => {
-		it("should detect Module._load access", () => {
-			const code = `
+  describe("Module._load", () => {
+    it("should detect Module._load access", () => {
+      const code = `
         const Module = require('module');
         Module._load = function() {};
       `;
-			const sourceFile = createSourceFile(code);
-			const aliasMaps = buildAliasMaps(sourceFile);
-			const findings = scanFile(
-				"test.ts",
-				code,
-				[SEC006],
-				mockConfig,
-				aliasMaps,
-			);
+      const sourceFile = createSourceFile(code);
+      const aliasMaps = buildAliasMaps(sourceFile);
+      const findings = scanFile(
+        "test.ts",
+        code,
+        [SEC006],
+        mockConfig,
+        aliasMaps,
+      );
 
-			expect(findings.length).toBeGreaterThan(0);
-			expect(findings.some((f) => f.ruleId === "SEC006")).toBe(true);
-		});
-	});
+      expect(findings.length).toBeGreaterThan(0);
+      expect(findings.some((f) => f.ruleId === "SEC006")).toBe(true);
+    });
+  });
 
-	describe("Module._extensions", () => {
-		it("should detect Module._extensions access", () => {
-			const code = `
+  describe("Module._extensions", () => {
+    it("should detect Module._extensions access", () => {
+      const code = `
         const Module = require('module');
         Module._extensions['.custom'] = () => {};
       `;
-			const sourceFile = createSourceFile(code);
-			const aliasMaps = buildAliasMaps(sourceFile);
-			const findings = scanFile(
-				"test.ts",
-				code,
-				[SEC006],
-				mockConfig,
-				aliasMaps,
-			);
+      const sourceFile = createSourceFile(code);
+      const aliasMaps = buildAliasMaps(sourceFile);
+      const findings = scanFile(
+        "test.ts",
+        code,
+        [SEC006],
+        mockConfig,
+        aliasMaps,
+      );
 
-			expect(findings.length).toBeGreaterThan(0);
-		});
-	});
+      expect(findings.length).toBeGreaterThan(0);
+    });
+  });
 
-	describe("Module._compile", () => {
-		it("should detect Module._compile access", () => {
-			const code = `
+  describe("Module._compile", () => {
+    it("should detect Module._compile access", () => {
+      const code = `
         const Module = require('module');
         const original = Module._compile;
       `;
-			const sourceFile = createSourceFile(code);
-			const aliasMaps = buildAliasMaps(sourceFile);
-			const findings = scanFile(
-				"test.ts",
-				code,
-				[SEC006],
-				mockConfig,
-				aliasMaps,
-			);
+      const sourceFile = createSourceFile(code);
+      const aliasMaps = buildAliasMaps(sourceFile);
+      const findings = scanFile(
+        "test.ts",
+        code,
+        [SEC006],
+        mockConfig,
+        aliasMaps,
+      );
 
-			expect(findings.length).toBeGreaterThan(0);
-		});
-	});
+      expect(findings.length).toBeGreaterThan(0);
+    });
+  });
 
-	describe("require.extensions", () => {
-		it("should detect require.extensions access", () => {
-			const code = `require.extensions['.custom'] = () => {};`;
-			const sourceFile = createSourceFile(code);
-			const aliasMaps = buildAliasMaps(sourceFile);
-			const findings = scanFile(
-				"test.ts",
-				code,
-				[SEC006],
-				mockConfig,
-				aliasMaps,
-			);
+  describe("require.extensions", () => {
+    it("should detect require.extensions access", () => {
+      const code = `require.extensions['.custom'] = () => {};`;
+      const sourceFile = createSourceFile(code);
+      const aliasMaps = buildAliasMaps(sourceFile);
+      const findings = scanFile(
+        "test.ts",
+        code,
+        [SEC006],
+        mockConfig,
+        aliasMaps,
+      );
 
-			expect(findings.length).toBeGreaterThan(0);
-		});
-	});
+      expect(findings.length).toBeGreaterThan(0);
+    });
+  });
 
-	describe("safe code", () => {
-		it("should not detect regular Module usage", () => {
-			const code = `
+  describe("safe code", () => {
+    it("should not detect regular Module usage", () => {
+      const code = `
         class Module {
           load() {}
         }
         const m = new Module();
       `;
-			const sourceFile = createSourceFile(code);
-			const aliasMaps = buildAliasMaps(sourceFile);
-			const findings = scanFile(
-				"test.ts",
-				code,
-				[SEC006],
-				mockConfig,
-				aliasMaps,
-			);
+      const sourceFile = createSourceFile(code);
+      const aliasMaps = buildAliasMaps(sourceFile);
+      const findings = scanFile(
+        "test.ts",
+        code,
+        [SEC006],
+        mockConfig,
+        aliasMaps,
+      );
 
-			expect(findings).toHaveLength(0);
-		});
+      expect(findings).toHaveLength(0);
+    });
 
-		it("should not detect regular require calls", () => {
-			const code = `const fs = require('fs');`;
-			const sourceFile = createSourceFile(code);
-			const aliasMaps = buildAliasMaps(sourceFile);
-			const findings = scanFile(
-				"test.ts",
-				code,
-				[SEC006],
-				mockConfig,
-				aliasMaps,
-			);
+    it("should not detect regular require calls", () => {
+      const code = `const fs = require('fs');`;
+      const sourceFile = createSourceFile(code);
+      const aliasMaps = buildAliasMaps(sourceFile);
+      const findings = scanFile(
+        "test.ts",
+        code,
+        [SEC006],
+        mockConfig,
+        aliasMaps,
+      );
 
-			expect(findings).toHaveLength(0);
-		});
-	});
+      expect(findings).toHaveLength(0);
+    });
+  });
 });

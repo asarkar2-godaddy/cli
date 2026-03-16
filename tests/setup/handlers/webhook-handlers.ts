@@ -8,16 +8,16 @@ import { webhookEventTypesFixture } from "../fixtures/webhook-fixtures";
  */
 
 export const webhookHandlers = [
-	// GET /v1/apis/webhook-event-types - List all webhook event types
-	http.get("*/v1/apis/webhook-event-types", ({ request }) => {
-		const authResult = checkAuthentication(request);
-		if (authResult) {
-			// authResult is an HttpResponse for unauthorized requests
-			return authResult;
-		}
+  // GET /v1/apis/webhook-event-types - List all webhook event types
+  http.get("*/v1/apis/webhook-event-types", ({ request }) => {
+    const authResult = checkAuthentication(request);
+    if (authResult) {
+      // authResult is an HttpResponse for unauthorized requests
+      return authResult;
+    }
 
-		// authResult is null for valid authentication
-		// Return the list of webhook event types
-		return HttpResponse.json(webhookEventTypesFixture);
-	}),
+    // authResult is null for valid authentication
+    // Return the list of webhook event types
+    return HttpResponse.json(webhookEventTypesFixture);
+  }),
 ];

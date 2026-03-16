@@ -6,140 +6,140 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 function createSourceFile(code: string): ts.SourceFile {
-	return ts.createSourceFile(
-		"test.ts",
-		code,
-		ts.ScriptTarget.Latest,
-		true,
-		ts.ScriptKind.TS,
-	);
+  return ts.createSourceFile(
+    "test.ts",
+    code,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
 }
 
 const mockConfig: SecurityConfig = {
-	mode: "strict",
-	trustedDomains: ["*.godaddy.com"],
-	exclude: [],
+  mode: "strict",
+  trustedDomains: ["*.godaddy.com"],
+  exclude: [],
 };
 
 describe("SEC003: No vm module usage", () => {
-	describe("vm.runInNewContext", () => {
-		it("should detect namespace import usage", () => {
-			const code = `
+  describe("vm.runInNewContext", () => {
+    it("should detect namespace import usage", () => {
+      const code = `
         import * as vm from 'vm';
         vm.runInNewContext('malicious code');
       `;
-			const sourceFile = createSourceFile(code);
-			const aliasMaps = buildAliasMaps(sourceFile);
-			const findings = scanFile(
-				"test.ts",
-				code,
-				[SEC003],
-				mockConfig,
-				aliasMaps,
-			);
+      const sourceFile = createSourceFile(code);
+      const aliasMaps = buildAliasMaps(sourceFile);
+      const findings = scanFile(
+        "test.ts",
+        code,
+        [SEC003],
+        mockConfig,
+        aliasMaps,
+      );
 
-			expect(findings.length).toBeGreaterThan(0);
-			expect(findings[0].ruleId).toBe("SEC003");
-			expect(findings[0].severity).toBe("block");
-		});
+      expect(findings.length).toBeGreaterThan(0);
+      expect(findings[0].ruleId).toBe("SEC003");
+      expect(findings[0].severity).toBe("block");
+    });
 
-		it("should detect named import usage", () => {
-			const code = `
+    it("should detect named import usage", () => {
+      const code = `
         import { runInNewContext } from 'vm';
         runInNewContext('code');
       `;
-			const sourceFile = createSourceFile(code);
-			const aliasMaps = buildAliasMaps(sourceFile);
-			const findings = scanFile(
-				"test.ts",
-				code,
-				[SEC003],
-				mockConfig,
-				aliasMaps,
-			);
+      const sourceFile = createSourceFile(code);
+      const aliasMaps = buildAliasMaps(sourceFile);
+      const findings = scanFile(
+        "test.ts",
+        code,
+        [SEC003],
+        mockConfig,
+        aliasMaps,
+      );
 
-			expect(findings.length).toBeGreaterThan(0);
-		});
-	});
+      expect(findings.length).toBeGreaterThan(0);
+    });
+  });
 
-	describe("vm.runInContext", () => {
-		it("should detect runInContext", () => {
-			const code = `
+  describe("vm.runInContext", () => {
+    it("should detect runInContext", () => {
+      const code = `
         import { runInContext } from 'vm';
         const context = {};
         runInContext('code', context);
       `;
-			const sourceFile = createSourceFile(code);
-			const aliasMaps = buildAliasMaps(sourceFile);
-			const findings = scanFile(
-				"test.ts",
-				code,
-				[SEC003],
-				mockConfig,
-				aliasMaps,
-			);
+      const sourceFile = createSourceFile(code);
+      const aliasMaps = buildAliasMaps(sourceFile);
+      const findings = scanFile(
+        "test.ts",
+        code,
+        [SEC003],
+        mockConfig,
+        aliasMaps,
+      );
 
-			expect(findings.length).toBeGreaterThan(0);
-		});
-	});
+      expect(findings.length).toBeGreaterThan(0);
+    });
+  });
 
-	describe("vm.Script", () => {
-		it("should detect new vm.Script()", () => {
-			const code = `
+  describe("vm.Script", () => {
+    it("should detect new vm.Script()", () => {
+      const code = `
         import * as vm from 'vm';
         const script = new vm.Script('code');
       `;
-			const sourceFile = createSourceFile(code);
-			const aliasMaps = buildAliasMaps(sourceFile);
-			const findings = scanFile(
-				"test.ts",
-				code,
-				[SEC003],
-				mockConfig,
-				aliasMaps,
-			);
+      const sourceFile = createSourceFile(code);
+      const aliasMaps = buildAliasMaps(sourceFile);
+      const findings = scanFile(
+        "test.ts",
+        code,
+        [SEC003],
+        mockConfig,
+        aliasMaps,
+      );
 
-			expect(findings.length).toBeGreaterThan(0);
-		});
-	});
+      expect(findings.length).toBeGreaterThan(0);
+    });
+  });
 
-	describe("CJS require", () => {
-		it("should detect require vm module", () => {
-			const code = `
+  describe("CJS require", () => {
+    it("should detect require vm module", () => {
+      const code = `
         const vm = require('vm');
         vm.runInNewContext('code');
       `;
-			const sourceFile = createSourceFile(code);
-			const aliasMaps = buildAliasMaps(sourceFile);
-			const findings = scanFile(
-				"test.ts",
-				code,
-				[SEC003],
-				mockConfig,
-				aliasMaps,
-			);
+      const sourceFile = createSourceFile(code);
+      const aliasMaps = buildAliasMaps(sourceFile);
+      const findings = scanFile(
+        "test.ts",
+        code,
+        [SEC003],
+        mockConfig,
+        aliasMaps,
+      );
 
-			expect(findings.length).toBeGreaterThan(0);
-		});
-	});
+      expect(findings.length).toBeGreaterThan(0);
+    });
+  });
 
-	describe("safe code", () => {
-		it("should not detect custom vm object", () => {
-			const code = `
+  describe("safe code", () => {
+    it("should not detect custom vm object", () => {
+      const code = `
         const vm = { runInNewContext: () => {} };
         vm.runInNewContext();
       `;
-			const sourceFile = createSourceFile(code);
-			const aliasMaps = buildAliasMaps(sourceFile);
-			const findings = scanFile(
-				"test.ts",
-				code,
-				[SEC003],
-				mockConfig,
-				aliasMaps,
-			);
+      const sourceFile = createSourceFile(code);
+      const aliasMaps = buildAliasMaps(sourceFile);
+      const findings = scanFile(
+        "test.ts",
+        code,
+        [SEC003],
+        mockConfig,
+        aliasMaps,
+      );
 
-			expect(findings).toHaveLength(0);
-		});
-	});
+      expect(findings).toHaveLength(0);
+    });
+  });
 });

@@ -11,11 +11,11 @@ export type ExtensionType = "embed" | "checkout" | "blocks";
  * Options for building esbuild configuration.
  */
 export interface EsbuildConfigOptions {
-	entryPath: string;
-	tsconfigPath?: string;
-	extensionType?: ExtensionType;
-	extensionDir?: string;
-	overrides?: Partial<BuildOptions>;
+  entryPath: string;
+  tsconfigPath?: string;
+  extensionType?: ExtensionType;
+  extensionDir?: string;
+  overrides?: Partial<BuildOptions>;
 }
 
 /**
@@ -24,13 +24,13 @@ export interface EsbuildConfigOptions {
  * - embed/checkout: Rendered in iframes, must bundle React (aliased to Preact)
  */
 function getExternals(extensionType?: ExtensionType): string[] {
-	const baseExternals = ["node:*", "@wsblocks/*"];
+  const baseExternals = ["node:*", "@wsblocks/*"];
 
-	if (extensionType === "blocks") {
-		return [...baseExternals, "react", "react/*", "react-dom", "react-dom/*"];
-	}
+  if (extensionType === "blocks") {
+    return [...baseExternals, "react", "react/*", "react-dom", "react-dom/*"];
+  }
 
-	return baseExternals;
+  return baseExternals;
 }
 
 /**
@@ -39,17 +39,17 @@ function getExternals(extensionType?: ExtensionType): string[] {
  * Blocks extensions use platform-provided React, so no aliasing needed.
  */
 function getAliases(
-	extensionType?: ExtensionType,
+  extensionType?: ExtensionType,
 ): Record<string, string> | undefined {
-	if (extensionType === "blocks") {
-		return undefined;
-	}
+  if (extensionType === "blocks") {
+    return undefined;
+  }
 
-	return {
-		react: "preact/compat",
-		"react-dom": "preact/compat",
-		"react/jsx-runtime": "preact/jsx-runtime",
-	};
+  return {
+    react: "preact/compat",
+    "react-dom": "preact/compat",
+    "react/jsx-runtime": "preact/jsx-runtime",
+  };
 }
 
 /**
@@ -58,15 +58,15 @@ function getAliases(
  * - embed/checkout: Browser platform, IIFE format (runs in iframe)
  */
 function getPlatformConfig(extensionType?: ExtensionType): {
-	platform: "node" | "browser";
-	format: "esm" | "iife";
-	target: string;
+  platform: "node" | "browser";
+  format: "esm" | "iife";
+  target: string;
 } {
-	if (extensionType === "blocks") {
-		return { platform: "node", format: "esm", target: "node22" };
-	}
+  if (extensionType === "blocks") {
+    return { platform: "node", format: "esm", target: "node22" };
+  }
 
-	return { platform: "browser", format: "iife", target: "es2020" };
+  return { platform: "browser", format: "iife", target: "es2020" };
 }
 
 /**
@@ -96,56 +96,56 @@ function getPlatformConfig(extensionType?: ExtensionType): {
  * ```
  */
 export function buildEsbuildOptions(
-	options: EsbuildConfigOptions,
+  options: EsbuildConfigOptions,
 ): BuildOptions;
 /**
  * @deprecated Use the options object form instead
  */
 export function buildEsbuildOptions(
-	entryPath: string,
-	tsconfigPath?: string,
-	overrides?: Partial<BuildOptions>,
+  entryPath: string,
+  tsconfigPath?: string,
+  overrides?: Partial<BuildOptions>,
 ): BuildOptions;
 export function buildEsbuildOptions(
-	entryPathOrOptions: string | EsbuildConfigOptions,
-	tsconfigPath?: string,
-	overrides?: Partial<BuildOptions>,
+  entryPathOrOptions: string | EsbuildConfigOptions,
+  tsconfigPath?: string,
+  overrides?: Partial<BuildOptions>,
 ): BuildOptions {
-	// Handle both signatures
-	const options: EsbuildConfigOptions =
-		typeof entryPathOrOptions === "string"
-			? { entryPath: entryPathOrOptions, tsconfigPath, overrides }
-			: entryPathOrOptions;
+  // Handle both signatures
+  const options: EsbuildConfigOptions =
+    typeof entryPathOrOptions === "string"
+      ? { entryPath: entryPathOrOptions, tsconfigPath, overrides }
+      : entryPathOrOptions;
 
-	const { platform, format, target } = getPlatformConfig(options.extensionType);
-	const alias = getAliases(options.extensionType);
+  const { platform, format, target } = getPlatformConfig(options.extensionType);
+  const alias = getAliases(options.extensionType);
 
-	// Build nodePaths for module resolution - include extension's node_modules
-	const nodePaths: string[] = [];
-	if (options.extensionDir) {
-		nodePaths.push(`${options.extensionDir}/node_modules`);
-	}
+  // Build nodePaths for module resolution - include extension's node_modules
+  const nodePaths: string[] = [];
+  if (options.extensionDir) {
+    nodePaths.push(`${options.extensionDir}/node_modules`);
+  }
 
-	const baseConfig: BuildOptions = {
-		entryPoints: [options.entryPath],
-		bundle: true,
-		format,
-		platform,
-		target,
-		minify: true,
-		sourcemap: "external",
-		write: false,
-		logLevel: "silent",
-		external: getExternals(options.extensionType),
-		outExtension: { ".js": ".mjs" },
-		outdir: "out", // Required for external sourcemaps with write: false
-		...(options.tsconfigPath && { tsconfig: options.tsconfigPath }),
-		...(alias && { alias }),
-		...(nodePaths.length > 0 && { nodePaths }),
-	};
+  const baseConfig: BuildOptions = {
+    entryPoints: [options.entryPath],
+    bundle: true,
+    format,
+    platform,
+    target,
+    minify: true,
+    sourcemap: "external",
+    write: false,
+    logLevel: "silent",
+    external: getExternals(options.extensionType),
+    outExtension: { ".js": ".mjs" },
+    outdir: "out", // Required for external sourcemaps with write: false
+    ...(options.tsconfigPath && { tsconfig: options.tsconfigPath }),
+    ...(alias && { alias }),
+    ...(nodePaths.length > 0 && { nodePaths }),
+  };
 
-	return {
-		...baseConfig,
-		...options.overrides,
-	};
+  return {
+    ...baseConfig,
+    ...options.overrides,
+  };
 }

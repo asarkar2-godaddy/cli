@@ -15,7 +15,7 @@ import type { AliasMaps } from "./types.ts";
  * ```
  */
 export function isIdentifier(node: ts.Node, name: string): boolean {
-	return ts.isIdentifier(node) && node.text === name;
+  return ts.isIdentifier(node) && node.text === name;
 }
 
 /**
@@ -34,11 +34,11 @@ export function isIdentifier(node: ts.Node, name: string): boolean {
  * ```
  */
 export function isCallToGlobal(node: ts.Node, name: string): boolean {
-	return (
-		ts.isCallExpression(node) &&
-		ts.isIdentifier(node.expression) &&
-		node.expression.text === name
-	);
+  return (
+    ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === name
+  );
 }
 
 /**
@@ -56,23 +56,23 @@ export function isCallToGlobal(node: ts.Node, name: string): boolean {
  * ```
  */
 export function isNewExpressionOf(node: ts.Node, name: string): boolean {
-	return (
-		ts.isNewExpression(node) &&
-		ts.isIdentifier(node.expression) &&
-		node.expression.text === name
-	);
+  return (
+    ts.isNewExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === name
+  );
 }
 
 /**
  * Options for member call detection.
  */
 export interface MemberCallOptions {
-	/** Module name to check object against (e.g., 'child_process') */
-	objectIsAliasOf: string;
-	/** Method name to match (e.g., 'exec', 'spawn') */
-	method: string;
-	/** Alias maps for module tracking */
-	aliasMaps: AliasMaps;
+  /** Module name to check object against (e.g., 'child_process') */
+  objectIsAliasOf: string;
+  /** Method name to match (e.g., 'exec', 'spawn') */
+  method: string;
+  /** Alias maps for module tracking */
+  aliasMaps: AliasMaps;
 }
 
 /**
@@ -96,33 +96,33 @@ export interface MemberCallOptions {
  * ```
  */
 export function isMemberCall(
-	node: ts.Node,
-	options: MemberCallOptions,
+  node: ts.Node,
+  options: MemberCallOptions,
 ): boolean {
-	if (!ts.isCallExpression(node)) {
-		return false;
-	}
+  if (!ts.isCallExpression(node)) {
+    return false;
+  }
 
-	const { expression } = node;
-	if (!ts.isPropertyAccessExpression(expression)) {
-		return false;
-	}
+  const { expression } = node;
+  if (!ts.isPropertyAccessExpression(expression)) {
+    return false;
+  }
 
-	// Check if method name matches
-	if (!ts.isIdentifier(expression.name)) {
-		return false;
-	}
-	if (expression.name.text !== options.method) {
-		return false;
-	}
+  // Check if method name matches
+  if (!ts.isIdentifier(expression.name)) {
+    return false;
+  }
+  if (expression.name.text !== options.method) {
+    return false;
+  }
 
-	// Check if object is an alias of the target module
-	const objectExpr = expression.expression;
-	if (!ts.isIdentifier(objectExpr)) {
-		return false;
-	}
+  // Check if object is an alias of the target module
+  const objectExpr = expression.expression;
+  if (!ts.isIdentifier(objectExpr)) {
+    return false;
+  }
 
-	return isAliasOf(objectExpr.text, options.objectIsAliasOf, options.aliasMaps);
+  return isAliasOf(objectExpr.text, options.objectIsAliasOf, options.aliasMaps);
 }
 
 /**
@@ -141,13 +141,13 @@ export function isMemberCall(
  * ```
  */
 export function isProcessProperty(node: ts.Node, property: string): boolean {
-	return (
-		ts.isPropertyAccessExpression(node) &&
-		ts.isIdentifier(node.expression) &&
-		node.expression.text === "process" &&
-		ts.isIdentifier(node.name) &&
-		node.name.text === property
-	);
+  return (
+    ts.isPropertyAccessExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === "process" &&
+    ts.isIdentifier(node.name) &&
+    node.name.text === property
+  );
 }
 
 /**
@@ -166,23 +166,23 @@ export function isProcessProperty(node: ts.Node, property: string): boolean {
  * ```
  */
 export function isRequireOf(node: ts.Node, pattern: RegExp): boolean {
-	if (!ts.isCallExpression(node)) {
-		return false;
-	}
+  if (!ts.isCallExpression(node)) {
+    return false;
+  }
 
-	// Check if it's a require() call
-	if (!ts.isIdentifier(node.expression) || node.expression.text !== "require") {
-		return false;
-	}
+  // Check if it's a require() call
+  if (!ts.isIdentifier(node.expression) || node.expression.text !== "require") {
+    return false;
+  }
 
-	// Check first argument is a string literal
-	const args = node.arguments;
-	if (args.length < 1 || !ts.isStringLiteral(args[0])) {
-		return false;
-	}
+  // Check first argument is a string literal
+  const args = node.arguments;
+  if (args.length < 1 || !ts.isStringLiteral(args[0])) {
+    return false;
+  }
 
-	const moduleName = args[0].text;
-	return pattern.test(moduleName);
+  const moduleName = args[0].text;
+  return pattern.test(moduleName);
 }
 
 /**
@@ -200,11 +200,11 @@ export function isRequireOf(node: ts.Node, pattern: RegExp): boolean {
  * ```
  */
 export function isImportOf(node: ts.Node, moduleName: string): boolean {
-	return (
-		ts.isImportDeclaration(node) &&
-		ts.isStringLiteral(node.moduleSpecifier) &&
-		node.moduleSpecifier.text === moduleName
-	);
+  return (
+    ts.isImportDeclaration(node) &&
+    ts.isStringLiteral(node.moduleSpecifier) &&
+    node.moduleSpecifier.text === moduleName
+  );
 }
 
 /**
@@ -222,18 +222,18 @@ export function isImportOf(node: ts.Node, moduleName: string): boolean {
  * ```
  */
 export function getStringLiteralValue(node: ts.Node): string | null {
-	// Handle regular string literals: "hello" or 'hello'
-	if (ts.isStringLiteral(node)) {
-		return node.text;
-	}
+  // Handle regular string literals: "hello" or 'hello'
+  if (ts.isStringLiteral(node)) {
+    return node.text;
+  }
 
-	// Handle simple template literals without substitutions: `hello`
-	if (node.kind === ts.SyntaxKind.NoSubstitutionTemplateLiteral) {
-		return (node as ts.NoSubstitutionTemplateLiteral).text;
-	}
+  // Handle simple template literals without substitutions: `hello`
+  if (node.kind === ts.SyntaxKind.NoSubstitutionTemplateLiteral) {
+    return (node as ts.NoSubstitutionTemplateLiteral).text;
+  }
 
-	// Cannot extract from complex template literals or other node types
-	return null;
+  // Cannot extract from complex template literals or other node types
+  return null;
 }
 
 /**
@@ -252,40 +252,40 @@ export function getStringLiteralValue(node: ts.Node): string | null {
  * ```
  */
 export function isBufferFromCall(
-	node: ts.Node,
-	encoding?: "base64" | "hex",
+  node: ts.Node,
+  encoding?: "base64" | "hex",
 ): boolean {
-	if (!ts.isCallExpression(node)) {
-		return false;
-	}
+  if (!ts.isCallExpression(node)) {
+    return false;
+  }
 
-	const { expression } = node;
-	if (!ts.isPropertyAccessExpression(expression)) {
-		return false;
-	}
+  const { expression } = node;
+  if (!ts.isPropertyAccessExpression(expression)) {
+    return false;
+  }
 
-	// Check if it's Buffer.from
-	if (
-		!ts.isIdentifier(expression.expression) ||
-		expression.expression.text !== "Buffer"
-	) {
-		return false;
-	}
+  // Check if it's Buffer.from
+  if (
+    !ts.isIdentifier(expression.expression) ||
+    expression.expression.text !== "Buffer"
+  ) {
+    return false;
+  }
 
-	if (!ts.isIdentifier(expression.name) || expression.name.text !== "from") {
-		return false;
-	}
+  if (!ts.isIdentifier(expression.name) || expression.name.text !== "from") {
+    return false;
+  }
 
-	// If encoding is specified, check the second argument
-	if (encoding) {
-		const args = node.arguments;
-		if (args.length < 2 || !ts.isStringLiteral(args[1])) {
-			return false;
-		}
-		return args[1].text === encoding;
-	}
+  // If encoding is specified, check the second argument
+  if (encoding) {
+    const args = node.arguments;
+    if (args.length < 2 || !ts.isStringLiteral(args[1])) {
+      return false;
+    }
+    return args[1].text === encoding;
+  }
 
-	return true;
+  return true;
 }
 
 /**
@@ -302,8 +302,8 @@ export function isBufferFromCall(
  * ```
  */
 export function matchesUrl(str: string): boolean {
-	const urlPattern = /https?:\/\//;
-	return urlPattern.test(str);
+  const urlPattern = /https?:\/\//;
+  return urlPattern.test(str);
 }
 
 /**
@@ -323,12 +323,12 @@ export function matchesUrl(str: string): boolean {
  * ```
  */
 export function matchesSensitivePath(str: string): boolean {
-	const sensitivePatterns = [
-		/~\/\.ssh/,
-		/\/etc\/passwd/,
-		/\/etc\/shadow/,
-		/\/var\/run\/secrets/,
-	];
+  const sensitivePatterns = [
+    /~\/\.ssh/,
+    /\/etc\/passwd/,
+    /\/etc\/shadow/,
+    /\/var\/run\/secrets/,
+  ];
 
-	return sensitivePatterns.some((pattern) => pattern.test(str));
+  return sensitivePatterns.some((pattern) => pattern.test(str));
 }

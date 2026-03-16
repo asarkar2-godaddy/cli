@@ -11,9 +11,9 @@ import { BUNDLE_RULES } from "../../core/security/rules/bundle";
 import { RULES } from "../../core/security/rules/index";
 import { scanPackageScripts } from "../../core/security/scripts-scanner";
 import type {
-	Finding,
-	ScanReport,
-	ScanSummary,
+  Finding,
+  ScanReport,
+  ScanSummary,
 } from "../../core/security/types";
 import { SecurityError } from "../../effect/errors";
 
@@ -40,79 +40,79 @@ export type ScanOutputFormat = "text" | "json";
  * @returns Effect containing ScanReport with all findings, block status, summary statistics
  */
 export function scanExtensionEffect(
-	packageDir: string,
+  packageDir: string,
 ): Effect.Effect<ScanReport, SecurityError, FileSystem> {
-	return Effect.gen(function* () {
-		const fs = yield* FileSystem;
-		// 1. Get security config (strict, immutable)
-		const config = getSecurityConfig();
-		const findings: Finding[] = [];
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem;
+    // 1. Get security config (strict, immutable)
+    const config = getSecurityConfig();
+    const findings: Finding[] = [];
 
-		// 2. Scan package.json scripts (SEC011)
-		const packageJsonPath = join(packageDir, "package.json");
-		try {
-			const scriptFindings = scanPackageScripts(packageJsonPath);
-			findings.push(...scriptFindings);
-		} catch {
-			// package.json not found or invalid - not a fatal error for scanning
-		}
+    // 2. Scan package.json scripts (SEC011)
+    const packageJsonPath = join(packageDir, "package.json");
+    try {
+      const scriptFindings = scanPackageScripts(packageJsonPath);
+      findings.push(...scriptFindings);
+    } catch {
+      // package.json not found or invalid - not a fatal error for scanning
+    }
 
-		// 3. Discover source files (Effect-based, requires FileSystem)
-		const files = yield* findFilesToScan(packageDir);
+    // 3. Discover source files (Effect-based, requires FileSystem)
+    const files = yield* findFilesToScan(packageDir);
 
-		// 4. For each source file: read, build alias maps, scan
-		for (const filePath of files) {
-			const sourceText = yield* fs.readFileString(filePath);
+    // 4. For each source file: read, build alias maps, scan
+    for (const filePath of files) {
+      const sourceText = yield* fs.readFileString(filePath);
 
-			// Build alias maps
-			const sourceFile = ts.createSourceFile(
-				filePath,
-				sourceText,
-				ts.ScriptTarget.Latest,
-				true,
-				ts.ScriptKind.TSX,
-			);
-			const aliasMaps = buildAliasMaps(sourceFile);
+      // Build alias maps
+      const sourceFile = ts.createSourceFile(
+        filePath,
+        sourceText,
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TSX,
+      );
+      const aliasMaps = buildAliasMaps(sourceFile);
 
-			// Scan with engine + all enabled rules
-			const fileFindings = scanFile(
-				filePath,
-				sourceText,
-				RULES,
-				config,
-				aliasMaps,
-			);
-			findings.push(...fileFindings);
-		}
+      // Scan with engine + all enabled rules
+      const fileFindings = scanFile(
+        filePath,
+        sourceText,
+        RULES,
+        config,
+        aliasMaps,
+      );
+      findings.push(...fileFindings);
+    }
 
-		// 5. Sort findings by file, then line
-		findings.sort((a, b) => {
-			const fileCompare = a.file.localeCompare(b.file);
-			if (fileCompare !== 0) return fileCompare;
-			return a.line - b.line;
-		});
+    // 5. Sort findings by file, then line
+    findings.sort((a, b) => {
+      const fileCompare = a.file.localeCompare(b.file);
+      if (fileCompare !== 0) return fileCompare;
+      return a.line - b.line;
+    });
 
-		// 6. Build ScanReport
-		const report: ScanReport = {
-			findings,
-			blocked: findings.some((f) => f.severity === "block"),
-			summary: buildSummary(findings),
-			scannedFiles: files.length,
-		};
+    // 6. Build ScanReport
+    const report: ScanReport = {
+      findings,
+      blocked: findings.some((f) => f.severity === "block"),
+      summary: buildSummary(findings),
+      scannedFiles: files.length,
+    };
 
-		return report;
-	}).pipe(
-		Effect.catchAll((error) =>
-			Effect.fail(
-				error instanceof SecurityError
-					? error
-					: new SecurityError({
-							message: "message" in error ? error.message : String(error),
-							userMessage: "Security scan failed",
-						}),
-			),
-		),
-	);
+    return report;
+  }).pipe(
+    Effect.catchAll((error) =>
+      Effect.fail(
+        error instanceof SecurityError
+          ? error
+          : new SecurityError({
+              message: "message" in error ? error.message : String(error),
+              userMessage: "Security scan failed",
+            }),
+      ),
+    ),
+  );
 }
 
 /**
@@ -127,29 +127,29 @@ export function scanExtensionEffect(
  * @returns ScanSummary with aggregated statistics
  */
 export function buildSummary(findings: Finding[]): ScanSummary {
-	const summary: ScanSummary = {
-		total: findings.length,
-		byRuleId: {},
-		bySeverity: {
-			block: 0,
-			warn: 0,
-			off: 0,
-		},
-	};
+  const summary: ScanSummary = {
+    total: findings.length,
+    byRuleId: {},
+    bySeverity: {
+      block: 0,
+      warn: 0,
+      off: 0,
+    },
+  };
 
-	// Group by ruleId and severity
-	for (const finding of findings) {
-		// Count by ruleId
-		if (!summary.byRuleId[finding.ruleId]) {
-			summary.byRuleId[finding.ruleId] = 0;
-		}
-		summary.byRuleId[finding.ruleId]++;
+  // Group by ruleId and severity
+  for (const finding of findings) {
+    // Count by ruleId
+    if (!summary.byRuleId[finding.ruleId]) {
+      summary.byRuleId[finding.ruleId] = 0;
+    }
+    summary.byRuleId[finding.ruleId]++;
 
-		// Count by severity
-		summary.bySeverity[finding.severity]++;
-	}
+    // Count by severity
+    summary.bySeverity[finding.severity]++;
+  }
 
-	return summary;
+  return summary;
 }
 
 /**
@@ -164,56 +164,56 @@ export function buildSummary(findings: Finding[]): ScanSummary {
  * @returns Formatted string ready for console output or file writing
  */
 export function formatFindings(
-	report: ScanReport,
-	format: ScanOutputFormat,
+  report: ScanReport,
+  format: ScanOutputFormat,
 ): string {
-	if (format === "json") {
-		return JSON.stringify(report, null, 2);
-	}
+  if (format === "json") {
+    return JSON.stringify(report, null, 2);
+  }
 
-	// Text format
-	const lines: string[] = [];
+  // Text format
+  const lines: string[] = [];
 
-	// Header
-	lines.push("Security Scan Report");
-	lines.push("===================");
-	lines.push("");
+  // Header
+  lines.push("Security Scan Report");
+  lines.push("===================");
+  lines.push("");
 
-	// Summary
-	lines.push(`Scanned files: ${report.scannedFiles}`);
-	lines.push(`Total findings: ${report.summary.total}`);
-	lines.push(
-		`Block: ${report.summary.bySeverity.block}, Warn: ${report.summary.bySeverity.warn}`,
-	);
-	lines.push(`Status: ${report.blocked ? "BLOCKED" : "PASSED"}`);
-	lines.push("");
+  // Summary
+  lines.push(`Scanned files: ${report.scannedFiles}`);
+  lines.push(`Total findings: ${report.summary.total}`);
+  lines.push(
+    `Block: ${report.summary.bySeverity.block}, Warn: ${report.summary.bySeverity.warn}`,
+  );
+  lines.push(`Status: ${report.blocked ? "BLOCKED" : "PASSED"}`);
+  lines.push("");
 
-	// Findings
-	if (report.findings.length === 0) {
-		lines.push("No security issues found.");
-	} else {
-		lines.push("Findings:");
-		lines.push("---------");
+  // Findings
+  if (report.findings.length === 0) {
+    lines.push("No security issues found.");
+  } else {
+    lines.push("Findings:");
+    lines.push("---------");
 
-		for (const finding of report.findings) {
-			const severityBadge =
-				finding.severity === "block"
-					? "[BLOCK]"
-					: finding.severity === "warn"
-						? "[WARN]"
-						: "[INFO]";
+    for (const finding of report.findings) {
+      const severityBadge =
+        finding.severity === "block"
+          ? "[BLOCK]"
+          : finding.severity === "warn"
+            ? "[WARN]"
+            : "[INFO]";
 
-			lines.push("");
-			lines.push(`${severityBadge} ${finding.ruleId}: ${finding.message}`);
-			lines.push(`  at ${finding.file}:${finding.line}:${finding.col}`);
+      lines.push("");
+      lines.push(`${severityBadge} ${finding.ruleId}: ${finding.message}`);
+      lines.push(`  at ${finding.file}:${finding.line}:${finding.col}`);
 
-			if (finding.snippet) {
-				lines.push(`  > ${finding.snippet}`);
-			}
-		}
-	}
+      if (finding.snippet) {
+        lines.push(`  > ${finding.snippet}`);
+      }
+    }
+  }
 
-	return lines.join("\n");
+  return lines.join("\n");
 }
 
 /**
@@ -224,7 +224,7 @@ export function formatFindings(
  * @returns Formatted text output
  */
 export function formatSecurityFindings(report: ScanReport): string {
-	return formatFindings(report, "text");
+  return formatFindings(report, "text");
 }
 
 // readFileWithFs removed — use yield* fs.readFileString(path) directly
@@ -240,43 +240,43 @@ export function formatSecurityFindings(report: ScanReport): string {
  * @returns Effect with ScanReport containing findings and block status
  */
 export function scanBundleEffect(
-	artifactPaths: string | string[],
+  artifactPaths: string | string[],
 ): Effect.Effect<ScanReport, SecurityError, FileSystem> {
-	return Effect.gen(function* () {
-		const fs = yield* FileSystem;
-		// 1. Normalize to array
-		const paths = Array.isArray(artifactPaths)
-			? artifactPaths
-			: [artifactPaths];
-		const allFindings: Finding[] = [];
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem;
+    // 1. Normalize to array
+    const paths = Array.isArray(artifactPaths)
+      ? artifactPaths
+      : [artifactPaths];
+    const allFindings: Finding[] = [];
 
-		// 2. For each file: read content and scan
-		for (const filePath of paths) {
-			const content = yield* fs.readFileString(filePath);
-			const fileFindings = scanBundleContent(content, BUNDLE_RULES, filePath);
-			allFindings.push(...fileFindings);
-		}
+    // 2. For each file: read content and scan
+    for (const filePath of paths) {
+      const content = yield* fs.readFileString(filePath);
+      const fileFindings = scanBundleContent(content, BUNDLE_RULES, filePath);
+      allFindings.push(...fileFindings);
+    }
 
-		// 3. Build ScanReport
-		const report: ScanReport = {
-			findings: allFindings,
-			blocked: allFindings.some((f) => f.severity === "block"),
-			summary: buildSummary(allFindings),
-			scannedFiles: paths.length,
-		};
+    // 3. Build ScanReport
+    const report: ScanReport = {
+      findings: allFindings,
+      blocked: allFindings.some((f) => f.severity === "block"),
+      summary: buildSummary(allFindings),
+      scannedFiles: paths.length,
+    };
 
-		return report;
-	}).pipe(
-		Effect.catchAll((error) =>
-			Effect.fail(
-				error instanceof SecurityError
-					? error
-					: new SecurityError({
-							message:
-								"message" in error ? String(error.message) : String(error),
-							userMessage: "Bundle security scan failed",
-						}),
-			),
-		),
-	);
+    return report;
+  }).pipe(
+    Effect.catchAll((error) =>
+      Effect.fail(
+        error instanceof SecurityError
+          ? error
+          : new SecurityError({
+              message:
+                "message" in error ? String(error.message) : String(error),
+              userMessage: "Bundle security scan failed",
+            }),
+      ),
+    ),
+  );
 }

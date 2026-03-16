@@ -10,29 +10,29 @@ import type { Environment } from "../../core/environment";
  * mutable module-level state.
  */
 export interface CliConfigShape {
-	readonly prettyPrint: boolean;
-	readonly verbosity: number; // 0 = silent, 1 = basic, 2 = full
-	readonly environmentOverride: Environment | null;
+  readonly prettyPrint: boolean;
+  readonly verbosity: number; // 0 = silent, 1 = basic, 2 = full
+  readonly environmentOverride: Environment | null;
 }
 
 export class CliConfig extends Context.Tag("CliConfig")<
-	CliConfig,
-	CliConfigShape
+  CliConfig,
+  CliConfigShape
 >() {}
 
 /** Default (no flags). */
 export const defaultCliConfig: CliConfigShape = {
-	prettyPrint: false,
-	verbosity: 0,
-	environmentOverride: null,
+  prettyPrint: false,
+  verbosity: 0,
+  environmentOverride: null,
 };
 
 /** Build a layer from parsed global flags. */
 export function makeCliConfigLayer(
-	config: Partial<CliConfigShape>,
+  config: Partial<CliConfigShape>,
 ): Layer.Layer<CliConfig> {
-	return Layer.succeed(CliConfig, {
-		...defaultCliConfig,
-		...config,
-	});
+  return Layer.succeed(CliConfig, {
+    ...defaultCliConfig,
+    ...config,
+  });
 }

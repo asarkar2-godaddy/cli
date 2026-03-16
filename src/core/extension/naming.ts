@@ -12,7 +12,7 @@ import { createHash } from "node:crypto";
  * @returns Full SHA256 hash as hex string (64 characters)
  */
 export function computeHash(content: Buffer): string {
-	return createHash("sha256").update(content).digest("hex");
+  return createHash("sha256").update(content).digest("hex");
 }
 
 /**
@@ -22,7 +22,7 @@ export function computeHash(content: Buffer): string {
  * @returns First 6 characters
  */
 export function shortHash(fullHash: string): string {
-	return fullHash.slice(0, 6);
+  return fullHash.slice(0, 6);
 }
 
 /**
@@ -37,14 +37,14 @@ export function shortHash(fullHash: string): string {
  * ```
  */
 export function formatTimestamp(date: Date = new Date()): string {
-	const year = date.getUTCFullYear();
-	const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-	const day = String(date.getUTCDate()).padStart(2, "0");
-	const hours = String(date.getUTCHours()).padStart(2, "0");
-	const minutes = String(date.getUTCMinutes()).padStart(2, "0");
-	const seconds = String(date.getUTCSeconds()).padStart(2, "0");
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const hours = String(date.getUTCHours()).padStart(2, "0");
+  const minutes = String(date.getUTCMinutes()).padStart(2, "0");
+  const seconds = String(date.getUTCSeconds()).padStart(2, "0");
 
-	return `${year}${month}${day}${hours}${minutes}${seconds}`;
+  return `${year}${month}${day}${hours}${minutes}${seconds}`;
 }
 
 /**
@@ -64,21 +64,21 @@ export function formatTimestamp(date: Date = new Date()): string {
  * ```
  */
 export function sanitizeExtensionName(name: string): string {
-	// Replace unsafe chars with hyphens (includes @, !, and other special chars)
-	const unsafeCharsRegex = /[/\\:*?"<>|\s@!]/g;
-	const sanitized = name.replace(unsafeCharsRegex, "-");
+  // Replace unsafe chars with hyphens (includes @, !, and other special chars)
+  const unsafeCharsRegex = /[/\\:*?"<>|\s@!]/g;
+  const sanitized = name.replace(unsafeCharsRegex, "-");
 
-	// Lowercase
-	const lowercased = sanitized.toLowerCase();
+  // Lowercase
+  const lowercased = sanitized.toLowerCase();
 
-	// Remove leading/trailing hyphens and whitespace
-	const cleaned = lowercased.replace(/^[-\s]+|[-\s]+$/g, "");
+  // Remove leading/trailing hyphens and whitespace
+  const cleaned = lowercased.replace(/^[-\s]+|[-\s]+$/g, "");
 
-	// Truncate to 100 chars for path safety
-	const result = cleaned.slice(0, 100);
+  // Truncate to 100 chars for path safety
+  const result = cleaned.slice(0, 100);
 
-	// Guard against empty names (all special chars)
-	return result || "extension";
+  // Guard against empty names (all special chars)
+  return result || "extension";
 }
 
 /**
@@ -99,12 +99,12 @@ export function sanitizeExtensionName(name: string): string {
  * ```
  */
 export function buildArtifactName(
-	name: string,
-	version: string | undefined,
-	timestamp: string,
-	hash: string,
+  name: string,
+  version: string | undefined,
+  timestamp: string,
+  hash: string,
 ): string {
-	const sanitized = sanitizeExtensionName(name);
-	const versionStr = version || "0.0.0";
-	return `${sanitized}-${versionStr}-${timestamp}-${hash}.mjs`;
+  const sanitized = sanitizeExtensionName(name);
+  const versionStr = version || "0.0.0";
+  return `${sanitized}-${versionStr}-${timestamp}-${hash}.mjs`;
 }

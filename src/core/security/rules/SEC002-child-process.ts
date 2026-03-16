@@ -33,67 +33,67 @@ import type { Rule } from "../types.ts";
  * // Use platform APIs instead
  */
 export const SEC002: Rule = {
-	meta: {
-		id: "SEC002",
-		defaultSeverity: "block",
-		title: "No child_process usage",
-		description:
-			"Detects child_process module usage (exec, spawn, fork, execFile) that can execute system commands",
-		remediation:
-			"Remove child_process usage. Use platform APIs or request capabilities through the extension system.",
-	},
-	create: (ctx) => {
-		// NOTE: Known limitation - Direct calls to renamed imports are not reliably detected
-		// without full type resolution. Example: `import { exec as execute } from 'child_process'; execute('cmd');`
-		// Current implementation requires namespace or member access patterns (e.g., cp.exec()).
-		// Future improvement: Integrate TypeScript type checker to track renamed imports through call sites,
-		// or add interprocedural analysis to track function references.
+  meta: {
+    id: "SEC002",
+    defaultSeverity: "block",
+    title: "No child_process usage",
+    description:
+      "Detects child_process module usage (exec, spawn, fork, execFile) that can execute system commands",
+    remediation:
+      "Remove child_process usage. Use platform APIs or request capabilities through the extension system.",
+  },
+  create: (ctx) => {
+    // NOTE: Known limitation - Direct calls to renamed imports are not reliably detected
+    // without full type resolution. Example: `import { exec as execute } from 'child_process'; execute('cmd');`
+    // Current implementation requires namespace or member access patterns (e.g., cp.exec()).
+    // Future improvement: Integrate TypeScript type checker to track renamed imports through call sites,
+    // or add interprocedural analysis to track function references.
 
-		const methods = [
-			"exec",
-			"spawn",
-			"fork",
-			"execFile",
-			"execSync",
-			"spawnSync",
-			"execFileSync",
-		];
+    const methods = [
+      "exec",
+      "spawn",
+      "fork",
+      "execFile",
+      "execSync",
+      "spawnSync",
+      "execFileSync",
+    ];
 
-		return {
-			[ts.SyntaxKind.CallExpression]: (node: ts.Node) => {
-				const callExpr = node as ts.CallExpression;
+    return {
+      [ts.SyntaxKind.CallExpression]: (node: ts.Node) => {
+        const callExpr = node as ts.CallExpression;
 
-				// Check for direct method calls like exec(), spawn()
-				if (ts.isIdentifier(callExpr.expression)) {
-					const methodName = callExpr.expression.text;
-					if (
-						methods.includes(methodName) &&
-						isAliasOf(methodName, "child_process", ctx.aliasMaps)
-					) {
-						ctx.report(
-							`Blocked: child_process.${methodName}() can execute arbitrary system commands. Use platform APIs instead.`,
-							node,
-						);
-					}
-				}
+        // Check for direct method calls like exec(), spawn()
+        if (ts.isIdentifier(callExpr.expression)) {
+          const methodName = callExpr.expression.text;
+          if (
+            methods.includes(methodName) &&
+            isAliasOf(methodName, "child_process", ctx.aliasMaps)
+          ) {
+            ctx.report(
+              `Blocked: child_process.${methodName}() can execute arbitrary system commands. Use platform APIs instead.`,
+              node,
+            );
+          }
+        }
 
-				// Check for member calls like cp.exec(), childProcess.spawn()
-				for (const method of methods) {
-					if (
-						isMemberCall(node, {
-							objectIsAliasOf: "child_process",
-							method,
-							aliasMaps: ctx.aliasMaps,
-						})
-					) {
-						ctx.report(
-							`Blocked: child_process.${method}() can execute arbitrary system commands. Use platform APIs instead.`,
-							node,
-						);
-						break;
-					}
-				}
-			},
-		};
-	},
+        // Check for member calls like cp.exec(), childProcess.spawn()
+        for (const method of methods) {
+          if (
+            isMemberCall(node, {
+              objectIsAliasOf: "child_process",
+              method,
+              aliasMaps: ctx.aliasMaps,
+            })
+          ) {
+            ctx.report(
+              `Blocked: child_process.${method}() can execute arbitrary system commands. Use platform APIs instead.`,
+              node,
+            );
+            break;
+          }
+        }
+      },
+    };
+  },
 };

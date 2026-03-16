@@ -10,25 +10,25 @@ import type { BundleRule } from "../../types.ts";
  * **Source Rule**: SEC006
  */
 export const SEC106_MODULE_PATCH: BundleRule = {
-	id: "SEC106",
-	severity: "block",
-	title: "Module monkey-patching in bundle",
-	description:
-		"Bundled code modifies module system internals which can hijack dependencies",
-	sourceRuleId: "SEC006",
-	signalPatterns: [
-		/require\s*\(\s*['"]module['"]\s*\)/g,
-		/from\s*['"]module['"]/g,
-		/require_module\s*\(/g,
-	],
-	patterns: [
-		/Module\._load\s*=/g,
-		/Module\._resolveFilename\s*=/g,
-		/Module\._extensions\[/g,
-		/require\.cache\s*\[/g,
-		/delete\s+require\.cache/g,
-		// Bracket notation
-		/Module\[['"]_load['"]]\s*=/g,
-		/Module\[['"]_resolveFilename['"]]\s*=/g,
-	],
+  id: "SEC106",
+  severity: "block",
+  title: "Module monkey-patching in bundle",
+  description:
+    "Bundled code modifies module system internals which can hijack dependencies",
+  sourceRuleId: "SEC006",
+  signalPatterns: [
+    /require\s*\(\s*['"]module['"]\s*\)/g,
+    /from\s*['"]module['"]/g,
+    /require_module\s*\(/g,
+  ],
+  patterns: [
+    /Module\._load\s*=/g,
+    /Module\._resolveFilename\s*=/g,
+    /Module\._extensions\[/g,
+    /require\.cache\s*\[/g,
+    /delete\s+require\.cache/g,
+    // Bracket notation
+    /Module\[['"]_load['"]]\s*=/g,
+    /Module\[['"]_resolveFilename['"]]\s*=/g,
+  ],
 };

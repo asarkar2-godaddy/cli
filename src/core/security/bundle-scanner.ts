@@ -22,22 +22,22 @@ import type { BundleRule, Finding } from "./types.ts";
  * ```
  */
 export function calculateLineNumber(
-	content: string,
-	charIndex: number,
+  content: string,
+  charIndex: number,
 ): number {
-	let lineNumber = 1;
+  let lineNumber = 1;
 
-	for (let i = 0; i < charIndex && i < content.length; i++) {
-		if (content[i] === "\n") {
-			lineNumber++;
-		} else if (content[i] === "\r" && content[i + 1] === "\n") {
-			// CRLF: count as one line break and skip the \n
-			lineNumber++;
-			i++; // Skip the \n in \r\n to avoid double-counting
-		}
-	}
+  for (let i = 0; i < charIndex && i < content.length; i++) {
+    if (content[i] === "\n") {
+      lineNumber++;
+    } else if (content[i] === "\r" && content[i + 1] === "\n") {
+      // CRLF: count as one line break and skip the \n
+      lineNumber++;
+      i++; // Skip the \n in \r\n to avoid double-counting
+    }
+  }
 
-	return lineNumber;
+  return lineNumber;
 }
 
 /**
@@ -55,30 +55,30 @@ export function calculateLineNumber(
  * ```
  */
 export function extractSnippet(content: string, matchIndex: number): string {
-	const contextChars = 25;
-	const start = Math.max(0, matchIndex - contextChars);
-	const end = Math.min(content.length, matchIndex + contextChars);
+  const contextChars = 25;
+  const start = Math.max(0, matchIndex - contextChars);
+  const end = Math.min(content.length, matchIndex + contextChars);
 
-	let snippet = content.slice(start, end);
-	let matchPositionInSnippet = matchIndex - start;
+  let snippet = content.slice(start, end);
+  let matchPositionInSnippet = matchIndex - start;
 
-	// Trim at newline boundaries to avoid showing multiple lines
-	const firstNewline = snippet.indexOf("\n");
+  // Trim at newline boundaries to avoid showing multiple lines
+  const firstNewline = snippet.indexOf("\n");
 
-	if (firstNewline !== -1 && firstNewline < matchPositionInSnippet) {
-		// If there's a newline before our match, start after it
-		snippet = snippet.slice(firstNewline + 1);
-		matchPositionInSnippet -= firstNewline + 1;
-	}
+  if (firstNewline !== -1 && firstNewline < matchPositionInSnippet) {
+    // If there's a newline before our match, start after it
+    snippet = snippet.slice(firstNewline + 1);
+    matchPositionInSnippet -= firstNewline + 1;
+  }
 
-	// Now check for trailing newline after we've adjusted the snippet
-	const lastNewline = snippet.lastIndexOf("\n");
-	if (lastNewline !== -1 && lastNewline > matchPositionInSnippet) {
-		// If there's a newline after our match, end before it
-		snippet = snippet.slice(0, lastNewline);
-	}
+  // Now check for trailing newline after we've adjusted the snippet
+  const lastNewline = snippet.lastIndexOf("\n");
+  if (lastNewline !== -1 && lastNewline > matchPositionInSnippet) {
+    // If there's a newline after our match, end before it
+    snippet = snippet.slice(0, lastNewline);
+  }
 
-	return snippet.trim();
+  return snippet.trim();
 }
 
 /**
@@ -102,62 +102,62 @@ export function extractSnippet(content: string, matchIndex: number): string {
  * ```
  */
 export function scanBundleContent(
-	content: string,
-	rules: BundleRule[],
-	filePath: string,
+  content: string,
+  rules: BundleRule[],
+  filePath: string,
 ): Finding[] {
-	const findings: Finding[] = [];
+  const findings: Finding[] = [];
 
-	for (const rule of rules) {
-		// Determine which patterns to scan based on signal patterns
-		let patternsToScan: RegExp[] = rule.patterns;
+  for (const rule of rules) {
+    // Determine which patterns to scan based on signal patterns
+    let patternsToScan: RegExp[] = rule.patterns;
 
-		if (rule.signalPatterns && rule.signalPatterns.length > 0) {
-			// Check if any signal patterns match
-			const hasSignal = rule.signalPatterns.some((signalPattern) => {
-				// Create new RegExp to avoid stateful .test() with 'g' flag
-				const testPattern = new RegExp(
-					signalPattern.source,
-					signalPattern.flags,
-				);
-				return testPattern.test(content);
-			});
+    if (rule.signalPatterns && rule.signalPatterns.length > 0) {
+      // Check if any signal patterns match
+      const hasSignal = rule.signalPatterns.some((signalPattern) => {
+        // Create new RegExp to avoid stateful .test() with 'g' flag
+        const testPattern = new RegExp(
+          signalPattern.source,
+          signalPattern.flags,
+        );
+        return testPattern.test(content);
+      });
 
-			if (!hasSignal) {
-				// No signals found, skip this rule entirely
-				continue;
-			}
+      if (!hasSignal) {
+        // No signals found, skip this rule entirely
+        continue;
+      }
 
-			// Signals found - scan both signal patterns AND main patterns
-			patternsToScan = [...rule.signalPatterns, ...rule.patterns];
-		}
+      // Signals found - scan both signal patterns AND main patterns
+      patternsToScan = [...rule.signalPatterns, ...rule.patterns];
+    }
 
-		// Scan with all applicable patterns
-		for (const pattern of patternsToScan) {
-			// Use matchAll for global matching - requires 'g' flag
-			const matches = content.matchAll(pattern);
+    // Scan with all applicable patterns
+    for (const pattern of patternsToScan) {
+      // Use matchAll for global matching - requires 'g' flag
+      const matches = content.matchAll(pattern);
 
-			for (const match of matches) {
-				if (match.index === undefined) continue;
+      for (const match of matches) {
+        if (match.index === undefined) continue;
 
-				const line = calculateLineNumber(content, match.index);
-				const snippet = extractSnippet(content, match.index);
+        const line = calculateLineNumber(content, match.index);
+        const snippet = extractSnippet(content, match.index);
 
-				findings.push({
-					ruleId: rule.id,
-					severity: rule.severity,
-					message: rule.description,
-					file: filePath,
-					line,
-					col: 0, // Column not calculated for bundle scanning
-					snippet,
-				});
-			}
-		}
-	}
+        findings.push({
+          ruleId: rule.id,
+          severity: rule.severity,
+          message: rule.description,
+          file: filePath,
+          line,
+          col: 0, // Column not calculated for bundle scanning
+          snippet,
+        });
+      }
+    }
+  }
 
-	// Sort by line number
-	findings.sort((a, b) => a.line - b.line);
+  // Sort by line number
+  findings.sort((a, b) => a.line - b.line);
 
-	return findings;
+  return findings;
 }

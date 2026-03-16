@@ -4,7 +4,7 @@ import { authHandlers } from "./handlers/auth-handlers";
 import { webhookHandlers } from "./handlers/webhook-handlers";
 
 export const server = setupServer(
-	...authHandlers,
-	...applicationHandlers,
-	...webhookHandlers,
+  ...authHandlers,
+  ...applicationHandlers,
+  ...webhookHandlers,
 );
