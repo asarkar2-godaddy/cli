@@ -35,6 +35,8 @@ const VALID_METHODS: readonly HttpMethod[] = [
   "DELETE",
 ];
 
+const MAX_GRAPHQL_OPERATION_PREVIEW = 20;
+
 // ---------------------------------------------------------------------------
 // next_actions helpers
 // ---------------------------------------------------------------------------
@@ -320,6 +322,44 @@ function buildCallEndpoint(
   );
 }
 
+function summarizeGraphqlSchema(graphql: CatalogEndpoint["graphql"]) {
+  if (!graphql) return undefined;
+
+  const queryCount = graphql.operations.filter(
+    (operation) => operation.kind === "query",
+  ).length;
+  const mutationCount = graphql.operations.length - queryCount;
+
+  const operationSummaries = graphql.operations.map((operation) => ({
+    name: operation.name,
+    kind: operation.kind,
+    returnType: operation.returnType,
+    deprecated: operation.deprecated,
+    deprecationReason: operation.deprecationReason,
+    args: operation.args.map((arg) => ({
+      name: arg.name,
+      type: arg.type,
+      required: arg.required,
+      defaultValue: arg.defaultValue,
+    })),
+  }));
+
+  const shownOperations = operationSummaries.slice(
+    0,
+    MAX_GRAPHQL_OPERATION_PREVIEW,
+  );
+
+  return {
+    schemaRef: graphql.schemaRef,
+    operationCount: graphql.operationCount,
+    queryCount,
+    mutationCount,
+    operations: shownOperations,
+    operationsShown: shownOperations.length,
+    operationsTruncated: operationSummaries.length > shownOperations.length,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Subcommand: api list
 // ---------------------------------------------------------------------------
@@ -357,6 +397,7 @@ const apiList = Command.make(
           path: e.path,
           summary: e.summary,
           scopes: e.scopes,
+          graphql_operations: e.graphql?.operationCount,
         }));
 
         const truncated = truncateList(
@@ -521,6 +562,7 @@ const apiDescribe = Command.make(
           requestBody: ep.requestBody,
           responses: ep.responses,
           scopes: ep.scopes,
+          graphql: summarizeGraphqlSchema(ep.graphql),
         },
         `api-describe-${ep.operationId}`,
       );
@@ -568,6 +610,7 @@ const apiSearch = Command.make(
         summary: r.endpoint.summary,
         domain: r.domain.name,
         scopes: r.endpoint.scopes,
+        graphql_operations: r.endpoint.graphql?.operationCount,
       }));
 
       const truncated = truncateList(items, `api-search-${query}`);
@@ -837,6 +880,8 @@ const apiCall = Command.make(
                   path: catalogMatch.endpoint.path,
                   method: catalogMatch.endpoint.method,
                   scopes: catalogMatch.endpoint.scopes,
+                  graphql_operations:
+                    catalogMatch.endpoint.graphql?.operationCount,
                 },
           scopes_requested:
             requiredScopes.length > 0 ? requiredScopes : undefined,

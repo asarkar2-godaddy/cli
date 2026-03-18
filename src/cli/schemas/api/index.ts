@@ -41,6 +41,30 @@ export interface CatalogResponse {
   schema?: Record<string, unknown>;
 }
 
+export interface CatalogGraphqlArgument {
+  name: string;
+  type: string;
+  required: boolean;
+  description?: string;
+  defaultValue?: string;
+}
+
+export interface CatalogGraphqlOperation {
+  name: string;
+  kind: "query" | "mutation";
+  returnType: string;
+  description?: string;
+  deprecated: boolean;
+  deprecationReason?: string;
+  args: CatalogGraphqlArgument[];
+}
+
+export interface CatalogGraphqlSchema {
+  schemaRef: string;
+  operationCount: number;
+  operations: CatalogGraphqlOperation[];
+}
+
 export interface CatalogEndpoint {
   operationId: string;
   method: string;
@@ -51,6 +75,7 @@ export interface CatalogEndpoint {
   requestBody?: CatalogRequestBody;
   responses: Record<string, CatalogResponse>;
   scopes: string[];
+  graphql?: CatalogGraphqlSchema;
 }
 
 export interface CatalogDomain {
@@ -198,12 +223,19 @@ export function searchEndpointsEffect(
 
     for (const domain of Object.values(domainRegistry)) {
       for (const endpoint of domain.endpoints) {
+        const graphqlSearchable = endpoint.graphql
+          ? endpoint.graphql.operations
+              .map((operation) => `${operation.kind} ${operation.name}`)
+              .join(" ")
+          : "";
+
         const searchable = [
           endpoint.operationId,
           endpoint.summary,
           endpoint.description || "",
           endpoint.path,
           endpoint.method,
+          graphqlSearchable,
         ]
           .join(" ")
           .toLowerCase();

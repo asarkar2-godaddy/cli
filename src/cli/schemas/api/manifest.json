@@ -1,5 +1,5 @@
 {
-  "generated": "2026-03-18T17:50:19.364Z",
+  "generated": "2026-03-18T18:23:09.627Z",
   "domains": {
     "bulk-operations": {
       "file": "bulk-operations.json",
@@ -13,8 +13,8 @@
     },
     "catalog-products": {
       "file": "catalog-products.json",
-      "title": "Catalog Products API",
-      "endpointCount": 18
+      "title": "Catalog GraphQL API",
+      "endpointCount": 1
     },
     "channels": {
       "file": "channels.json",

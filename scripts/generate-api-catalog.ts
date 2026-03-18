@@ -14,6 +14,8 @@
  *   GITHUB_TOKEN                GitHub token for higher API rate limits
  *   API_CATALOG_REPOS           Comma-separated repo names to include
  *                               (e.g. "commerce.catalog-products-specification,commerce.orders-specification")
+ *   API_CATALOG_REPO_REFS       Optional comma-separated repo=gitRef overrides
+ *                               (e.g. "commerce.catalog-products-specification=pull/81/head")
  *   API_CATALOG_INCLUDE_LEGACY_LOCATION
  *                               "false" to exclude location.addresses-specification
  *
@@ -30,6 +32,12 @@ import { isIP } from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  Kind,
+  type TypeNode,
+  parse as parseGraphql,
+  print as printGraphql,
+} from "graphql";
 import { parse as parseYaml } from "yaml";
 
 // ---------------------------------------------------------------------------
@@ -67,6 +75,7 @@ interface OpenApiOperation {
   requestBody?: OpenApiRequestBody | OpenApiReference;
   responses?: Record<string, OpenApiResponse | OpenApiReference>;
   security?: Array<Record<string, string[]>>;
+  "x-godaddy-graphql-schema"?: string;
 }
 
 interface OpenApiPathItem {
@@ -99,6 +108,30 @@ interface OpenApiSpec {
 // Output types — what the CLI consumes at runtime
 // ---------------------------------------------------------------------------
 
+interface CatalogGraphqlArgument {
+  name: string;
+  type: string;
+  required: boolean;
+  description?: string;
+  defaultValue?: string;
+}
+
+interface CatalogGraphqlOperation {
+  name: string;
+  kind: "query" | "mutation";
+  returnType: string;
+  description?: string;
+  deprecated: boolean;
+  deprecationReason?: string;
+  args: CatalogGraphqlArgument[];
+}
+
+interface CatalogGraphqlSchema {
+  schemaRef: string;
+  operationCount: number;
+  operations: CatalogGraphqlOperation[];
+}
+
 interface CatalogEndpoint {
   operationId: string;
   method: string;
@@ -126,6 +159,7 @@ interface CatalogEndpoint {
     }
   >;
   scopes: string[];
+  graphql?: CatalogGraphqlSchema;
 }
 
 interface CatalogDomain {
@@ -516,6 +550,34 @@ function parseRepoOverride(): string[] | null {
   return repos.length > 0 ? repos : null;
 }
 
+function parseRepoRefsOverride(): Map<string, string> {
+  const raw = process.env.API_CATALOG_REPO_REFS?.trim();
+  if (!raw) return new Map();
+
+  const refs = new Map<string, string>();
+
+  for (const entry of raw.split(",")) {
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+
+    const separatorIndex = trimmed.indexOf("=");
+    if (separatorIndex <= 0 || separatorIndex === trimmed.length - 1) {
+      console.error(
+        `WARNING: invalid API_CATALOG_REPO_REFS entry '${trimmed}' (expected repo=ref)`,
+      );
+      continue;
+    }
+
+    const repoName = trimmed.slice(0, separatorIndex).trim();
+    const ref = trimmed.slice(separatorIndex + 1).trim();
+    if (!repoName || !ref) continue;
+
+    refs.set(repoName, ref);
+  }
+
+  return refs;
+}
+
 function includeLegacyLocationRepo(): boolean {
   const raw = process.env.API_CATALOG_INCLUDE_LEGACY_LOCATION;
   if (!raw) return true;
@@ -687,7 +749,27 @@ function findLatestSpecFile(
   return null;
 }
 
-function cloneRepository(cloneUrl: string, targetDir: string): void {
+function checkoutRepositoryRef(targetDir: string, ref: string): void {
+  execFileSync(
+    "git",
+    ["-C", targetDir, "fetch", "--depth", "1", "origin", ref],
+    {
+      stdio: "pipe",
+      env: process.env,
+    },
+  );
+
+  execFileSync("git", ["-C", targetDir, "checkout", "--quiet", "FETCH_HEAD"], {
+    stdio: "pipe",
+    env: process.env,
+  });
+}
+
+function cloneRepository(
+  cloneUrl: string,
+  targetDir: string,
+  ref?: string,
+): void {
   execFileSync(
     "git",
     ["clone", "--depth", "1", "--quiet", cloneUrl, targetDir],
@@ -696,6 +778,10 @@ function cloneRepository(cloneUrl: string, targetDir: string): void {
       env: process.env,
     },
   );
+
+  if (ref) {
+    checkoutRepositoryRef(targetDir, ref);
+  }
 }
 
 async function discoverSpecSources(): Promise<DiscoveredSpecSources> {
@@ -703,6 +789,7 @@ async function discoverSpecSources(): Promise<DiscoveredSpecSources> {
   const repoMap = new Map(allRepos.map((repo) => [repo.name, repo]));
 
   const overrides = parseRepoOverride();
+  const repoRefOverrides = parseRepoRefsOverride();
 
   const selectedRepoNames = new Set<string>();
   if (overrides) {
@@ -770,11 +857,19 @@ async function discoverSpecSources(): Promise<DiscoveredSpecSources> {
 
   for (const repo of selectedRepos) {
     const repoDir = path.join(cloneRoot, repo.name);
+    const repoRef = repoRefOverrides.get(repo.name);
+
     try {
-      cloneRepository(repo.cloneUrl, repoDir);
+      cloneRepository(repo.cloneUrl, repoDir, repoRef);
+      if (repoRef) {
+        console.log(`  ${repo.name}: checked out override ref '${repoRef}'`);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(`WARNING: failed to clone ${repo.name}: ${message}`);
+      const context = repoRef ? ` @ ref '${repoRef}'` : "";
+      console.error(
+        `WARNING: failed to clone ${repo.name}${context}: ${message}`,
+      );
       continue;
     }
 
@@ -900,6 +995,113 @@ function extractScopes(security?: Array<Record<string, string[]>>): string[] {
   return [...normalizedScopes];
 }
 
+const graphqlSchemaCache = new Map<string, CatalogGraphqlSchema>();
+
+function graphqlTypeToString(typeNode: TypeNode): string {
+  switch (typeNode.kind) {
+    case Kind.NAMED_TYPE:
+      return typeNode.name.value;
+    case Kind.NON_NULL_TYPE:
+      return `${graphqlTypeToString(typeNode.type)}!`;
+    case Kind.LIST_TYPE:
+      return `[${graphqlTypeToString(typeNode.type)}]`;
+  }
+}
+
+function parseGraphqlOperations(
+  schemaSource: string,
+): CatalogGraphqlOperation[] {
+  const document = parseGraphql(schemaSource, { noLocation: true });
+  const operations: CatalogGraphqlOperation[] = [];
+
+  for (const definition of document.definitions) {
+    if (definition.kind !== Kind.OBJECT_TYPE_DEFINITION) continue;
+
+    const typeName = definition.name.value;
+    if (typeName !== "Query" && typeName !== "Mutation") continue;
+
+    const kind: CatalogGraphqlOperation["kind"] =
+      typeName === "Query" ? "query" : "mutation";
+
+    for (const field of definition.fields ?? []) {
+      const deprecatedDirective = field.directives?.find(
+        (directive) => directive.name.value === "deprecated",
+      );
+      const deprecationReasonArg = deprecatedDirective?.arguments?.find(
+        (arg) => arg.name.value === "reason",
+      );
+
+      const deprecationReason = deprecationReasonArg
+        ? deprecationReasonArg.value.kind === Kind.STRING
+          ? deprecationReasonArg.value.value
+          : printGraphql(deprecationReasonArg.value)
+        : undefined;
+
+      const args: CatalogGraphqlArgument[] = (field.arguments ?? []).map(
+        (arg) => ({
+          name: arg.name.value,
+          type: graphqlTypeToString(arg.type),
+          required:
+            arg.type.kind === Kind.NON_NULL_TYPE &&
+            arg.defaultValue === undefined,
+          description: arg.description?.value,
+          defaultValue:
+            arg.defaultValue === undefined
+              ? undefined
+              : printGraphql(arg.defaultValue),
+        }),
+      );
+
+      operations.push({
+        name: field.name.value,
+        kind,
+        returnType: graphqlTypeToString(field.type),
+        description: field.description?.value,
+        deprecated: deprecatedDirective !== undefined,
+        deprecationReason,
+        args,
+      });
+    }
+  }
+
+  return operations.sort((left, right) => {
+    if (left.kind === right.kind) {
+      return left.name.localeCompare(right.name);
+    }
+    return left.kind === "query" ? -1 : 1;
+  });
+}
+
+function loadGraphqlSchemaMetadata(
+  specFile: string,
+  schemaRef: string,
+): CatalogGraphqlSchema {
+  const specDir = path.dirname(specFile);
+  const resolvedSchemaPath = path.resolve(specDir, schemaRef);
+  const cacheKey = `${specFile}::${resolvedSchemaPath}`;
+
+  const cached = graphqlSchemaCache.get(cacheKey);
+  if (cached) return cached;
+
+  if (!fs.existsSync(resolvedSchemaPath)) {
+    throw new Error(
+      `GraphQL schema file not found for '${schemaRef}' (resolved: ${resolvedSchemaPath})`,
+    );
+  }
+
+  const schemaSource = fs.readFileSync(resolvedSchemaPath, "utf-8");
+  const operations = parseGraphqlOperations(schemaSource);
+
+  const metadata: CatalogGraphqlSchema = {
+    schemaRef,
+    operationCount: operations.length,
+    operations,
+  };
+
+  graphqlSchemaCache.set(cacheKey, metadata);
+  return metadata;
+}
+
 function resolveLocalRef(
   spec: OpenApiSpec,
   ref: string,
@@ -963,6 +1165,7 @@ function resolveParameter(
 
 function processOperation(
   spec: OpenApiSpec,
+  specFile: string,
   httpMethod: string,
   pathStr: string,
   operation: OpenApiOperation,
@@ -1021,6 +1224,12 @@ function processOperation(
     operation.operationId ||
     `${httpMethod}${pathStr.replace(/[^a-zA-Z0-9]/g, "_")}`;
 
+  let graphql: CatalogGraphqlSchema | undefined;
+  const graphqlSchemaRef = operation["x-godaddy-graphql-schema"];
+  if (typeof graphqlSchemaRef === "string" && graphqlSchemaRef.length > 0) {
+    graphql = loadGraphqlSchemaMetadata(specFile, graphqlSchemaRef);
+  }
+
   return {
     operationId,
     method: httpMethod.toUpperCase(),
@@ -1031,10 +1240,15 @@ function processOperation(
     requestBody,
     responses,
     scopes: extractScopes(operation.security),
+    graphql,
   };
 }
 
-function processSpec(spec: OpenApiSpec, domain: string): CatalogDomain {
+function processSpec(
+  spec: OpenApiSpec,
+  domain: string,
+  specFile: string,
+): CatalogDomain {
   const baseUrl = resolveBaseUrl(spec.servers);
   const endpoints: CatalogEndpoint[] = [];
 
@@ -1045,7 +1259,14 @@ function processSpec(spec: OpenApiSpec, domain: string): CatalogDomain {
       if (key === "parameters" || !HTTP_METHODS.has(key) || !value) continue;
       const operation = value as OpenApiOperation;
       endpoints.push(
-        processOperation(spec, key, pathStr, operation, pathLevelParams),
+        processOperation(
+          spec,
+          specFile,
+          key,
+          pathStr,
+          operation,
+          pathLevelParams,
+        ),
       );
     }
   }
@@ -1196,7 +1417,7 @@ async function main() {
       try {
         const raw = fs.readFileSync(source.specFile, "utf-8");
         const spec = parseOpenApiSpec(raw, source.specFile);
-        const catalog = processSpec(spec, source.domain);
+        const catalog = processSpec(spec, source.domain, source.specFile);
 
         console.log(
           `  Resolving external $refs for ${source.domain} (${source.repoName}/${source.specVersion})...`,
