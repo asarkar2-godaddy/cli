@@ -149,6 +149,27 @@ describe("CLI Smoke Tests", () => {
     );
   });
 
+  it("api describe matches templated catalog paths", () => {
+    const result = runCli([
+      "api",
+      "describe",
+      "/stores/123e4567-e89b-12d3-a456-426614174000/catalog-subgraph",
+    ]);
+    expect(result.status).toBe(0);
+
+    const payload = JSON.parse(result.stdout) as {
+      ok: boolean;
+      command: string;
+      result: { operationId: string; method: string; path: string };
+    };
+
+    expect(payload.ok).toBe(true);
+    expect(payload.command).toBe("godaddy api describe");
+    expect(payload.result.operationId).toBe("postCatalogGraphql");
+    expect(payload.result.method).toBe("POST");
+    expect(payload.result.path).toBe("/stores/{storeId}/catalog-subgraph");
+  });
+
   it("api search returns matching endpoints", () => {
     const result = runCli(["api", "search", "address"]);
     expect(result.status).toBe(0);
@@ -181,6 +202,21 @@ describe("CLI Smoke Tests", () => {
       "Make authenticated requests to the GoDaddy API",
     );
     expect(result.stdout).toContain("<endpoint>");
+  });
+
+  it("api call rejects untrusted absolute URLs", () => {
+    const result = runCli(["api", "call", "https://example.com/v1/domains"]);
+    expect(result.status).toBe(1);
+
+    const payload = JSON.parse(result.stdout) as {
+      ok: boolean;
+      error: { code: string; message: string };
+      fix: string;
+    };
+
+    expect(payload.ok).toBe(false);
+    expect(payload.error.code).toBe("VALIDATION_ERROR");
+    expect(payload.error.message).toContain("trusted GoDaddy API URL");
   });
 
   it("unknown command returns structured error envelope", () => {

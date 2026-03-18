@@ -1408,10 +1408,9 @@ async function main() {
 
     for (const source of specSources) {
       if (!fs.existsSync(source.specFile)) {
-        console.error(
-          `WARNING: spec file not found for ${source.repoName}: ${source.specFile} — skipping`,
+        throw new Error(
+          `spec file not found for ${source.repoName}: ${source.specFile}`,
         );
-        continue;
       }
 
       try {
@@ -1445,8 +1444,8 @@ async function main() {
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.error(
-          `WARNING: failed processing ${source.repoName} (${source.specVersion}): ${message}`,
+        throw new Error(
+          `failed processing ${source.repoName} (${source.specVersion}): ${message}`,
         );
       }
     }

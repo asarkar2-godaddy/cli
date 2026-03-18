@@ -172,6 +172,50 @@ export function findEndpointByOperationIdEffect(
 /**
  * Find an endpoint by HTTP method + path across all domains.
  */
+function normalizeComparablePath(apiPath: string): string {
+  const pathOnly = apiPath.split(/[?#]/, 1)[0] || "/";
+  const withLeadingSlash = pathOnly.startsWith("/") ? pathOnly : `/${pathOnly}`;
+
+  if (withLeadingSlash.length > 1 && withLeadingSlash.endsWith("/")) {
+    return withLeadingSlash.slice(0, -1);
+  }
+
+  return withLeadingSlash;
+}
+
+function pathTemplateMatches(
+  templatePath: string,
+  actualPath: string,
+): boolean {
+  const normalizedTemplate = normalizeComparablePath(templatePath);
+  const normalizedActual = normalizeComparablePath(actualPath);
+
+  if (normalizedTemplate === normalizedActual) return true;
+
+  const templateSegments = normalizedTemplate.split("/").filter(Boolean);
+  const actualSegments = normalizedActual.split("/").filter(Boolean);
+
+  if (templateSegments.length !== actualSegments.length) {
+    return false;
+  }
+
+  for (let index = 0; index < templateSegments.length; index += 1) {
+    const templateSegment = templateSegments[index];
+    const actualSegment = actualSegments[index];
+
+    if (templateSegment.startsWith("{") && templateSegment.endsWith("}")) {
+      if (actualSegment.length === 0) return false;
+      continue;
+    }
+
+    if (templateSegment !== actualSegment) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export function findEndpointByPathEffect(
   method: string,
   apiPath: string,
@@ -182,7 +226,7 @@ export function findEndpointByPathEffect(
     const upperMethod = method.toUpperCase();
     for (const domain of Object.values(domainRegistry)) {
       const endpoint = domain.endpoints.find(
-        (e) => e.method === upperMethod && e.path === apiPath,
+        (e) => e.method === upperMethod && pathTemplateMatches(e.path, apiPath),
       );
       if (endpoint) return Option.some({ domain, endpoint });
     }

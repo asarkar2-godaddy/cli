@@ -1,278 +1,269 @@
 {
-	"name": "fulfillments",
-	"title": "Fulfillment Service",
-	"description": "The Fulfillment API is intended to be a key component of the Sell Everywhere Engine, our next-generation ecommerce system that will consolidate functionality between Online Store, Sellbrite, Woo, and Poynt.",
-	"version": "1.1.0",
-	"baseUrl": "https://fulfillment.api.commerce.godaddy.com/v1/commerce",
-	"endpoints": [
-		{
-			"operationId": "commerce.fulfillments.create",
-			"method": "POST",
-			"path": "/stores/{storeId}/fulfillments",
-			"summary": "Create a new fulfillment",
-			"description": "Create a new fulfillment",
-			"parameters": [
-				{
-					"name": "storeId",
-					"in": "path",
-					"required": true,
-					"description": "Store ID",
-					"schema": {
-						"$ref": "./models/FulfillmentPlan.yaml#/properties/storeId"
-					}
-				}
-			],
-			"requestBody": {
-				"required": true,
-				"description": "The fulfillment object to create",
-				"contentType": "application/json",
-				"schema": {
-					"$ref": "./models/FulfillmentConditionals.yaml"
-				}
-			},
-			"responses": {
-				"200": {
-					"description": "Successfully created the fulfillment",
-					"schema": {
-						"type": "object",
-						"required": [
-							"status",
-							"fulfillment"
-						],
-						"properties": {
-							"status": {
-								"type": "string",
-								"description": "Status of the response",
-								"example": "success"
-							},
-							"fulfillment": {
-								"$ref": "#/components/schemas/Fulfillment"
-							}
-						}
-					}
-				},
-				"401": {
-					"description": "See #/components/responses/401"
-				},
-				"403": {
-					"description": "See #/components/responses/403"
-				},
-				"404": {
-					"description": "See #/components/responses/404"
-				},
-				"409": {
-					"description": "See #/components/responses/409"
-				},
-				"422": {
-					"description": "See #/components/responses/422"
-				},
-				"500": {
-					"description": "See #/components/responses/500"
-				},
-				"502": {
-					"description": "See #/components/responses/502"
-				},
-				"503": {
-					"description": "See #/components/responses/503"
-				},
-				"504": {
-					"description": "See #/components/responses/504"
-				}
-			},
-			"scopes": []
-		},
-		{
-			"operationId": "commerce.fulfillments.patch",
-			"method": "PATCH",
-			"path": "/stores/{storeId}/fulfillments/{fulfillmentId}",
-			"summary": "Patch a fulfillment",
-			"description": "Modify an existing fulfillment using the fulfillment ID.",
-			"parameters": [
-				{
-					"name": "storeId",
-					"in": "path",
-					"required": true,
-					"description": "Store ID",
-					"schema": {
-						"$ref": "./models/FulfillmentPlan.yaml#/properties/storeId"
-					}
-				},
-				{
-					"name": "fulfillmentId",
-					"in": "path",
-					"required": true,
-					"description": "The ID of the fulfillment",
-					"schema": {
-						"$ref": "./models/Fulfillment.yaml#/properties/id"
-					}
-				}
-			],
-			"requestBody": {
-				"required": true,
-				"description": "The fulfillment object to patch",
-				"contentType": "application/json",
-				"schema": {
-					"$ref": "./models/Fulfillment.yaml"
-				}
-			},
-			"responses": {
-				"200": {
-					"description": "Successfully patched the fulfillment",
-					"schema": {
-						"type": "object",
-						"required": [
-							"status",
-							"fulfillment"
-						],
-						"properties": {
-							"status": {
-								"type": "string",
-								"description": "Status of the response",
-								"example": "success"
-							},
-							"fulfillment": {
-								"$ref": "./models/Fulfillment.yaml"
-							}
-						}
-					}
-				},
-				"401": {
-					"description": "See #/components/responses/401"
-				},
-				"403": {
-					"description": "See #/components/responses/403"
-				},
-				"404": {
-					"description": "See #/components/responses/404"
-				},
-				"409": {
-					"description": "See #/components/responses/409"
-				},
-				"422": {
-					"description": "See #/components/responses/422"
-				},
-				"500": {
-					"description": "See #/components/responses/500"
-				},
-				"502": {
-					"description": "See #/components/responses/502"
-				},
-				"503": {
-					"description": "See #/components/responses/503"
-				},
-				"504": {
-					"description": "See #/components/responses/504"
-				}
-			},
-			"scopes": []
-		},
-		{
-			"operationId": "commerce.fulfillmentPlans.query",
-			"method": "GET",
-			"path": "/stores/{storeId}/fulfillmentPlans",
-			"summary": "Retrieve and filter fulfillments",
-			"description": "Retrieve all fulfillment plans filtered by the criteria provided",
-			"parameters": [
-				{
-					"name": "storeId",
-					"in": "path",
-					"required": true,
-					"description": "Store ID",
-					"schema": {
-						"$ref": "./models/FulfillmentPlan.yaml#/properties/storeId"
-					}
-				},
-				{
-					"name": "orderId",
-					"in": "query",
-					"required": true,
-					"description": "Order ID",
-					"schema": {
-						"$ref": "./models/FulfillmentPlan.yaml#/properties/orderId"
-					}
-				},
-				{
-					"name": "includeFulfillments",
-					"in": "query",
-					"required": false,
-					"description": "Determines if the response contains fulfillments associated with the fulfillment plans",
-					"schema": {
-						"type": "boolean",
-						"description": "Determines if fulfillments should be returned alongs fulfillment plans",
-						"default": true
-					}
-				}
-			],
-			"responses": {
-				"200": {
-					"description": "Successfully listed fulfillment plans",
-					"schema": {
-						"type": "object",
-						"required": [
-							"status",
-							"fulfillmentPlans"
-						],
-						"properties": {
-							"status": {
-								"type": "string",
-								"description": "Status of the response",
-								"example": "success"
-							},
-							"fulfillmentPlans": {
-								"type": "array",
-								"description": "List of fulfillment plans",
-								"items": {
-									"allOf": [
-										{
-											"$ref": "#/components/schemas/FulfillmentPlan"
-										},
-										{
-											"type": "object",
-											"properties": {
-												"fulfillments": {
-													"type": "array",
-													"description": "List of fulfillments associated to the fulfillment plan",
-													"items": {
-														"$ref": "#/components/schemas/Fulfillment"
-													}
-												}
-											}
-										}
-									]
-								}
-							}
-						}
-					}
-				},
-				"401": {
-					"description": "See #/components/responses/401"
-				},
-				"403": {
-					"description": "See #/components/responses/403"
-				},
-				"404": {
-					"description": "See #/components/responses/404"
-				},
-				"409": {
-					"description": "See #/components/responses/409"
-				},
-				"422": {
-					"description": "See #/components/responses/422"
-				},
-				"500": {
-					"description": "See #/components/responses/500"
-				},
-				"502": {
-					"description": "See #/components/responses/502"
-				},
-				"503": {
-					"description": "See #/components/responses/503"
-				},
-				"504": {
-					"description": "See #/components/responses/504"
-				}
-			},
-			"scopes": []
-		}
-	]
+  "name": "fulfillments",
+  "title": "Fulfillment Service",
+  "description": "The Fulfillment API is intended to be a key component of the Sell Everywhere Engine, our next-generation ecommerce system that will consolidate functionality between Online Store, Sellbrite, Woo, and Poynt.",
+  "version": "1.1.0",
+  "baseUrl": "https://fulfillment.api.commerce.godaddy.com/v1/commerce",
+  "endpoints": [
+    {
+      "operationId": "commerce.fulfillments.create",
+      "method": "POST",
+      "path": "/stores/{storeId}/fulfillments",
+      "summary": "Create a new fulfillment",
+      "description": "Create a new fulfillment",
+      "parameters": [
+        {
+          "name": "storeId",
+          "in": "path",
+          "required": true,
+          "description": "Store ID",
+          "schema": {
+            "$ref": "./models/FulfillmentPlan.yaml#/properties/storeId"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "description": "The fulfillment object to create",
+        "contentType": "application/json",
+        "schema": {
+          "$ref": "./models/FulfillmentConditionals.yaml"
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Successfully created the fulfillment",
+          "schema": {
+            "type": "object",
+            "required": ["status", "fulfillment"],
+            "properties": {
+              "status": {
+                "type": "string",
+                "description": "Status of the response",
+                "example": "success"
+              },
+              "fulfillment": {
+                "$ref": "#/components/schemas/Fulfillment"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "See #/components/responses/401"
+        },
+        "403": {
+          "description": "See #/components/responses/403"
+        },
+        "404": {
+          "description": "See #/components/responses/404"
+        },
+        "409": {
+          "description": "See #/components/responses/409"
+        },
+        "422": {
+          "description": "See #/components/responses/422"
+        },
+        "500": {
+          "description": "See #/components/responses/500"
+        },
+        "502": {
+          "description": "See #/components/responses/502"
+        },
+        "503": {
+          "description": "See #/components/responses/503"
+        },
+        "504": {
+          "description": "See #/components/responses/504"
+        }
+      },
+      "scopes": []
+    },
+    {
+      "operationId": "commerce.fulfillments.patch",
+      "method": "PATCH",
+      "path": "/stores/{storeId}/fulfillments/{fulfillmentId}",
+      "summary": "Patch a fulfillment",
+      "description": "Modify an existing fulfillment using the fulfillment ID.",
+      "parameters": [
+        {
+          "name": "storeId",
+          "in": "path",
+          "required": true,
+          "description": "Store ID",
+          "schema": {
+            "$ref": "./models/FulfillmentPlan.yaml#/properties/storeId"
+          }
+        },
+        {
+          "name": "fulfillmentId",
+          "in": "path",
+          "required": true,
+          "description": "The ID of the fulfillment",
+          "schema": {
+            "$ref": "./models/Fulfillment.yaml#/properties/id"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "description": "The fulfillment object to patch",
+        "contentType": "application/json",
+        "schema": {
+          "$ref": "./models/Fulfillment.yaml"
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Successfully patched the fulfillment",
+          "schema": {
+            "type": "object",
+            "required": ["status", "fulfillment"],
+            "properties": {
+              "status": {
+                "type": "string",
+                "description": "Status of the response",
+                "example": "success"
+              },
+              "fulfillment": {
+                "$ref": "./models/Fulfillment.yaml"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "See #/components/responses/401"
+        },
+        "403": {
+          "description": "See #/components/responses/403"
+        },
+        "404": {
+          "description": "See #/components/responses/404"
+        },
+        "409": {
+          "description": "See #/components/responses/409"
+        },
+        "422": {
+          "description": "See #/components/responses/422"
+        },
+        "500": {
+          "description": "See #/components/responses/500"
+        },
+        "502": {
+          "description": "See #/components/responses/502"
+        },
+        "503": {
+          "description": "See #/components/responses/503"
+        },
+        "504": {
+          "description": "See #/components/responses/504"
+        }
+      },
+      "scopes": []
+    },
+    {
+      "operationId": "commerce.fulfillmentPlans.query",
+      "method": "GET",
+      "path": "/stores/{storeId}/fulfillmentPlans",
+      "summary": "Retrieve and filter fulfillments",
+      "description": "Retrieve all fulfillment plans filtered by the criteria provided",
+      "parameters": [
+        {
+          "name": "storeId",
+          "in": "path",
+          "required": true,
+          "description": "Store ID",
+          "schema": {
+            "$ref": "./models/FulfillmentPlan.yaml#/properties/storeId"
+          }
+        },
+        {
+          "name": "orderId",
+          "in": "query",
+          "required": true,
+          "description": "Order ID",
+          "schema": {
+            "$ref": "./models/FulfillmentPlan.yaml#/properties/orderId"
+          }
+        },
+        {
+          "name": "includeFulfillments",
+          "in": "query",
+          "required": false,
+          "description": "Determines if the response contains fulfillments associated with the fulfillment plans",
+          "schema": {
+            "type": "boolean",
+            "description": "Determines if fulfillments should be returned alongs fulfillment plans",
+            "default": true
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Successfully listed fulfillment plans",
+          "schema": {
+            "type": "object",
+            "required": ["status", "fulfillmentPlans"],
+            "properties": {
+              "status": {
+                "type": "string",
+                "description": "Status of the response",
+                "example": "success"
+              },
+              "fulfillmentPlans": {
+                "type": "array",
+                "description": "List of fulfillment plans",
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/FulfillmentPlan"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "fulfillments": {
+                          "type": "array",
+                          "description": "List of fulfillments associated to the fulfillment plan",
+                          "items": {
+                            "$ref": "#/components/schemas/Fulfillment"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "See #/components/responses/401"
+        },
+        "403": {
+          "description": "See #/components/responses/403"
+        },
+        "404": {
+          "description": "See #/components/responses/404"
+        },
+        "409": {
+          "description": "See #/components/responses/409"
+        },
+        "422": {
+          "description": "See #/components/responses/422"
+        },
+        "500": {
+          "description": "See #/components/responses/500"
+        },
+        "502": {
+          "description": "See #/components/responses/502"
+        },
+        "503": {
+          "description": "See #/components/responses/503"
+        },
+        "504": {
+          "description": "See #/components/responses/504"
+        }
+      },
+      "scopes": []
+    }
+  ]
 }

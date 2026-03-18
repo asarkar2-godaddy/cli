@@ -290,26 +290,162 @@ function isHttpMethod(value: string): value is HttpMethod {
   return VALID_METHODS.includes(value as HttpMethod);
 }
 
-function stripApiHost(endpoint: string): string {
-  return endpoint.replace(/^https:\/\/api\.godaddy\.com/i, "");
+const ABSOLUTE_HTTP_URL_PATTERN = /^https?:\/\//i;
+const TRUSTED_API_HOSTS = new Set(["api.godaddy.com", "api.ote-godaddy.com"]);
+
+interface ParsedEndpointInput {
+  callEndpoint: string;
+  catalogPathCandidates: string[];
+  absoluteUrl: URL | null;
+  isTrustedAbsolute: boolean;
+  invalidAbsoluteUrl: boolean;
 }
 
-function normalizeRelativeEndpoint(endpoint: string): string {
-  const stripped = stripApiHost(endpoint.trim());
-  if (stripped.length === 0) return "/";
-  return stripped.startsWith("/") ? stripped : `/${stripped}`;
+function parseAbsoluteHttpUrl(value: string): URL | null {
+  try {
+    const parsed = new URL(value.trim());
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 
-function catalogPathCandidates(endpoint: string): string[] {
-  const relative = normalizeRelativeEndpoint(endpoint);
-  const candidates = [relative];
+function normalizeCatalogPath(pathValue: string): string {
+  const pathOnly = pathValue.split(/[?#]/, 1)[0] || "/";
+  const withLeadingSlash = pathOnly.startsWith("/") ? pathOnly : `/${pathOnly}`;
 
-  const commercePrefixMatch = relative.match(/^\/v\d+\/commerce(\/.*)$/i);
+  if (withLeadingSlash.length > 1 && withLeadingSlash.endsWith("/")) {
+    return withLeadingSlash.slice(0, -1);
+  }
+
+  return withLeadingSlash;
+}
+
+function buildCatalogPathCandidates(pathValue: string): string[] {
+  const normalizedPath = normalizeCatalogPath(pathValue);
+  const candidates = [normalizedPath];
+
+  const commercePrefixMatch = normalizedPath.match(/^\/v\d+\/commerce(\/.*)$/i);
   if (commercePrefixMatch?.[1]) {
     candidates.push(commercePrefixMatch[1]);
   }
 
   return [...new Set(candidates)];
+}
+
+function parseEndpointInput(endpoint: string): ParsedEndpointInput {
+  const trimmed = endpoint.trim();
+
+  if (trimmed.length === 0) {
+    return {
+      callEndpoint: "/",
+      catalogPathCandidates: ["/"],
+      absoluteUrl: null,
+      isTrustedAbsolute: false,
+      invalidAbsoluteUrl: false,
+    };
+  }
+
+  if (ABSOLUTE_HTTP_URL_PATTERN.test(trimmed)) {
+    const absoluteUrl = parseAbsoluteHttpUrl(trimmed);
+    if (!absoluteUrl) {
+      return {
+        callEndpoint: trimmed,
+        catalogPathCandidates: buildCatalogPathCandidates(trimmed),
+        absoluteUrl: null,
+        isTrustedAbsolute: false,
+        invalidAbsoluteUrl: true,
+      };
+    }
+
+    const isTrustedAbsolute =
+      absoluteUrl.protocol === "https:" &&
+      TRUSTED_API_HOSTS.has(absoluteUrl.hostname.toLowerCase());
+
+    const relativePath = `${absoluteUrl.pathname || "/"}${absoluteUrl.search}${absoluteUrl.hash}`;
+
+    return {
+      callEndpoint: isTrustedAbsolute ? relativePath : trimmed,
+      catalogPathCandidates: buildCatalogPathCandidates(
+        absoluteUrl.pathname || "/",
+      ),
+      absoluteUrl,
+      isTrustedAbsolute,
+      invalidAbsoluteUrl: false,
+    };
+  }
+
+  const callEndpoint = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  return {
+    callEndpoint,
+    catalogPathCandidates: buildCatalogPathCandidates(callEndpoint),
+    absoluteUrl: null,
+    isTrustedAbsolute: false,
+    invalidAbsoluteUrl: false,
+  };
+}
+
+function resolveCatalogEndpointEffect(
+  method: HttpMethod,
+  methodProvided: boolean,
+  pathCandidates: string[],
+  fallbackEndpoint: string,
+): Effect.Effect<{
+  method: HttpMethod;
+  endpoint: string;
+  catalogMatch?: { domain: CatalogDomain; endpoint: CatalogEndpoint };
+}> {
+  return Effect.gen(function* () {
+    let catalogMatch:
+      | { domain: CatalogDomain; endpoint: CatalogEndpoint }
+      | undefined;
+    let matchedPath: string | undefined;
+
+    if (methodProvided) {
+      for (const candidatePath of pathCandidates) {
+        const byPath = yield* findEndpointByPathEffect(method, candidatePath);
+        if (Option.isSome(byPath)) {
+          catalogMatch = byPath.value;
+          matchedPath = candidatePath;
+          break;
+        }
+      }
+    } else {
+      for (const candidatePath of pathCandidates) {
+        const byAnyMethod = yield* findEndpointByAnyMethodEffect(candidatePath);
+        if (Option.isSome(byAnyMethod)) {
+          catalogMatch = byAnyMethod.value;
+          matchedPath = candidatePath;
+          break;
+        }
+      }
+    }
+
+    let resolvedMethod = method;
+    let resolvedEndpoint = fallbackEndpoint;
+
+    if (catalogMatch) {
+      if (matchedPath === catalogMatch.endpoint.path) {
+        resolvedEndpoint = buildCallEndpoint(
+          catalogMatch.domain,
+          catalogMatch.endpoint,
+        );
+      }
+
+      if (!methodProvided && isHttpMethod(catalogMatch.endpoint.method)) {
+        resolvedMethod = catalogMatch.endpoint.method;
+      }
+    }
+
+    return {
+      method: resolvedMethod,
+      endpoint: resolvedEndpoint,
+      catalogMatch,
+    };
+  });
 }
 
 function buildCallEndpoint(
@@ -481,7 +617,8 @@ const apiDescribe = Command.make(
     Effect.gen(function* () {
       const writer = yield* EnvelopeWriter;
 
-      const pathCandidates = catalogPathCandidates(endpoint);
+      const { catalogPathCandidates: pathCandidates } =
+        parseEndpointInput(endpoint);
 
       // Try exact path lookup first
       let result: Option.Option<{
@@ -700,50 +837,43 @@ const apiCall = Command.make(
       }
 
       const methodProvided = Option.isSome(config.method);
-      let method: HttpMethod = methodInput;
-      let resolvedEndpoint = config.endpoint;
+      const parsedEndpoint = parseEndpointInput(config.endpoint);
 
-      let catalogMatch:
-        | { domain: CatalogDomain; endpoint: CatalogEndpoint }
-        | undefined;
-
-      const pathCandidates = catalogPathCandidates(config.endpoint);
-      if (methodProvided) {
-        for (const candidatePath of pathCandidates) {
-          const byPath = yield* findEndpointByPathEffect(method, candidatePath);
-          if (Option.isSome(byPath)) {
-            catalogMatch = byPath.value;
-            break;
-          }
-        }
-      } else {
-        for (const candidatePath of pathCandidates) {
-          const byAnyMethod =
-            yield* findEndpointByAnyMethodEffect(candidatePath);
-          if (Option.isSome(byAnyMethod)) {
-            catalogMatch = byAnyMethod.value;
-            break;
-          }
-        }
+      if (parsedEndpoint.invalidAbsoluteUrl) {
+        return yield* Effect.fail(
+          new ValidationError({
+            message: `Invalid endpoint URL: ${config.endpoint}`,
+            userMessage:
+              "Endpoint must be a valid URL or a relative path (for example: /v1/domains).",
+          }),
+        );
       }
 
-      if (catalogMatch) {
-        resolvedEndpoint = buildCallEndpoint(
-          catalogMatch.domain,
-          catalogMatch.endpoint,
+      if (parsedEndpoint.absoluteUrl && !parsedEndpoint.isTrustedAbsolute) {
+        return yield* Effect.fail(
+          new ValidationError({
+            message: `Untrusted endpoint host: ${parsedEndpoint.absoluteUrl.hostname}`,
+            userMessage:
+              "Use a relative endpoint path, or a trusted GoDaddy API URL on api.godaddy.com or api.ote-godaddy.com.",
+          }),
         );
+      }
 
-        if (!methodProvided && isHttpMethod(catalogMatch.endpoint.method)) {
-          method = catalogMatch.endpoint.method;
-        }
+      const resolved = yield* resolveCatalogEndpointEffect(
+        methodInput,
+        methodProvided,
+        parsedEndpoint.catalogPathCandidates,
+        parsedEndpoint.callEndpoint,
+      );
 
-        if (cliConfig.verbosity >= 1) {
-          process.stderr.write(
-            `Resolved endpoint to ${catalogMatch.endpoint.method} ${resolvedEndpoint}\n`,
-          );
-        }
-      } else {
-        resolvedEndpoint = normalizeRelativeEndpoint(config.endpoint);
+      const method = resolved.method;
+      const resolvedEndpoint = resolved.endpoint;
+      const catalogMatch = resolved.catalogMatch;
+
+      if (catalogMatch && cliConfig.verbosity >= 1) {
+        process.stderr.write(
+          `Resolved endpoint to ${catalogMatch.endpoint.method} ${resolvedEndpoint}\n`,
+        );
       }
 
       const fields = yield* parseFieldsEffect(

@@ -1,495 +1,479 @@
 {
-	"name": "businesses",
-	"title": "Commerce Business API",
-	"description": "This API is capable of creating, updating, deleting and fetching businesses based on parameters such as a businessId and attributeName.",
-	"version": "2.1.0",
-	"baseUrl": "https://api.godaddy.com/v2/commerce",
-	"endpoints": [
-		{
-			"operationId": "getBusinesses",
-			"method": "GET",
-			"path": "/businesses",
-			"summary": "Get all businesses",
-			"description": "This endpoint can be used to obtain a list of all the available bussinesses for a specific organization.",
-			"parameters": [
-				{
-					"name": "X-Request-Id",
-					"in": "header",
-					"required": false,
-					"description": "Request ID",
-					"schema": {
-						"type": "string",
-						"format": "uuid"
-					}
-				},
-				{
-					"name": "page",
-					"in": "query",
-					"required": false,
-					"schema": {
-						"type": "integer",
-						"default": 1
-					}
-				},
-				{
-					"name": "pageSize",
-					"in": "query",
-					"required": false,
-					"schema": {
-						"type": "integer",
-						"default": 10
-					}
-				},
-				{
-					"name": "totalRequired",
-					"in": "query",
-					"required": false,
-					"schema": {
-						"type": "boolean",
-						"default": false
-					}
-				},
-				{
-					"name": "includeFields",
-					"in": "query",
-					"required": false,
-					"description": "This is the list of fields that will be included in the response",
-					"schema": {
-						"type": "array",
-						"items": {
-							"type": "string"
-						}
-					}
-				},
-				{
-					"name": "If-Modified-Since",
-					"in": "header",
-					"required": false,
-					"description": "Check if the data has been modified since a given date",
-					"schema": {
-						"type": "string",
-						"format": "date-time"
-					}
-				}
-			],
-			"responses": {
-				"200": {
-					"description": "Business List",
-					"schema": {
-						"$ref": "./models/BusinessList.yaml"
-					}
-				},
-				"default": {
-					"description": "See #/components/responses/error"
-				}
-			},
-			"scopes": [
-				"commerce.business:read"
-			]
-		},
-		{
-			"operationId": "createBusiness",
-			"method": "POST",
-			"path": "/businesses",
-			"summary": "Create a new business",
-			"description": "Create a new business",
-			"parameters": [
-				{
-					"name": "X-Request-Id",
-					"in": "header",
-					"required": false,
-					"description": "Request ID",
-					"schema": {
-						"type": "string",
-						"format": "uuid"
-					}
-				}
-			],
-			"requestBody": {
-				"required": false,
-				"contentType": "application/json",
-				"schema": {
-					"$ref": "./models/Business.yaml"
-				}
-			},
-			"responses": {
-				"200": {
-					"description": "Business Created",
-					"schema": {
-						"$ref": "./models/Business.yaml"
-					}
-				},
-				"default": {
-					"description": "See #/components/responses/error"
-				}
-			},
-			"scopes": [
-				"commerce.business:create"
-			]
-		},
-		{
-			"operationId": "getBusinessById",
-			"method": "GET",
-			"path": "/businesses/{businessId}",
-			"summary": "Get a business by businessId",
-			"description": "This endpoint can be used to retrieve the information of a specific business using the Business ID.",
-			"parameters": [
-				{
-					"name": "businessId",
-					"in": "path",
-					"required": true,
-					"schema": {
-						"$ref": "./common-types/v1/uuid.json"
-					}
-				},
-				{
-					"name": "X-Request-Id",
-					"in": "header",
-					"required": false,
-					"description": "Request ID",
-					"schema": {
-						"type": "string",
-						"format": "uuid"
-					}
-				},
-				{
-					"name": "includeFields",
-					"in": "query",
-					"required": false,
-					"description": "This is the list of fields that will be included in the response",
-					"schema": {
-						"type": "array",
-						"items": {
-							"type": "string"
-						}
-					}
-				},
-				{
-					"name": "storeDeviceId",
-					"in": "query",
-					"required": false,
-					"description": "Store Device ID",
-					"schema": {
-						"type": "string"
-					}
-				},
-				{
-					"name": "ignoreDeactivatedDevices",
-					"in": "query",
-					"required": false,
-					"description": "Ignore any deactivated devices when applying this filter",
-					"schema": {
-						"type": "boolean",
-						"default": true
-					}
-				}
-			],
-			"responses": {
-				"200": {
-					"description": "Business Found",
-					"schema": {
-						"$ref": "./models/Business.yaml"
-					}
-				},
-				"default": {
-					"description": "See #/components/responses/error"
-				}
-			},
-			"scopes": [
-				"commerce.business:read"
-			]
-		},
-		{
-			"operationId": "patchBusiness",
-			"method": "PATCH",
-			"path": "/businesses/{businessId}",
-			"summary": "Update business information",
-			"description": "Update business information details using the Business ID.",
-			"parameters": [
-				{
-					"name": "businessId",
-					"in": "path",
-					"required": true,
-					"schema": {
-						"$ref": "./common-types/v1/uuid.json"
-					}
-				},
-				{
-					"name": "X-Request-Id",
-					"in": "header",
-					"required": false,
-					"description": "Request ID",
-					"schema": {
-						"type": "string",
-						"format": "uuid"
-					}
-				},
-				{
-					"name": "includeFields",
-					"in": "query",
-					"required": false,
-					"description": "This is the list of fields that will be included in the response",
-					"schema": {
-						"type": "array",
-						"items": {
-							"type": "string"
-						}
-					}
-				},
-				{
-					"name": "storeDeviceId",
-					"in": "query",
-					"required": false,
-					"description": "Store Device ID",
-					"schema": {
-						"type": "string"
-					}
-				},
-				{
-					"name": "ignoreDeactivatedDevices",
-					"in": "query",
-					"required": false,
-					"description": "Ignore any deactivated devices when applying this filter",
-					"schema": {
-						"type": "boolean",
-						"default": true
-					}
-				}
-			],
-			"requestBody": {
-				"required": false,
-				"contentType": "application/json",
-				"schema": {
-					"items": {
-						"$ref": "./common-types/v1/patch-request.json"
-					},
-					"type": "array"
-				}
-			},
-			"responses": {
-				"200": {
-					"description": "Business updated",
-					"schema": {
-						"$ref": "./models/Business.yaml"
-					}
-				},
-				"404": {
-					"description": "Business Not Found"
-				},
-				"default": {
-					"description": "See #/components/responses/error"
-				}
-			},
-			"scopes": [
-				"commerce.channels:write"
-			]
-		},
-		{
-			"operationId": "getBusinessAttributes",
-			"method": "GET",
-			"path": "/businesses/{businessId}/attributes",
-			"summary": "Get business attributes",
-			"description": "Retrieve the attributes of a specific Business using the business ID.",
-			"parameters": [
-				{
-					"name": "businessId",
-					"in": "path",
-					"required": true,
-					"schema": {
-						"$ref": "./common-types/v1/uuid.json"
-					}
-				},
-				{
-					"name": "X-Request-Id",
-					"in": "header",
-					"required": false,
-					"description": "Request ID",
-					"schema": {
-						"type": "string",
-						"format": "uuid"
-					}
-				}
-			],
-			"responses": {
-				"200": {
-					"description": "Business Attributes Found",
-					"schema": {
-						"$ref": "./types/Dictionary.yaml"
-					}
-				},
-				"default": {
-					"description": "See #/components/responses/error"
-				}
-			},
-			"scopes": [
-				"commerce.business:read"
-			]
-		},
-		{
-			"operationId": "updateBusinessAttribute",
-			"method": "PUT",
-			"path": "/businesses/{businessId}/attributes/{attrName}",
-			"summary": "Update business attribute",
-			"description": "Update a single business attribute using the attribute name.",
-			"parameters": [
-				{
-					"name": "X-Request-Id",
-					"in": "header",
-					"required": false,
-					"description": "Request ID",
-					"schema": {
-						"type": "string",
-						"format": "uuid"
-					}
-				},
-				{
-					"name": "businessId",
-					"in": "path",
-					"required": true,
-					"schema": {
-						"$ref": "./common-types/v1/uuid.json"
-					}
-				},
-				{
-					"name": "attrName",
-					"in": "path",
-					"required": true,
-					"description": "Attribute Name",
-					"schema": {
-						"type": "string"
-					}
-				}
-			],
-			"requestBody": {
-				"required": false,
-				"contentType": "application/json",
-				"schema": {
-					"$ref": "#/components/schemas/attributeUpdateRequest"
-				}
-			},
-			"responses": {
-				"200": {
-					"description": "Business Attribute updated"
-				},
-				"404": {
-					"description": "See #/components/responses/error"
-				},
-				"default": {
-					"description": "See #/components/responses/error"
-				}
-			},
-			"scopes": [
-				"commerce.business:update"
-			]
-		},
-		{
-			"operationId": "getBusinessAttribute",
-			"method": "GET",
-			"path": "/businesses/{businessId}/attributes/{attrName}",
-			"summary": "Get business attribute",
-			"description": "Retrieve the information of a single business attribute using the business and attribute names.",
-			"parameters": [
-				{
-					"name": "X-Request-Id",
-					"in": "header",
-					"required": false,
-					"description": "Request ID",
-					"schema": {
-						"type": "string",
-						"format": "uuid"
-					}
-				},
-				{
-					"name": "businessId",
-					"in": "path",
-					"required": true,
-					"schema": {
-						"$ref": "./common-types/v1/uuid.json"
-					}
-				},
-				{
-					"name": "attrName",
-					"in": "path",
-					"required": true,
-					"description": "Attribute Name",
-					"schema": {
-						"type": "string"
-					}
-				}
-			],
-			"responses": {
-				"200": {
-					"description": "Business Attribute Found"
-				},
-				"404": {
-					"description": "See #/components/responses/error"
-				},
-				"default": {
-					"description": "See #/components/responses/error"
-				}
-			},
-			"scopes": [
-				"commerce.business:read"
-			]
-		},
-		{
-			"operationId": "deleteBusinessAttribute",
-			"method": "DELETE",
-			"path": "/businesses/{businessId}/attributes/{attrName}",
-			"summary": "Delete a business attribute",
-			"description": "Delete a business attribute using the business ID and attribute name.",
-			"parameters": [
-				{
-					"name": "X-Request-Id",
-					"in": "header",
-					"required": false,
-					"description": "Request ID",
-					"schema": {
-						"type": "string",
-						"format": "uuid"
-					}
-				},
-				{
-					"name": "businessId",
-					"in": "path",
-					"required": true,
-					"schema": {
-						"$ref": "./common-types/v1/uuid.json"
-					}
-				},
-				{
-					"name": "attrName",
-					"in": "path",
-					"required": true,
-					"description": "Attribute Name",
-					"schema": {
-						"type": "string"
-					}
-				},
-				{
-					"name": "attrName",
-					"in": "path",
-					"required": true,
-					"description": "Attribute Name",
-					"schema": {
-						"type": "string"
-					}
-				}
-			],
-			"responses": {
-				"200": {
-					"description": "Business Attribute Deleted"
-				},
-				"404": {
-					"description": "See #/components/responses/error"
-				},
-				"default": {
-					"description": "See #/components/responses/error"
-				}
-			},
-			"scopes": [
-				"commerce.business:update"
-			]
-		}
-	]
+  "name": "businesses",
+  "title": "Commerce Business API",
+  "description": "This API is capable of creating, updating, deleting and fetching businesses based on parameters such as a businessId and attributeName.",
+  "version": "2.1.0",
+  "baseUrl": "https://api.godaddy.com/v2/commerce",
+  "endpoints": [
+    {
+      "operationId": "getBusinesses",
+      "method": "GET",
+      "path": "/businesses",
+      "summary": "Get all businesses",
+      "description": "This endpoint can be used to obtain a list of all the available bussinesses for a specific organization.",
+      "parameters": [
+        {
+          "name": "X-Request-Id",
+          "in": "header",
+          "required": false,
+          "description": "Request ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "page",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "default": 1
+          }
+        },
+        {
+          "name": "pageSize",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "default": 10
+          }
+        },
+        {
+          "name": "totalRequired",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        {
+          "name": "includeFields",
+          "in": "query",
+          "required": false,
+          "description": "This is the list of fields that will be included in the response",
+          "schema": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "name": "If-Modified-Since",
+          "in": "header",
+          "required": false,
+          "description": "Check if the data has been modified since a given date",
+          "schema": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Business List",
+          "schema": {
+            "$ref": "./models/BusinessList.yaml"
+          }
+        },
+        "default": {
+          "description": "See #/components/responses/error"
+        }
+      },
+      "scopes": ["commerce.business:read"]
+    },
+    {
+      "operationId": "createBusiness",
+      "method": "POST",
+      "path": "/businesses",
+      "summary": "Create a new business",
+      "description": "Create a new business",
+      "parameters": [
+        {
+          "name": "X-Request-Id",
+          "in": "header",
+          "required": false,
+          "description": "Request ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "contentType": "application/json",
+        "schema": {
+          "$ref": "./models/Business.yaml"
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Business Created",
+          "schema": {
+            "$ref": "./models/Business.yaml"
+          }
+        },
+        "default": {
+          "description": "See #/components/responses/error"
+        }
+      },
+      "scopes": ["commerce.business:create"]
+    },
+    {
+      "operationId": "getBusinessById",
+      "method": "GET",
+      "path": "/businesses/{businessId}",
+      "summary": "Get a business by businessId",
+      "description": "This endpoint can be used to retrieve the information of a specific business using the Business ID.",
+      "parameters": [
+        {
+          "name": "businessId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "$ref": "./common-types/v1/uuid.json"
+          }
+        },
+        {
+          "name": "X-Request-Id",
+          "in": "header",
+          "required": false,
+          "description": "Request ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "includeFields",
+          "in": "query",
+          "required": false,
+          "description": "This is the list of fields that will be included in the response",
+          "schema": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "name": "storeDeviceId",
+          "in": "query",
+          "required": false,
+          "description": "Store Device ID",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "ignoreDeactivatedDevices",
+          "in": "query",
+          "required": false,
+          "description": "Ignore any deactivated devices when applying this filter",
+          "schema": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Business Found",
+          "schema": {
+            "$ref": "./models/Business.yaml"
+          }
+        },
+        "default": {
+          "description": "See #/components/responses/error"
+        }
+      },
+      "scopes": ["commerce.business:read"]
+    },
+    {
+      "operationId": "patchBusiness",
+      "method": "PATCH",
+      "path": "/businesses/{businessId}",
+      "summary": "Update business information",
+      "description": "Update business information details using the Business ID.",
+      "parameters": [
+        {
+          "name": "businessId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "$ref": "./common-types/v1/uuid.json"
+          }
+        },
+        {
+          "name": "X-Request-Id",
+          "in": "header",
+          "required": false,
+          "description": "Request ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "includeFields",
+          "in": "query",
+          "required": false,
+          "description": "This is the list of fields that will be included in the response",
+          "schema": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "name": "storeDeviceId",
+          "in": "query",
+          "required": false,
+          "description": "Store Device ID",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "ignoreDeactivatedDevices",
+          "in": "query",
+          "required": false,
+          "description": "Ignore any deactivated devices when applying this filter",
+          "schema": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "contentType": "application/json",
+        "schema": {
+          "items": {
+            "$ref": "./common-types/v1/patch-request.json"
+          },
+          "type": "array"
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Business updated",
+          "schema": {
+            "$ref": "./models/Business.yaml"
+          }
+        },
+        "404": {
+          "description": "Business Not Found"
+        },
+        "default": {
+          "description": "See #/components/responses/error"
+        }
+      },
+      "scopes": ["commerce.channels:write"]
+    },
+    {
+      "operationId": "getBusinessAttributes",
+      "method": "GET",
+      "path": "/businesses/{businessId}/attributes",
+      "summary": "Get business attributes",
+      "description": "Retrieve the attributes of a specific Business using the business ID.",
+      "parameters": [
+        {
+          "name": "businessId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "$ref": "./common-types/v1/uuid.json"
+          }
+        },
+        {
+          "name": "X-Request-Id",
+          "in": "header",
+          "required": false,
+          "description": "Request ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Business Attributes Found",
+          "schema": {
+            "$ref": "./types/Dictionary.yaml"
+          }
+        },
+        "default": {
+          "description": "See #/components/responses/error"
+        }
+      },
+      "scopes": ["commerce.business:read"]
+    },
+    {
+      "operationId": "updateBusinessAttribute",
+      "method": "PUT",
+      "path": "/businesses/{businessId}/attributes/{attrName}",
+      "summary": "Update business attribute",
+      "description": "Update a single business attribute using the attribute name.",
+      "parameters": [
+        {
+          "name": "X-Request-Id",
+          "in": "header",
+          "required": false,
+          "description": "Request ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "businessId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "$ref": "./common-types/v1/uuid.json"
+          }
+        },
+        {
+          "name": "attrName",
+          "in": "path",
+          "required": true,
+          "description": "Attribute Name",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "contentType": "application/json",
+        "schema": {
+          "$ref": "#/components/schemas/attributeUpdateRequest"
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Business Attribute updated"
+        },
+        "404": {
+          "description": "See #/components/responses/error"
+        },
+        "default": {
+          "description": "See #/components/responses/error"
+        }
+      },
+      "scopes": ["commerce.business:update"]
+    },
+    {
+      "operationId": "getBusinessAttribute",
+      "method": "GET",
+      "path": "/businesses/{businessId}/attributes/{attrName}",
+      "summary": "Get business attribute",
+      "description": "Retrieve the information of a single business attribute using the business and attribute names.",
+      "parameters": [
+        {
+          "name": "X-Request-Id",
+          "in": "header",
+          "required": false,
+          "description": "Request ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "businessId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "$ref": "./common-types/v1/uuid.json"
+          }
+        },
+        {
+          "name": "attrName",
+          "in": "path",
+          "required": true,
+          "description": "Attribute Name",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Business Attribute Found"
+        },
+        "404": {
+          "description": "See #/components/responses/error"
+        },
+        "default": {
+          "description": "See #/components/responses/error"
+        }
+      },
+      "scopes": ["commerce.business:read"]
+    },
+    {
+      "operationId": "deleteBusinessAttribute",
+      "method": "DELETE",
+      "path": "/businesses/{businessId}/attributes/{attrName}",
+      "summary": "Delete a business attribute",
+      "description": "Delete a business attribute using the business ID and attribute name.",
+      "parameters": [
+        {
+          "name": "X-Request-Id",
+          "in": "header",
+          "required": false,
+          "description": "Request ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "businessId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "$ref": "./common-types/v1/uuid.json"
+          }
+        },
+        {
+          "name": "attrName",
+          "in": "path",
+          "required": true,
+          "description": "Attribute Name",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "attrName",
+          "in": "path",
+          "required": true,
+          "description": "Attribute Name",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Business Attribute Deleted"
+        },
+        "404": {
+          "description": "See #/components/responses/error"
+        },
+        "default": {
+          "description": "See #/components/responses/error"
+        }
+      },
+      "scopes": ["commerce.business:update"]
+    }
+  ]
 }
