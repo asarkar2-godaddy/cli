@@ -59,9 +59,25 @@ function apiDetails(error: CliError): Record<string, unknown> | undefined {
   return Object.keys(details).length > 0 ? details : undefined;
 }
 
+function hasGraphqlErrors(
+  details: Record<string, unknown> | undefined,
+): boolean {
+  const response = details?.response;
+  if (typeof response !== "object" || response === null) {
+    return false;
+  }
+
+  const errors = (response as Record<string, unknown>).errors;
+  return Array.isArray(errors) && errors.length > 0;
+}
+
 function fixForNetworkError(
   details: Record<string, unknown> | undefined,
 ): string {
+  if (hasGraphqlErrors(details)) {
+    return "Check GraphQL query, variables, and operationName. Inspect error.details.response.errors for resolver/validation details.";
+  }
+
   const status = details?.status;
   if (typeof status === "number") {
     if (status >= 400 && status < 500) {

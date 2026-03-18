@@ -776,6 +776,10 @@ const apiCall = Command.make(
 
       const requiredScopes = [...requiredScopesSet];
 
+      const graphqlRequest =
+        catalogMatch?.endpoint.graphql !== undefined ||
+        /\/graphql(?:$|[/?#])/i.test(resolvedEndpoint);
+
       const requestOpts = {
         endpoint: resolvedEndpoint,
         method,
@@ -783,6 +787,7 @@ const apiCall = Command.make(
         body,
         headers: Object.keys(headers).length > 0 ? headers : undefined,
         debug: cliConfig.verbosity >= 2,
+        graphql: graphqlRequest,
       };
 
       // First attempt

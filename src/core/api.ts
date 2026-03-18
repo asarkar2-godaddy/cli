@@ -183,6 +183,36 @@ function summarizeApiErrorBody(value: unknown): string | undefined {
   return undefined;
 }
 
+function extractGraphqlErrors(value: unknown): unknown[] | undefined {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+
+  const errors = (value as Record<string, unknown>).errors;
+  if (!Array.isArray(errors) || errors.length === 0) {
+    return undefined;
+  }
+
+  return errors;
+}
+
+function summarizeGraphqlErrors(errors: unknown[]): string | undefined {
+  for (const entry of errors) {
+    if (typeof entry === "string" && entry.trim().length > 0) {
+      return truncateString(entry.trim(), MAX_ERROR_SUMMARY_CHARS);
+    }
+
+    if (typeof entry === "object" && entry !== null) {
+      const message = (entry as Record<string, unknown>).message;
+      if (typeof message === "string" && message.trim().length > 0) {
+        return truncateString(message.trim(), MAX_ERROR_SUMMARY_CHARS);
+      }
+    }
+  }
+
+  return undefined;
+}
+
 function responseRequestId(
   headers: Record<string, string>,
 ): string | undefined {
@@ -202,6 +232,7 @@ export interface ApiRequestOptions {
   body?: string;
   headers?: Record<string, string>;
   debug?: boolean;
+  graphql?: boolean;
 }
 
 export interface ApiResponse {
@@ -381,6 +412,7 @@ export function apiRequestEffect(
       body,
       headers = {},
       debug,
+      graphql = false,
     } = options;
 
     // Get access token with expiry info
@@ -513,6 +545,34 @@ export function apiRequestEffect(
             userMessage: "Failed to read API response.",
           }),
       });
+    }
+
+    if (response.ok && graphql) {
+      const graphqlErrors = extractGraphqlErrors(data);
+      if (graphqlErrors && graphqlErrors.length > 0) {
+        const safeErrorBody = sanitizeErrorValue(data);
+        const summary = summarizeGraphqlErrors(graphqlErrors);
+        const requestId = responseRequestId(responseHeaders);
+        const internalDetail =
+          typeof safeErrorBody === "string"
+            ? safeErrorBody
+            : JSON.stringify(safeErrorBody);
+
+        return yield* Effect.fail(
+          new NetworkError({
+            message: `GraphQL API error(s): ${internalDetail}`,
+            userMessage: summary
+              ? `GraphQL request returned errors: ${summary}`
+              : `GraphQL request returned ${graphqlErrors.length} error(s).`,
+            status: response.status,
+            statusText: response.statusText,
+            endpoint,
+            method,
+            requestId,
+            responseBody: safeErrorBody,
+          }),
+        );
+      }
     }
 
     // Check for error status codes
