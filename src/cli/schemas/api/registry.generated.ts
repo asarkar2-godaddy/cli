@@ -17,14 +17,14 @@ import transactions_json from "./transactions.json";
 
 export const DOMAIN_REGISTRY: Record<string, unknown> = {
   "bulk-operations": bulk_operations_json,
-  businesses: businesses_json,
+  "businesses": businesses_json,
   "catalog-products": catalog_products_json,
-  channels: channels_json,
-  fulfillments: fulfillments_json,
+  "channels": channels_json,
+  "fulfillments": fulfillments_json,
   "location-addresses": location_addresses_json,
-  metafields: metafields_json,
-  onboarding: onboarding_json,
-  orders: orders_json,
-  stores: stores_json,
-  transactions: transactions_json,
+  "metafields": metafields_json,
+  "onboarding": onboarding_json,
+  "orders": orders_json,
+  "stores": stores_json,
+  "transactions": transactions_json,
 };

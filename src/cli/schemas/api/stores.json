@@ -1,460 +1,476 @@
 {
-  "name": "stores",
-  "title": "Commerce Store API",
-  "description": "This API is capable of recording, updating and retrieving store information",
-  "version": "2.1.0",
-  "baseUrl": "https://api.godaddy.com/v2/commerce",
-  "endpoints": [
-    {
-      "operationId": "createStore",
-      "method": "POST",
-      "path": "/stores",
-      "summary": "Create a new store",
-      "description": "Create a new store",
-      "parameters": [
-        {
-          "name": "X-Request-Id",
-          "in": "header",
-          "required": false,
-          "description": "Request ID",
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        }
-      ],
-      "requestBody": {
-        "required": false,
-        "contentType": "application/json",
-        "schema": {
-          "$ref": "./models/Store.yaml"
-        }
-      },
-      "responses": {
-        "200": {
-          "description": "Store Created",
-          "schema": {
-            "$ref": "./models/Store.yaml"
-          }
-        },
-        "default": {
-          "description": "See #/components/responses/error"
-        }
-      },
-      "scopes": ["commerce.store:create"]
-    },
-    {
-      "operationId": "getStoresByBusinessId",
-      "method": "GET",
-      "path": "/stores",
-      "summary": "Get stores by business ID",
-      "description": "Retrieve the list of stores associated with a Business ID",
-      "parameters": [
-        {
-          "name": "X-Request-Id",
-          "in": "header",
-          "required": false,
-          "description": "Request ID",
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        {
-          "name": "businessId",
-          "in": "query",
-          "required": true,
-          "description": "Business ID",
-          "schema": {
-            "$ref": "./common-types/v1/uuid.json"
-          }
-        },
-        {
-          "name": "If-Modified-Since",
-          "in": "header",
-          "required": false,
-          "description": "To check if data has been modified since a given date",
-          "schema": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        {
-          "name": "page",
-          "in": "query",
-          "required": false,
-          "schema": {
-            "type": "integer",
-            "default": 1
-          }
-        },
-        {
-          "name": "pageSize",
-          "in": "query",
-          "required": false,
-          "schema": {
-            "type": "integer",
-            "default": 10
-          }
-        },
-        {
-          "name": "totalRequired",
-          "in": "query",
-          "required": false,
-          "schema": {
-            "type": "boolean",
-            "default": false
-          }
-        },
-        {
-          "name": "includeFields",
-          "in": "query",
-          "required": false,
-          "description": "List of fields to include in the response",
-          "schema": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      ],
-      "responses": {
-        "200": {
-          "description": "List of stores found",
-          "schema": {
-            "$ref": "./models/StoreList.yaml"
-          }
-        },
-        "default": {
-          "description": "See #/components/responses/error"
-        }
-      },
-      "scopes": ["commerce.store:create"]
-    },
-    {
-      "operationId": "getStoreById",
-      "method": "GET",
-      "path": "/stores/{storeId}",
-      "summary": "Get store by ID",
-      "description": "Retrieve the information of a store using the Business and Store IDs.",
-      "parameters": [
-        {
-          "name": "X-Request-Id",
-          "in": "header",
-          "required": false,
-          "description": "Request ID",
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        {
-          "name": "storeId",
-          "in": "path",
-          "required": true,
-          "description": "Store ID",
-          "schema": {
-            "$ref": "./common-types/v1/uuid.json"
-          }
-        },
-        {
-          "name": "includeFields",
-          "in": "query",
-          "required": false,
-          "description": "List of fields to include in the response",
-          "schema": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      ],
-      "responses": {
-        "200": {
-          "description": "Store Found",
-          "schema": {
-            "$ref": "./models/Store.yaml"
-          }
-        },
-        "default": {
-          "description": "See #/components/responses/error"
-        }
-      },
-      "scopes": ["commerce.store:read"]
-    },
-    {
-      "operationId": "updateStore",
-      "method": "PATCH",
-      "path": "/stores/{storeId}",
-      "summary": "Update store information",
-      "description": "Update the details of a store using the storeId.",
-      "parameters": [
-        {
-          "name": "X-Request-Id",
-          "in": "header",
-          "required": false,
-          "description": "Request ID",
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        {
-          "name": "storeId",
-          "in": "path",
-          "required": true,
-          "description": "Store ID",
-          "schema": {
-            "$ref": "./common-types/v1/uuid.json"
-          }
-        },
-        {
-          "name": "includeFields",
-          "in": "query",
-          "required": false,
-          "description": "List of fields to include in the response",
-          "schema": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      ],
-      "requestBody": {
-        "required": false,
-        "contentType": "application/json",
-        "schema": {
-          "$ref": "./common-types/v1/patch-request.json"
-        }
-      },
-      "responses": {
-        "200": {
-          "description": "Store updated",
-          "schema": {
-            "$ref": "./models/Store.yaml"
-          }
-        },
-        "404": {
-          "description": "Store Not Found"
-        },
-        "default": {
-          "description": "See #/components/responses/error"
-        }
-      },
-      "scopes": ["commerce.store:update"]
-    },
-    {
-      "operationId": "updateGovernmentIds",
-      "method": "PUT",
-      "path": "/stores/{storeId}/government-ids",
-      "summary": "Update government IDs",
-      "description": "Update government IDs using the store ID.",
-      "parameters": [
-        {
-          "name": "X-Request-Id",
-          "in": "header",
-          "required": false,
-          "description": "Request ID",
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        {
-          "name": "storeId",
-          "in": "path",
-          "required": true,
-          "description": "Store ID",
-          "schema": {
-            "$ref": "./common-types/v1/uuid.json"
-          }
-        }
-      ],
-      "requestBody": {
-        "required": false,
-        "contentType": "application/json",
-        "schema": {
-          "$ref": "#/components/schemas/governmentIdList"
-        }
-      },
-      "responses": {
-        "200": {
-          "description": "Government IDs updated",
-          "schema": {
-            "$ref": "./models/Store.yaml"
-          }
-        },
-        "404": {
-          "description": "See #/components/responses/error"
-        }
-      },
-      "scopes": ["commerce.store:update"]
-    },
-    {
-      "operationId": "updateStoreAttribute",
-      "method": "PUT",
-      "path": "/stores/{storeId}/attributes/{attrName}",
-      "summary": "Update store attribute",
-      "description": "Modify the attribute of a store using the store ID and attribute name.",
-      "parameters": [
-        {
-          "name": "X-Request-Id",
-          "in": "header",
-          "required": false,
-          "description": "Request ID",
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        {
-          "name": "storeId",
-          "in": "path",
-          "required": true,
-          "description": "Store ID",
-          "schema": {
-            "$ref": "./common-types/v1/uuid.json"
-          }
-        },
-        {
-          "name": "attrName",
-          "in": "path",
-          "required": true,
-          "description": "Attribute name",
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "requestBody": {
-        "required": false,
-        "contentType": "application/json",
-        "schema": {
-          "$ref": "#/components/schemas/attributeUpdateRequest"
-        }
-      },
-      "responses": {
-        "200": {
-          "description": "Store Attribute updated"
-        },
-        "404": {
-          "description": "See #/components/responses/error"
-        },
-        "default": {
-          "description": "See #/components/responses/error"
-        }
-      },
-      "scopes": ["commerce.store:update"]
-    },
-    {
-      "operationId": "getStoreAttribute",
-      "method": "GET",
-      "path": "/stores/{storeId}/attributes/{attrName}",
-      "summary": "Get store attribute",
-      "description": "Retrieve the information of a store attribute using the business ID, store ID and attribute name.",
-      "parameters": [
-        {
-          "name": "X-Request-Id",
-          "in": "header",
-          "required": false,
-          "description": "Request ID",
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        {
-          "name": "storeId",
-          "in": "path",
-          "required": true,
-          "description": "Store ID",
-          "schema": {
-            "$ref": "./common-types/v1/uuid.json"
-          }
-        },
-        {
-          "name": "attrName",
-          "in": "path",
-          "required": true,
-          "description": "Attribute name",
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "responses": {
-        "200": {
-          "description": "Store Attribute Found"
-        },
-        "404": {
-          "description": "See #/components/responses/error"
-        },
-        "default": {
-          "description": "See #/components/responses/error"
-        }
-      },
-      "scopes": ["commerce.store:read"]
-    },
-    {
-      "operationId": "deleteStoreAttribute",
-      "method": "DELETE",
-      "path": "/stores/{storeId}/attributes/{attrName}",
-      "summary": "Delete store attribute",
-      "description": "Delete a store attribute using the store ID and attribute name.",
-      "parameters": [
-        {
-          "name": "X-Request-Id",
-          "in": "header",
-          "required": false,
-          "description": "Request ID",
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        {
-          "name": "storeId",
-          "in": "path",
-          "required": true,
-          "description": "Store ID",
-          "schema": {
-            "$ref": "./common-types/v1/uuid.json"
-          }
-        },
-        {
-          "name": "attrName",
-          "in": "path",
-          "required": true,
-          "description": "Attribute name",
-          "schema": {
-            "type": "string"
-          }
-        },
-        {
-          "name": "attrName",
-          "in": "path",
-          "required": true,
-          "description": "Attribute name",
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "responses": {
-        "200": {
-          "description": "Store Attribute deleted"
-        },
-        "404": {
-          "description": "See #/components/responses/error"
-        },
-        "default": {
-          "description": "See #/components/responses/error"
-        }
-      },
-      "scopes": ["commerce.store:update"]
-    }
-  ]
+	"name": "stores",
+	"title": "Commerce Store API",
+	"description": "This API is capable of recording, updating and retrieving store information",
+	"version": "2.1.0",
+	"baseUrl": "https://api.godaddy.com/v2/commerce",
+	"endpoints": [
+		{
+			"operationId": "createStore",
+			"method": "POST",
+			"path": "/stores",
+			"summary": "Create a new store",
+			"description": "Create a new store",
+			"parameters": [
+				{
+					"name": "X-Request-Id",
+					"in": "header",
+					"required": false,
+					"description": "Request ID",
+					"schema": {
+						"type": "string",
+						"format": "uuid"
+					}
+				}
+			],
+			"requestBody": {
+				"required": false,
+				"contentType": "application/json",
+				"schema": {
+					"$ref": "./models/Store.yaml"
+				}
+			},
+			"responses": {
+				"200": {
+					"description": "Store Created",
+					"schema": {
+						"$ref": "./models/Store.yaml"
+					}
+				},
+				"default": {
+					"description": "See #/components/responses/error"
+				}
+			},
+			"scopes": [
+				"commerce.store:create"
+			]
+		},
+		{
+			"operationId": "getStoresByBusinessId",
+			"method": "GET",
+			"path": "/stores",
+			"summary": "Get stores by business ID",
+			"description": "Retrieve the list of stores associated with a Business ID",
+			"parameters": [
+				{
+					"name": "X-Request-Id",
+					"in": "header",
+					"required": false,
+					"description": "Request ID",
+					"schema": {
+						"type": "string",
+						"format": "uuid"
+					}
+				},
+				{
+					"name": "businessId",
+					"in": "query",
+					"required": true,
+					"description": "Business ID",
+					"schema": {
+						"$ref": "./common-types/v1/uuid.json"
+					}
+				},
+				{
+					"name": "If-Modified-Since",
+					"in": "header",
+					"required": false,
+					"description": "To check if data has been modified since a given date",
+					"schema": {
+						"type": "string",
+						"format": "date-time"
+					}
+				},
+				{
+					"name": "page",
+					"in": "query",
+					"required": false,
+					"schema": {
+						"type": "integer",
+						"default": 1
+					}
+				},
+				{
+					"name": "pageSize",
+					"in": "query",
+					"required": false,
+					"schema": {
+						"type": "integer",
+						"default": 10
+					}
+				},
+				{
+					"name": "totalRequired",
+					"in": "query",
+					"required": false,
+					"schema": {
+						"type": "boolean",
+						"default": false
+					}
+				},
+				{
+					"name": "includeFields",
+					"in": "query",
+					"required": false,
+					"description": "List of fields to include in the response",
+					"schema": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					}
+				}
+			],
+			"responses": {
+				"200": {
+					"description": "List of stores found",
+					"schema": {
+						"$ref": "./models/StoreList.yaml"
+					}
+				},
+				"default": {
+					"description": "See #/components/responses/error"
+				}
+			},
+			"scopes": [
+				"commerce.store:create"
+			]
+		},
+		{
+			"operationId": "getStoreById",
+			"method": "GET",
+			"path": "/stores/{storeId}",
+			"summary": "Get store by ID",
+			"description": "Retrieve the information of a store using the Business and Store IDs.",
+			"parameters": [
+				{
+					"name": "X-Request-Id",
+					"in": "header",
+					"required": false,
+					"description": "Request ID",
+					"schema": {
+						"type": "string",
+						"format": "uuid"
+					}
+				},
+				{
+					"name": "storeId",
+					"in": "path",
+					"required": true,
+					"description": "Store ID",
+					"schema": {
+						"$ref": "./common-types/v1/uuid.json"
+					}
+				},
+				{
+					"name": "includeFields",
+					"in": "query",
+					"required": false,
+					"description": "List of fields to include in the response",
+					"schema": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					}
+				}
+			],
+			"responses": {
+				"200": {
+					"description": "Store Found",
+					"schema": {
+						"$ref": "./models/Store.yaml"
+					}
+				},
+				"default": {
+					"description": "See #/components/responses/error"
+				}
+			},
+			"scopes": [
+				"commerce.store:read"
+			]
+		},
+		{
+			"operationId": "updateStore",
+			"method": "PATCH",
+			"path": "/stores/{storeId}",
+			"summary": "Update store information",
+			"description": "Update the details of a store using the storeId.",
+			"parameters": [
+				{
+					"name": "X-Request-Id",
+					"in": "header",
+					"required": false,
+					"description": "Request ID",
+					"schema": {
+						"type": "string",
+						"format": "uuid"
+					}
+				},
+				{
+					"name": "storeId",
+					"in": "path",
+					"required": true,
+					"description": "Store ID",
+					"schema": {
+						"$ref": "./common-types/v1/uuid.json"
+					}
+				},
+				{
+					"name": "includeFields",
+					"in": "query",
+					"required": false,
+					"description": "List of fields to include in the response",
+					"schema": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						}
+					}
+				}
+			],
+			"requestBody": {
+				"required": false,
+				"contentType": "application/json",
+				"schema": {
+					"$ref": "./common-types/v1/patch-request.json"
+				}
+			},
+			"responses": {
+				"200": {
+					"description": "Store updated",
+					"schema": {
+						"$ref": "./models/Store.yaml"
+					}
+				},
+				"404": {
+					"description": "Store Not Found"
+				},
+				"default": {
+					"description": "See #/components/responses/error"
+				}
+			},
+			"scopes": [
+				"commerce.store:update"
+			]
+		},
+		{
+			"operationId": "updateGovernmentIds",
+			"method": "PUT",
+			"path": "/stores/{storeId}/government-ids",
+			"summary": "Update government IDs",
+			"description": "Update government IDs using the store ID.",
+			"parameters": [
+				{
+					"name": "X-Request-Id",
+					"in": "header",
+					"required": false,
+					"description": "Request ID",
+					"schema": {
+						"type": "string",
+						"format": "uuid"
+					}
+				},
+				{
+					"name": "storeId",
+					"in": "path",
+					"required": true,
+					"description": "Store ID",
+					"schema": {
+						"$ref": "./common-types/v1/uuid.json"
+					}
+				}
+			],
+			"requestBody": {
+				"required": false,
+				"contentType": "application/json",
+				"schema": {
+					"$ref": "#/components/schemas/governmentIdList"
+				}
+			},
+			"responses": {
+				"200": {
+					"description": "Government IDs updated",
+					"schema": {
+						"$ref": "./models/Store.yaml"
+					}
+				},
+				"404": {
+					"description": "See #/components/responses/error"
+				}
+			},
+			"scopes": [
+				"commerce.store:update"
+			]
+		},
+		{
+			"operationId": "updateStoreAttribute",
+			"method": "PUT",
+			"path": "/stores/{storeId}/attributes/{attrName}",
+			"summary": "Update store attribute",
+			"description": "Modify the attribute of a store using the store ID and attribute name.",
+			"parameters": [
+				{
+					"name": "X-Request-Id",
+					"in": "header",
+					"required": false,
+					"description": "Request ID",
+					"schema": {
+						"type": "string",
+						"format": "uuid"
+					}
+				},
+				{
+					"name": "storeId",
+					"in": "path",
+					"required": true,
+					"description": "Store ID",
+					"schema": {
+						"$ref": "./common-types/v1/uuid.json"
+					}
+				},
+				{
+					"name": "attrName",
+					"in": "path",
+					"required": true,
+					"description": "Attribute name",
+					"schema": {
+						"type": "string"
+					}
+				}
+			],
+			"requestBody": {
+				"required": false,
+				"contentType": "application/json",
+				"schema": {
+					"$ref": "#/components/schemas/attributeUpdateRequest"
+				}
+			},
+			"responses": {
+				"200": {
+					"description": "Store Attribute updated"
+				},
+				"404": {
+					"description": "See #/components/responses/error"
+				},
+				"default": {
+					"description": "See #/components/responses/error"
+				}
+			},
+			"scopes": [
+				"commerce.store:update"
+			]
+		},
+		{
+			"operationId": "getStoreAttribute",
+			"method": "GET",
+			"path": "/stores/{storeId}/attributes/{attrName}",
+			"summary": "Get store attribute",
+			"description": "Retrieve the information of a store attribute using the business ID, store ID and attribute name.",
+			"parameters": [
+				{
+					"name": "X-Request-Id",
+					"in": "header",
+					"required": false,
+					"description": "Request ID",
+					"schema": {
+						"type": "string",
+						"format": "uuid"
+					}
+				},
+				{
+					"name": "storeId",
+					"in": "path",
+					"required": true,
+					"description": "Store ID",
+					"schema": {
+						"$ref": "./common-types/v1/uuid.json"
+					}
+				},
+				{
+					"name": "attrName",
+					"in": "path",
+					"required": true,
+					"description": "Attribute name",
+					"schema": {
+						"type": "string"
+					}
+				}
+			],
+			"responses": {
+				"200": {
+					"description": "Store Attribute Found"
+				},
+				"404": {
+					"description": "See #/components/responses/error"
+				},
+				"default": {
+					"description": "See #/components/responses/error"
+				}
+			},
+			"scopes": [
+				"commerce.store:read"
+			]
+		},
+		{
+			"operationId": "deleteStoreAttribute",
+			"method": "DELETE",
+			"path": "/stores/{storeId}/attributes/{attrName}",
+			"summary": "Delete store attribute",
+			"description": "Delete a store attribute using the store ID and attribute name.",
+			"parameters": [
+				{
+					"name": "X-Request-Id",
+					"in": "header",
+					"required": false,
+					"description": "Request ID",
+					"schema": {
+						"type": "string",
+						"format": "uuid"
+					}
+				},
+				{
+					"name": "storeId",
+					"in": "path",
+					"required": true,
+					"description": "Store ID",
+					"schema": {
+						"$ref": "./common-types/v1/uuid.json"
+					}
+				},
+				{
+					"name": "attrName",
+					"in": "path",
+					"required": true,
+					"description": "Attribute name",
+					"schema": {
+						"type": "string"
+					}
+				},
+				{
+					"name": "attrName",
+					"in": "path",
+					"required": true,
+					"description": "Attribute name",
+					"schema": {
+						"type": "string"
+					}
+				}
+			],
+			"responses": {
+				"200": {
+					"description": "Store Attribute deleted"
+				},
+				"404": {
+					"description": "See #/components/responses/error"
+				},
+				"default": {
+					"description": "See #/components/responses/error"
+				}
+			},
+			"scopes": [
+				"commerce.store:update"
+			]
+		}
+	]
 }

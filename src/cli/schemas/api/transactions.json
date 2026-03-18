@@ -1,442 +1,465 @@
 {
-  "name": "transactions",
-  "title": "Transactions API",
-  "description": "This API is capable of creating, updating and fetching transactions across different stores.",
-  "version": "2.1.0",
-  "baseUrl": "https://api.godaddy.com/v2/commerce",
-  "endpoints": [
-    {
-      "operationId": "getTransactions",
-      "method": "GET",
-      "path": "/stores/{storeId}/transactions",
-      "summary": "Get all transactions",
-      "description": "Retrieve all the transactions for a specific store using the store ID.",
-      "parameters": [
-        {
-          "name": "storeId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "$ref": "./types/Uuid.yaml"
-          }
-        },
-        {
-          "name": "Request Id",
-          "in": "header",
-          "required": false,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        {
-          "name": "page",
-          "in": "query",
-          "required": false,
-          "schema": {
-            "type": "integer",
-            "default": 1
-          }
-        },
-        {
-          "name": "pageSize",
-          "in": "query",
-          "required": false,
-          "schema": {
-            "type": "integer",
-            "default": 10
-          }
-        },
-        {
-          "name": "totalRequired",
-          "in": "query",
-          "required": false,
-          "schema": {
-            "type": "boolean",
-            "default": false
-          }
-        },
-        {
-          "name": "transactionIds",
-          "in": "query",
-          "required": false,
-          "description": "Transaction ids to filter",
-          "schema": {
-            "type": "array",
-            "items": {
-              "$ref": "./types/Id.yaml"
-            }
-          }
-        },
-        {
-          "name": "updatedAtAfter",
-          "in": "query",
-          "required": false,
-          "description": "Transaction filter updatedAt start date",
-          "schema": {
-            "$ref": "./common-types/date-time.json"
-          }
-        },
-        {
-          "name": "updatedAtBefore",
-          "in": "query",
-          "required": false,
-          "description": "Transaction filter updatedAt end date",
-          "schema": {
-            "$ref": "./common-types/date-time.json"
-          }
-        },
-        {
-          "name": "sortBy",
-          "in": "query",
-          "required": false,
-          "description": "Transaction sort field",
-          "schema": {
-            "type": "string",
-            "enum": ["updatedAt"],
-            "default": "updatedAt"
-          }
-        },
-        {
-          "name": "sortOrder",
-          "in": "query",
-          "required": false,
-          "description": "Transaction sort order",
-          "schema": {
-            "type": "string",
-            "enum": ["ASC", "DESC"],
-            "default": "ASC"
-          }
-        }
-      ],
-      "responses": {
-        "200": {
-          "description": "Transactions List",
-          "schema": {
-            "title": "Transactions",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/pagedList"
-              }
-            ],
-            "properties": {
-              "items": {
-                "items": {
-                  "$ref": "./models/transaction/Transaction.yaml"
-                },
-                "type": "array"
-              }
-            }
-          }
-        },
-        "default": {
-          "description": "See #/components/responses/error"
-        }
-      },
-      "scopes": ["commerce.transaction:read", "commerce.transaction:write"]
-    },
-    {
-      "operationId": "getTransactionById",
-      "method": "GET",
-      "path": "/stores/{storeId}/transactions/{transactionId}",
-      "summary": "Get transaction by ID",
-      "description": "Retrieve all the information for a single transaction using the store and transaction IDs.",
-      "parameters": [
-        {
-          "name": "storeId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "$ref": "./types/Uuid.yaml"
-          }
-        },
-        {
-          "name": "transactionId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "$ref": "./types/Id.yaml"
-          }
-        },
-        {
-          "name": "Request Id",
-          "in": "header",
-          "required": false,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        }
-      ],
-      "responses": {
-        "200": {
-          "description": "Transaction Found",
-          "schema": {
-            "$ref": "./models/transaction/Transaction.yaml"
-          }
-        },
-        "default": {
-          "description": "See #/components/responses/error"
-        }
-      },
-      "scopes": ["commerce.transaction:read", "commerce.transaction:write"]
-    },
-    {
-      "operationId": "addTransactionSignatureByTransactionId",
-      "method": "POST",
-      "path": "/stores/{storeId}/transactions/{transactionId}/signatures",
-      "summary": "Add transaction signature",
-      "description": "Add a transaction signature using the store and transaction IDs.",
-      "parameters": [
-        {
-          "name": "storeId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "$ref": "./types/Uuid.yaml"
-          }
-        },
-        {
-          "name": "transactionId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "$ref": "./types/Id.yaml"
-          }
-        },
-        {
-          "name": "Request Id",
-          "in": "header",
-          "required": false,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        }
-      ],
-      "requestBody": {
-        "required": false,
-        "contentType": "multipart/form-data",
-        "schema": {
-          "$ref": "./models/transaction/Signature.yaml"
-        }
-      },
-      "responses": {
-        "200": {
-          "description": "See #/components/responses/200"
-        },
-        "default": {
-          "description": "See #/components/responses/error"
-        }
-      },
-      "scopes": ["commerce.transaction:write"]
-    },
-    {
-      "operationId": "getTransactionSignaturesById",
-      "method": "GET",
-      "path": "/stores/{storeId}/transactions/{transactionId}/signatures",
-      "summary": "Get transaction signatures",
-      "description": "Get all transaction signatures using the store and transaction IDs.",
-      "parameters": [
-        {
-          "name": "storeId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "$ref": "./types/Uuid.yaml"
-          }
-        },
-        {
-          "name": "transactionId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "$ref": "./types/Id.yaml"
-          }
-        },
-        {
-          "name": "Request Id",
-          "in": "header",
-          "required": false,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        {
-          "name": "page",
-          "in": "query",
-          "required": false,
-          "schema": {
-            "type": "integer",
-            "default": 1
-          }
-        },
-        {
-          "name": "pageSize",
-          "in": "query",
-          "required": false,
-          "schema": {
-            "type": "integer",
-            "default": 10
-          }
-        },
-        {
-          "name": "totalRequired",
-          "in": "query",
-          "required": false,
-          "schema": {
-            "type": "boolean",
-            "default": false
-          }
-        }
-      ],
-      "responses": {
-        "200": {
-          "description": "Transaction Signature list",
-          "schema": {
-            "title": "Transaction Signatures",
-            "$ref": "#/components/schemas/signatureList"
-          }
-        },
-        "default": {
-          "description": "See #/components/responses/error"
-        }
-      },
-      "scopes": ["commerce.transaction:read", "commerce.transaction:write"]
-    },
-    {
-      "operationId": "getTransactionReference",
-      "method": "GET",
-      "path": "/stores/{storeId}/transactions/{transactionId}/references/{value}",
-      "summary": "Get transaction reference",
-      "description": "Retrieve a transaction reference using the store ID, transaction ID and reference value.",
-      "parameters": [
-        {
-          "name": "storeId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "$ref": "./types/Uuid.yaml"
-          }
-        },
-        {
-          "name": "transactionId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "$ref": "./types/Id.yaml"
-          }
-        },
-        {
-          "name": "value",
-          "in": "path",
-          "required": true,
-          "description": "Reference value",
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "responses": {
-        "200": {
-          "description": "Transaction references by value",
-          "schema": {
-            "$ref": "./models/TransactionReference.yaml"
-          }
-        }
-      },
-      "scopes": ["commerce.transaction:read", "commerce.transaction:write"]
-    },
-    {
-      "operationId": "createTransactionReference",
-      "method": "PUT",
-      "path": "/stores/{storeId}/transactions/{transactionId}/references/{value}",
-      "summary": "Create transaction reference",
-      "description": "Create a new transaction reference using the store ID, transaction ID and reference value.",
-      "parameters": [
-        {
-          "name": "storeId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "$ref": "./types/Uuid.yaml"
-          }
-        },
-        {
-          "name": "transactionId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "$ref": "./types/Id.yaml"
-          }
-        },
-        {
-          "name": "value",
-          "in": "path",
-          "required": true,
-          "description": "Reference value",
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "requestBody": {
-        "required": false,
-        "contentType": "application/json",
-        "schema": {
-          "$ref": "./models/TransactionReference.yaml"
-        }
-      },
-      "responses": {
-        "204": {
-          "description": "Resource created / updated successfully"
-        }
-      },
-      "scopes": ["commerce.transaction:write"]
-    },
-    {
-      "operationId": "deleteTransactionReference",
-      "method": "DELETE",
-      "path": "/stores/{storeId}/transactions/{transactionId}/references/{value}",
-      "summary": "Delete reference",
-      "description": "Delete a transaction reference using the store ID, transaction ID and reference value.",
-      "parameters": [
-        {
-          "name": "storeId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "$ref": "./types/Uuid.yaml"
-          }
-        },
-        {
-          "name": "transactionId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "$ref": "./types/Id.yaml"
-          }
-        },
-        {
-          "name": "value",
-          "in": "path",
-          "required": true,
-          "description": "Reference value",
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "responses": {
-        "200": {
-          "description": "See #/components/responses/200"
-        },
-        "404": {
-          "description": "Reference Not Found"
-        }
-      },
-      "scopes": ["commerce.transaction:write"]
-    }
-  ]
+	"name": "transactions",
+	"title": "Transactions API",
+	"description": "This API is capable of creating, updating and fetching transactions across different stores.",
+	"version": "2.1.0",
+	"baseUrl": "https://api.godaddy.com/v2/commerce",
+	"endpoints": [
+		{
+			"operationId": "getTransactions",
+			"method": "GET",
+			"path": "/stores/{storeId}/transactions",
+			"summary": "Get all transactions",
+			"description": "Retrieve all the transactions for a specific store using the store ID.",
+			"parameters": [
+				{
+					"name": "storeId",
+					"in": "path",
+					"required": true,
+					"schema": {
+						"$ref": "./types/Uuid.yaml"
+					}
+				},
+				{
+					"name": "Request Id",
+					"in": "header",
+					"required": false,
+					"schema": {
+						"type": "string",
+						"format": "uuid"
+					}
+				},
+				{
+					"name": "page",
+					"in": "query",
+					"required": false,
+					"schema": {
+						"type": "integer",
+						"default": 1
+					}
+				},
+				{
+					"name": "pageSize",
+					"in": "query",
+					"required": false,
+					"schema": {
+						"type": "integer",
+						"default": 10
+					}
+				},
+				{
+					"name": "totalRequired",
+					"in": "query",
+					"required": false,
+					"schema": {
+						"type": "boolean",
+						"default": false
+					}
+				},
+				{
+					"name": "transactionIds",
+					"in": "query",
+					"required": false,
+					"description": "Transaction ids to filter",
+					"schema": {
+						"type": "array",
+						"items": {
+							"$ref": "./types/Id.yaml"
+						}
+					}
+				},
+				{
+					"name": "updatedAtAfter",
+					"in": "query",
+					"required": false,
+					"description": "Transaction filter updatedAt start date",
+					"schema": {
+						"$ref": "./common-types/date-time.json"
+					}
+				},
+				{
+					"name": "updatedAtBefore",
+					"in": "query",
+					"required": false,
+					"description": "Transaction filter updatedAt end date",
+					"schema": {
+						"$ref": "./common-types/date-time.json"
+					}
+				},
+				{
+					"name": "sortBy",
+					"in": "query",
+					"required": false,
+					"description": "Transaction sort field",
+					"schema": {
+						"type": "string",
+						"enum": [
+							"updatedAt"
+						],
+						"default": "updatedAt"
+					}
+				},
+				{
+					"name": "sortOrder",
+					"in": "query",
+					"required": false,
+					"description": "Transaction sort order",
+					"schema": {
+						"type": "string",
+						"enum": [
+							"ASC",
+							"DESC"
+						],
+						"default": "ASC"
+					}
+				}
+			],
+			"responses": {
+				"200": {
+					"description": "Transactions List",
+					"schema": {
+						"title": "Transactions",
+						"allOf": [
+							{
+								"$ref": "#/components/schemas/pagedList"
+							}
+						],
+						"properties": {
+							"items": {
+								"items": {
+									"$ref": "./models/transaction/Transaction.yaml"
+								},
+								"type": "array"
+							}
+						}
+					}
+				},
+				"default": {
+					"description": "See #/components/responses/error"
+				}
+			},
+			"scopes": [
+				"commerce.transaction:read",
+				"commerce.transaction:write"
+			]
+		},
+		{
+			"operationId": "getTransactionById",
+			"method": "GET",
+			"path": "/stores/{storeId}/transactions/{transactionId}",
+			"summary": "Get transaction by ID",
+			"description": "Retrieve all the information for a single transaction using the store and transaction IDs.",
+			"parameters": [
+				{
+					"name": "storeId",
+					"in": "path",
+					"required": true,
+					"schema": {
+						"$ref": "./types/Uuid.yaml"
+					}
+				},
+				{
+					"name": "transactionId",
+					"in": "path",
+					"required": true,
+					"schema": {
+						"$ref": "./types/Id.yaml"
+					}
+				},
+				{
+					"name": "Request Id",
+					"in": "header",
+					"required": false,
+					"schema": {
+						"type": "string",
+						"format": "uuid"
+					}
+				}
+			],
+			"responses": {
+				"200": {
+					"description": "Transaction Found",
+					"schema": {
+						"$ref": "./models/transaction/Transaction.yaml"
+					}
+				},
+				"default": {
+					"description": "See #/components/responses/error"
+				}
+			},
+			"scopes": [
+				"commerce.transaction:read",
+				"commerce.transaction:write"
+			]
+		},
+		{
+			"operationId": "addTransactionSignatureByTransactionId",
+			"method": "POST",
+			"path": "/stores/{storeId}/transactions/{transactionId}/signatures",
+			"summary": "Add transaction signature",
+			"description": "Add a transaction signature using the store and transaction IDs.",
+			"parameters": [
+				{
+					"name": "storeId",
+					"in": "path",
+					"required": true,
+					"schema": {
+						"$ref": "./types/Uuid.yaml"
+					}
+				},
+				{
+					"name": "transactionId",
+					"in": "path",
+					"required": true,
+					"schema": {
+						"$ref": "./types/Id.yaml"
+					}
+				},
+				{
+					"name": "Request Id",
+					"in": "header",
+					"required": false,
+					"schema": {
+						"type": "string",
+						"format": "uuid"
+					}
+				}
+			],
+			"requestBody": {
+				"required": false,
+				"contentType": "multipart/form-data",
+				"schema": {
+					"$ref": "./models/transaction/Signature.yaml"
+				}
+			},
+			"responses": {
+				"200": {
+					"description": "See #/components/responses/200"
+				},
+				"default": {
+					"description": "See #/components/responses/error"
+				}
+			},
+			"scopes": [
+				"commerce.transaction:write"
+			]
+		},
+		{
+			"operationId": "getTransactionSignaturesById",
+			"method": "GET",
+			"path": "/stores/{storeId}/transactions/{transactionId}/signatures",
+			"summary": "Get transaction signatures",
+			"description": "Get all transaction signatures using the store and transaction IDs.",
+			"parameters": [
+				{
+					"name": "storeId",
+					"in": "path",
+					"required": true,
+					"schema": {
+						"$ref": "./types/Uuid.yaml"
+					}
+				},
+				{
+					"name": "transactionId",
+					"in": "path",
+					"required": true,
+					"schema": {
+						"$ref": "./types/Id.yaml"
+					}
+				},
+				{
+					"name": "Request Id",
+					"in": "header",
+					"required": false,
+					"schema": {
+						"type": "string",
+						"format": "uuid"
+					}
+				},
+				{
+					"name": "page",
+					"in": "query",
+					"required": false,
+					"schema": {
+						"type": "integer",
+						"default": 1
+					}
+				},
+				{
+					"name": "pageSize",
+					"in": "query",
+					"required": false,
+					"schema": {
+						"type": "integer",
+						"default": 10
+					}
+				},
+				{
+					"name": "totalRequired",
+					"in": "query",
+					"required": false,
+					"schema": {
+						"type": "boolean",
+						"default": false
+					}
+				}
+			],
+			"responses": {
+				"200": {
+					"description": "Transaction Signature list",
+					"schema": {
+						"title": "Transaction Signatures",
+						"$ref": "#/components/schemas/signatureList"
+					}
+				},
+				"default": {
+					"description": "See #/components/responses/error"
+				}
+			},
+			"scopes": [
+				"commerce.transaction:read",
+				"commerce.transaction:write"
+			]
+		},
+		{
+			"operationId": "getTransactionReference",
+			"method": "GET",
+			"path": "/stores/{storeId}/transactions/{transactionId}/references/{value}",
+			"summary": "Get transaction reference",
+			"description": "Retrieve a transaction reference using the store ID, transaction ID and reference value.",
+			"parameters": [
+				{
+					"name": "storeId",
+					"in": "path",
+					"required": true,
+					"schema": {
+						"$ref": "./types/Uuid.yaml"
+					}
+				},
+				{
+					"name": "transactionId",
+					"in": "path",
+					"required": true,
+					"schema": {
+						"$ref": "./types/Id.yaml"
+					}
+				},
+				{
+					"name": "value",
+					"in": "path",
+					"required": true,
+					"description": "Reference value",
+					"schema": {
+						"type": "string"
+					}
+				}
+			],
+			"responses": {
+				"200": {
+					"description": "Transaction references by value",
+					"schema": {
+						"$ref": "./models/TransactionReference.yaml"
+					}
+				}
+			},
+			"scopes": [
+				"commerce.transaction:read",
+				"commerce.transaction:write"
+			]
+		},
+		{
+			"operationId": "createTransactionReference",
+			"method": "PUT",
+			"path": "/stores/{storeId}/transactions/{transactionId}/references/{value}",
+			"summary": "Create transaction reference",
+			"description": "Create a new transaction reference using the store ID, transaction ID and reference value.",
+			"parameters": [
+				{
+					"name": "storeId",
+					"in": "path",
+					"required": true,
+					"schema": {
+						"$ref": "./types/Uuid.yaml"
+					}
+				},
+				{
+					"name": "transactionId",
+					"in": "path",
+					"required": true,
+					"schema": {
+						"$ref": "./types/Id.yaml"
+					}
+				},
+				{
+					"name": "value",
+					"in": "path",
+					"required": true,
+					"description": "Reference value",
+					"schema": {
+						"type": "string"
+					}
+				}
+			],
+			"requestBody": {
+				"required": false,
+				"contentType": "application/json",
+				"schema": {
+					"$ref": "./models/TransactionReference.yaml"
+				}
+			},
+			"responses": {
+				"204": {
+					"description": "Resource created / updated successfully"
+				}
+			},
+			"scopes": [
+				"commerce.transaction:write"
+			]
+		},
+		{
+			"operationId": "deleteTransactionReference",
+			"method": "DELETE",
+			"path": "/stores/{storeId}/transactions/{transactionId}/references/{value}",
+			"summary": "Delete reference",
+			"description": "Delete a transaction reference using the store ID, transaction ID and reference value.",
+			"parameters": [
+				{
+					"name": "storeId",
+					"in": "path",
+					"required": true,
+					"schema": {
+						"$ref": "./types/Uuid.yaml"
+					}
+				},
+				{
+					"name": "transactionId",
+					"in": "path",
+					"required": true,
+					"schema": {
+						"$ref": "./types/Id.yaml"
+					}
+				},
+				{
+					"name": "value",
+					"in": "path",
+					"required": true,
+					"description": "Reference value",
+					"schema": {
+						"type": "string"
+					}
+				}
+			],
+			"responses": {
+				"200": {
+					"description": "See #/components/responses/200"
+				},
+				"404": {
+					"description": "Reference Not Found"
+				}
+			},
+			"scopes": [
+				"commerce.transaction:write"
+			]
+		}
+	]
 }
