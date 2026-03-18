@@ -1,11 +1,16 @@
 import * as HelpDoc from "@effect/cli/HelpDoc";
 import type { ValidationError as EffectValidationError } from "@effect/cli/ValidationError";
-import { type CliError, errorCode } from "../../effect/errors";
+import {
+  type ApiErrorContext,
+  type CliError,
+  errorCode,
+} from "../../effect/errors";
 
 export interface AgentErrorDetails {
   message: string;
   code: string;
   fix: string;
+  details?: Record<string, unknown>;
 }
 
 const ANSI_ESCAPE_PATTERN = new RegExp(
@@ -28,9 +33,68 @@ function formatValidationMessage(error: EffectValidationError): string {
   return "Invalid command input";
 }
 
+function apiDetails(error: CliError): Record<string, unknown> | undefined {
+  const context = error as Partial<ApiErrorContext>;
+
+  const details: Record<string, unknown> = {};
+  if (typeof context.status === "number") {
+    details.status = context.status;
+  }
+  if (typeof context.statusText === "string" && context.statusText.length > 0) {
+    details.status_text = context.statusText;
+  }
+  if (typeof context.endpoint === "string" && context.endpoint.length > 0) {
+    details.endpoint = context.endpoint;
+  }
+  if (typeof context.method === "string" && context.method.length > 0) {
+    details.method = context.method;
+  }
+  if (typeof context.requestId === "string" && context.requestId.length > 0) {
+    details.request_id = context.requestId;
+  }
+  if (context.responseBody !== undefined) {
+    details.response = context.responseBody;
+  }
+
+  return Object.keys(details).length > 0 ? details : undefined;
+}
+
+function hasGraphqlErrors(
+  details: Record<string, unknown> | undefined,
+): boolean {
+  const response = details?.response;
+  if (typeof response !== "object" || response === null) {
+    return false;
+  }
+
+  const errors = (response as Record<string, unknown>).errors;
+  return Array.isArray(errors) && errors.length > 0;
+}
+
+function fixForNetworkError(
+  details: Record<string, unknown> | undefined,
+): string {
+  if (hasGraphqlErrors(details)) {
+    return "Check GraphQL query, variables, and operationName. Inspect error.details.response.errors for resolver/validation details.";
+  }
+
+  const status = details?.status;
+  if (typeof status === "number") {
+    if (status >= 400 && status < 500) {
+      return "Check request path/query/body. Inspect error.details.response for API validation feedback.";
+    }
+    if (status >= 500) {
+      return "The API is currently failing server-side. Retry, or check service health/incidents.";
+    }
+  }
+
+  return "Verify environment connectivity with: godaddy env get and retry.";
+}
+
 function fromTaggedError(error: CliError): AgentErrorDetails {
   const code = errorCode(error);
   const message = error.userMessage || error.message;
+  const details = apiDetails(error);
 
   switch (error._tag) {
     case "ValidationError":
@@ -44,6 +108,7 @@ function fromTaggedError(error: CliError): AgentErrorDetails {
         message,
         code: "AUTH_REQUIRED",
         fix: "Run: godaddy auth login",
+        details,
       };
     case "ConfigurationError":
       return {
@@ -55,7 +120,8 @@ function fromTaggedError(error: CliError): AgentErrorDetails {
       return {
         message,
         code,
-        fix: "Verify environment connectivity with: godaddy env get and retry.",
+        fix: fixForNetworkError(details),
+        details,
       };
     case "SecurityError":
       return {

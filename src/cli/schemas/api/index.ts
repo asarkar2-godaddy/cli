@@ -14,8 +14,8 @@ import * as Option from "effect/Option";
 // Static imports — esbuild inlines these at bundle time
 // ---------------------------------------------------------------------------
 
-import locationAddressesJson from "./location-addresses.json";
 import manifestJson from "./manifest.json";
+import { DOMAIN_REGISTRY } from "./registry.generated";
 
 // ---------------------------------------------------------------------------
 // Types (match the generate-api-catalog output)
@@ -41,6 +41,30 @@ export interface CatalogResponse {
   schema?: Record<string, unknown>;
 }
 
+export interface CatalogGraphqlArgument {
+  name: string;
+  type: string;
+  required: boolean;
+  description?: string;
+  defaultValue?: string;
+}
+
+export interface CatalogGraphqlOperation {
+  name: string;
+  kind: "query" | "mutation";
+  returnType: string;
+  description?: string;
+  deprecated: boolean;
+  deprecationReason?: string;
+  args: CatalogGraphqlArgument[];
+}
+
+export interface CatalogGraphqlSchema {
+  schemaRef: string;
+  operationCount: number;
+  operations: CatalogGraphqlOperation[];
+}
+
 export interface CatalogEndpoint {
   operationId: string;
   method: string;
@@ -51,6 +75,7 @@ export interface CatalogEndpoint {
   requestBody?: CatalogRequestBody;
   responses: Record<string, CatalogResponse>;
   scopes: string[];
+  graphql?: CatalogGraphqlSchema;
 }
 
 export interface CatalogDomain {
@@ -74,13 +99,10 @@ interface CatalogManifest {
 }
 
 // ---------------------------------------------------------------------------
-// Domain registry — maps domain names to their inlined JSON data.
-// When adding a new spec, add its import above and register it here.
+// Domain registry — generated at build time by generate-api-catalog.ts
 // ---------------------------------------------------------------------------
 
-const DOMAIN_REGISTRY: Record<string, CatalogDomain> = {
-  "location-addresses": locationAddressesJson as unknown as CatalogDomain,
-};
+const domainRegistry = DOMAIN_REGISTRY as Record<string, CatalogDomain>;
 
 const manifest = manifestJson as unknown as CatalogManifest;
 
@@ -124,7 +146,7 @@ export function listDomainsEffect(): Effect.Effect<
 export function loadDomainEffect(
   name: string,
 ): Effect.Effect<Option.Option<CatalogDomain>> {
-  const domain = DOMAIN_REGISTRY[name];
+  const domain = domainRegistry[name];
   return Effect.succeed(domain ? Option.some(domain) : Option.none());
 }
 
@@ -137,7 +159,7 @@ export function findEndpointByOperationIdEffect(
   Option.Option<{ domain: CatalogDomain; endpoint: CatalogEndpoint }>
 > {
   return Effect.sync(() => {
-    for (const domain of Object.values(DOMAIN_REGISTRY)) {
+    for (const domain of Object.values(domainRegistry)) {
       const endpoint = domain.endpoints.find(
         (e) => e.operationId === operationId,
       );
@@ -150,6 +172,50 @@ export function findEndpointByOperationIdEffect(
 /**
  * Find an endpoint by HTTP method + path across all domains.
  */
+function normalizeComparablePath(apiPath: string): string {
+  const pathOnly = apiPath.split(/[?#]/, 1)[0] || "/";
+  const withLeadingSlash = pathOnly.startsWith("/") ? pathOnly : `/${pathOnly}`;
+
+  if (withLeadingSlash.length > 1 && withLeadingSlash.endsWith("/")) {
+    return withLeadingSlash.slice(0, -1);
+  }
+
+  return withLeadingSlash;
+}
+
+function pathTemplateMatches(
+  templatePath: string,
+  actualPath: string,
+): boolean {
+  const normalizedTemplate = normalizeComparablePath(templatePath);
+  const normalizedActual = normalizeComparablePath(actualPath);
+
+  if (normalizedTemplate === normalizedActual) return true;
+
+  const templateSegments = normalizedTemplate.split("/").filter(Boolean);
+  const actualSegments = normalizedActual.split("/").filter(Boolean);
+
+  if (templateSegments.length !== actualSegments.length) {
+    return false;
+  }
+
+  for (let index = 0; index < templateSegments.length; index += 1) {
+    const templateSegment = templateSegments[index];
+    const actualSegment = actualSegments[index];
+
+    if (templateSegment.startsWith("{") && templateSegment.endsWith("}")) {
+      if (actualSegment.length === 0) return false;
+      continue;
+    }
+
+    if (templateSegment !== actualSegment) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export function findEndpointByPathEffect(
   method: string,
   apiPath: string,
@@ -158,9 +224,9 @@ export function findEndpointByPathEffect(
 > {
   return Effect.sync(() => {
     const upperMethod = method.toUpperCase();
-    for (const domain of Object.values(DOMAIN_REGISTRY)) {
+    for (const domain of Object.values(domainRegistry)) {
       const endpoint = domain.endpoints.find(
-        (e) => e.method === upperMethod && e.path === apiPath,
+        (e) => e.method === upperMethod && pathTemplateMatches(e.path, apiPath),
       );
       if (endpoint) return Option.some({ domain, endpoint });
     }
@@ -199,14 +265,21 @@ export function searchEndpointsEffect(
       endpoint: CatalogEndpoint;
     }> = [];
 
-    for (const domain of Object.values(DOMAIN_REGISTRY)) {
+    for (const domain of Object.values(domainRegistry)) {
       for (const endpoint of domain.endpoints) {
+        const graphqlSearchable = endpoint.graphql
+          ? endpoint.graphql.operations
+              .map((operation) => `${operation.kind} ${operation.name}`)
+              .join(" ")
+          : "";
+
         const searchable = [
           endpoint.operationId,
           endpoint.summary,
           endpoint.description || "",
           endpoint.path,
           endpoint.method,
+          graphqlSearchable,
         ]
           .join(" ")
           .toLowerCase();

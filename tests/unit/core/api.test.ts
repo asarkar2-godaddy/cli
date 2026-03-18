@@ -81,7 +81,8 @@ describe("API Core Functions", () => {
           method: "GET",
           headers: expect.objectContaining({
             Authorization: "Bearer test-token-123",
-            "X-Request-ID": expect.any(String),
+            "x-request-id": expect.any(String),
+            "user-agent": "godaddy-cli",
           }),
         }),
       );
@@ -104,6 +105,111 @@ describe("API Core Functions", () => {
       };
       expect(err._tag).toBe("AuthenticationError");
       expect(err.userMessage).toContain("re-authenticate");
+    });
+
+    test("returns network error when graphql response contains errors", async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: { sku: null },
+            errors: [{ message: "Cannot query field 'skuX' on type 'Query'." }],
+          }),
+          {
+            status: 200,
+            statusText: "OK",
+            headers: {
+              "content-type": "application/json",
+              "x-request-id": "graphql-req-1",
+            },
+          },
+        ),
+      );
+
+      const exit = await runEffectExit(
+        apiRequestEffect({
+          endpoint: "/v2/commerce/stores/test/catalog/graphql",
+          method: "POST",
+          body: JSON.stringify({ query: "{ skuX { id } }" }),
+          graphql: true,
+        }),
+      );
+
+      const err = extractFailure(exit) as {
+        _tag: string;
+        userMessage: string;
+        status?: number;
+        requestId?: string;
+        responseBody?: unknown;
+      };
+
+      expect(err._tag).toBe("NetworkError");
+      expect(err.userMessage).toContain("GraphQL request returned errors");
+      expect(err.userMessage).toContain("Cannot query field");
+      expect(err.status).toBe(200);
+      expect(err.requestId).toBe("graphql-req-1");
+      expect(err.responseBody).toEqual(
+        expect.objectContaining({
+          errors: expect.arrayContaining([
+            expect.objectContaining({
+              message: "Cannot query field 'skuX' on type 'Query'.",
+            }),
+          ]),
+        }),
+      );
+    });
+
+    test("returns structured network error details for 400 responses", async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: "VALIDATION_FAILED",
+            message: "Validation error",
+            fields: [{ path: "lineItems[0].sku", message: "Required" }],
+          }),
+          {
+            status: 400,
+            statusText: "Bad Request",
+            headers: {
+              "content-type": "application/json",
+              "godaddy-request-id": "req-123",
+            },
+          },
+        ),
+      );
+
+      const exit = await runEffectExit(
+        apiRequestEffect({
+          endpoint: "/v1/commerce/stores/test-store/orders",
+          method: "POST",
+          body: "{}",
+        }),
+      );
+
+      const err = extractFailure(exit) as {
+        _tag: string;
+        userMessage: string;
+        status?: number;
+        statusText?: string;
+        endpoint?: string;
+        method?: string;
+        requestId?: string;
+        responseBody?: unknown;
+      };
+
+      expect(err._tag).toBe("NetworkError");
+      expect(err.userMessage).toContain("API request rejected (400)");
+      expect(err.userMessage).toContain("Validation error");
+      expect(err.status).toBe(400);
+      expect(err.statusText).toBe("Bad Request");
+      expect(err.endpoint).toBe("/v1/commerce/stores/test-store/orders");
+      expect(err.method).toBe("POST");
+      expect(err.requestId).toBe("req-123");
+      expect(err.responseBody).toEqual(
+        expect.objectContaining({
+          code: "VALIDATION_FAILED",
+          message: "Validation error",
+        }),
+      );
     });
   });
 

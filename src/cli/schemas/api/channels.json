@@ -1,0 +1,306 @@
+{
+  "name": "channels",
+  "title": "Channels API",
+  "description": "",
+  "version": "1.0.0",
+  "baseUrl": "https://api.godaddy.com/v1/commerce",
+  "endpoints": [
+    {
+      "operationId": "createChannel",
+      "method": "POST",
+      "path": "/channels",
+      "summary": "Create a new channel",
+      "requestBody": {
+        "required": false,
+        "contentType": "application/json",
+        "schema": {
+          "$ref": "./models/Channel.yaml"
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "New resource created successfully",
+          "schema": {
+            "$ref": "./models/Channel.yaml"
+          }
+        }
+      },
+      "scopes": ["commerce.channel:create"]
+    },
+    {
+      "operationId": "getChannels",
+      "method": "GET",
+      "path": "/channels",
+      "summary": "Get all channels",
+      "description": "Retrieve all the channels for a specific provider using parameters",
+      "parameters": [
+        {
+          "name": "externalChannelId",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "registeredStores.storeId",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "$ref": "./types/Id.yaml"
+          }
+        },
+        {
+          "name": "registeredStores.default",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "boolean",
+            "nullable": true
+          }
+        },
+        {
+          "name": "pageSize",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "default": 10,
+            "maximum": 100
+          }
+        },
+        {
+          "name": "page",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "default": 1,
+            "maximum": 100
+          }
+        },
+        {
+          "name": "totalRequired",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Channels",
+          "schema": {
+            "$ref": "./models/ChannelList.yaml"
+          }
+        }
+      },
+      "scopes": ["commerce.channel:read"]
+    },
+    {
+      "operationId": "patchChannel",
+      "method": "PATCH",
+      "path": "/channels/{channelId}",
+      "summary": "Update channel",
+      "description": "Update the channel information using the channel ID.",
+      "parameters": [
+        {
+          "name": "channelId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "$ref": "./types/Id.yaml"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "contentType": "application/json",
+        "schema": {
+          "items": {
+            "$ref": "./types/JsonPatch.yaml"
+          },
+          "type": "array"
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Channel updated",
+          "schema": {
+            "$ref": "./models/Channel.yaml"
+          }
+        },
+        "404": {
+          "description": "Channel Not Found"
+        }
+      },
+      "scopes": ["commerce.channel:update"]
+    },
+    {
+      "operationId": "getChannelById",
+      "method": "GET",
+      "path": "/channels/{channelId}",
+      "summary": "Get channel by ID",
+      "description": "Retrieve the information of a single channel using the Channel ID.",
+      "parameters": [
+        {
+          "name": "channelId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "$ref": "./types/Id.yaml"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Channel Found",
+          "schema": {
+            "$ref": "./models/Channel.yaml"
+          }
+        },
+        "404": {
+          "description": "Channel Not Found"
+        }
+      },
+      "scopes": ["commerce.channel:read"]
+    },
+    {
+      "operationId": "createChannelProvider",
+      "method": "POST",
+      "path": "/channel-providers",
+      "summary": "Create a new channel provider",
+      "requestBody": {
+        "required": false,
+        "contentType": "application/json",
+        "schema": {
+          "$ref": "./models/ChannelProvider.yaml"
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "New resource created successfully",
+          "schema": {
+            "$ref": "./models/ChannelProvider.yaml"
+          }
+        }
+      },
+      "scopes": ["commerce.channel-provider:create"]
+    },
+    {
+      "operationId": "getChannelProviders",
+      "method": "GET",
+      "path": "/channel-providers",
+      "summary": "Get all channel providers",
+      "parameters": [
+        {
+          "name": "pageSize",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "default": 10,
+            "maximum": 100
+          }
+        },
+        {
+          "name": "page",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "default": 1,
+            "maximum": 100
+          }
+        },
+        {
+          "name": "totalRequired",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Channel Providers",
+          "schema": {
+            "$ref": "./models/ChannelProviderList.yaml"
+          }
+        }
+      },
+      "scopes": ["commerce.channel-provider:read"]
+    },
+    {
+      "operationId": "patchChannelProvider",
+      "method": "PATCH",
+      "path": "/channel-providers/{channelProviderId}",
+      "summary": "Update channel provider",
+      "parameters": [
+        {
+          "name": "channelProviderId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "$ref": "./types/Id.yaml"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "contentType": "application/json",
+        "schema": {
+          "items": {
+            "$ref": "./types/JsonPatch.yaml"
+          },
+          "type": "array"
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Channel Provider updated",
+          "schema": {
+            "$ref": "./models/ChannelProvider.yaml"
+          }
+        },
+        "404": {
+          "description": "Channel Provider Not Found"
+        }
+      },
+      "scopes": ["commerce.channel-provider:update"]
+    },
+    {
+      "operationId": "getChannelProviderById",
+      "method": "GET",
+      "path": "/channel-providers/{channelProviderId}",
+      "summary": "Get channel provider by ID",
+      "description": "Retrieve the information of the channel provider using the ID.",
+      "parameters": [
+        {
+          "name": "channelProviderId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "$ref": "./types/Id.yaml"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Channel provider Found",
+          "schema": {
+            "$ref": "./models/ChannelProvider.yaml"
+          }
+        },
+        "404": {
+          "description": "Channel provider Not Found"
+        }
+      },
+      "scopes": ["commerce.channel-provider:read"]
+    }
+  ]
+}
