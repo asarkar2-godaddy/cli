@@ -81,7 +81,8 @@ describe("API Core Functions", () => {
           method: "GET",
           headers: expect.objectContaining({
             Authorization: "Bearer test-token-123",
-            "X-Request-ID": expect.any(String),
+            "x-request-id": expect.any(String),
+            "user-agent": "godaddy-cli",
           }),
         }),
       );

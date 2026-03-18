@@ -76,6 +76,41 @@ const MAX_ERROR_SUMMARY_CHARS = 240;
 const MAX_ERROR_DEPTH = 6;
 const MAX_ERROR_ARRAY_ITEMS = 40;
 const MAX_ERROR_OBJECT_KEYS = 80;
+const DEFAULT_USER_AGENT = "godaddy-cli";
+
+function findHeaderKey(
+  headers: Record<string, string>,
+  headerName: string,
+): string | undefined {
+  const target = headerName.toLowerCase();
+  return Object.keys(headers).find((key) => key.toLowerCase() === target);
+}
+
+function getHeaderValue(
+  headers: Record<string, string>,
+  headerName: string,
+): string | undefined {
+  const key = findHeaderKey(headers, headerName);
+  return key ? headers[key] : undefined;
+}
+
+function hasNonEmptyHeader(
+  headers: Record<string, string>,
+  headerName: string,
+): boolean {
+  const value = getHeaderValue(headers, headerName);
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function ensureRequiredRequestHeaders(headers: Record<string, string>): void {
+  if (!hasNonEmptyHeader(headers, "x-request-id")) {
+    headers["x-request-id"] = uuid();
+  }
+
+  if (!hasNonEmptyHeader(headers, "user-agent")) {
+    headers["user-agent"] = DEFAULT_USER_AGENT;
+  }
+}
 
 function truncateString(value: string, maxChars: number): string {
   if (value.length <= maxChars) return value;
@@ -454,21 +489,21 @@ export function apiRequestEffect(
     // Build headers
     const requestHeaders: Record<string, string> = {
       Authorization: `Bearer ${accessToken}`,
-      "X-Request-ID": uuid(),
       ...headers,
     };
+    ensureRequiredRequestHeaders(requestHeaders);
 
     // Build body
     let requestBody: string | undefined;
     if (body) {
       requestBody = body;
-      if (!requestHeaders["Content-Type"]) {
-        requestHeaders["Content-Type"] = "application/json";
+      if (!hasNonEmptyHeader(requestHeaders, "content-type")) {
+        requestHeaders["content-type"] = "application/json";
       }
     } else if (fields && Object.keys(fields).length > 0) {
       requestBody = JSON.stringify(fields);
-      if (!requestHeaders["Content-Type"]) {
-        requestHeaders["Content-Type"] = "application/json";
+      if (!hasNonEmptyHeader(requestHeaders, "content-type")) {
+        requestHeaders["content-type"] = "application/json";
       }
     }
 
