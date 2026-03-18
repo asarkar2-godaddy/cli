@@ -492,7 +492,12 @@ export function runCli(rawArgv: ReadonlyArray<string>): Promise<void> {
         const isCliValidation =
           errorTag !== undefined && CLI_VALIDATION_TAGS.has(errorTag);
 
-        let details: { message: string; code: string; fix: string };
+        let details: {
+          message: string;
+          code: string;
+          fix: string;
+          details?: Record<string, unknown>;
+        };
 
         if (isCliValidation) {
           // biome-ignore lint/suspicious/noExplicitAny: @effect/cli ValidationError is a union
@@ -508,14 +513,22 @@ export function runCli(rawArgv: ReadonlyArray<string>): Promise<void> {
         if (isStreaming) {
           yield* writer.emitStreamError(
             cmdStr,
-            { message: details.message, code: details.code },
+            {
+              message: details.message,
+              code: details.code,
+              details: details.details,
+            },
             details.fix,
             rootNextActions,
           );
         } else {
           yield* writer.emitError(
             cmdStr,
-            { message: details.message, code: details.code },
+            {
+              message: details.message,
+              code: details.code,
+              details: details.details,
+            },
             details.fix,
             rootNextActions,
           );

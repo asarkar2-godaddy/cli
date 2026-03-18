@@ -1,22 +1,35 @@
 /**
- * Build-time script: reads OpenAPI specs from specification submodules and
- * produces a JSON catalog that the CLI bundles for `godaddy api list / describe`.
+ * Build-time script: discovers OpenAPI specs from gdcorp-platform repositories
+ * and produces a JSON catalog that the CLI bundles for:
+ *   - godaddy api list
+ *   - godaddy api describe
  *
- * Resolves external $ref URLs (e.g. schemas.api.godaddy.com) at build time
+ * Also resolves external $ref URLs (e.g. schemas.api.godaddy.com) at build time
  * so the CLI catalog is fully self-contained.
  *
  * Usage:
  *   pnpm tsx scripts/generate-api-catalog.ts
  *
+ * Optional environment variables:
+ *   GITHUB_TOKEN                GitHub token for higher API rate limits
+ *   API_CATALOG_REPOS           Comma-separated repo names to include
+ *                               (e.g. "commerce.catalog-products-specification,commerce.orders-specification")
+ *   API_CATALOG_INCLUDE_LEGACY_LOCATION
+ *                               "false" to exclude location.addresses-specification
+ *
  * Output:
- *   src/cli/schemas/api/manifest.json   – domain index
- *   src/cli/schemas/api/<domain>.json   – per-domain endpoint catalog
+ *   src/cli/schemas/api/manifest.json          – domain index
+ *   src/cli/schemas/api/<domain>.json          – per-domain endpoint catalog
+ *   src/cli/schemas/api/registry.generated.ts  – generated runtime registry
  */
 
+import { execFileSync } from "node:child_process";
 import { lookup } from "node:dns/promises";
 import * as fs from "node:fs";
 import { isIP } from "node:net";
+import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 
 // ---------------------------------------------------------------------------
@@ -29,6 +42,10 @@ interface OpenApiParameter {
   required?: boolean;
   description?: string;
   schema?: Record<string, unknown>;
+}
+
+interface OpenApiReference {
+  $ref: string;
 }
 
 interface OpenApiRequestBody {
@@ -46,15 +63,18 @@ interface OpenApiOperation {
   operationId?: string;
   summary?: string;
   description?: string;
-  parameters?: OpenApiParameter[];
-  requestBody?: OpenApiRequestBody;
-  responses?: Record<string, OpenApiResponse | { $ref: string }>;
+  parameters?: Array<OpenApiParameter | OpenApiReference>;
+  requestBody?: OpenApiRequestBody | OpenApiReference;
+  responses?: Record<string, OpenApiResponse | OpenApiReference>;
   security?: Array<Record<string, string[]>>;
 }
 
 interface OpenApiPathItem {
-  [method: string]: OpenApiOperation | OpenApiParameter[] | undefined;
-  parameters?: OpenApiParameter[];
+  [method: string]:
+    | OpenApiOperation
+    | Array<OpenApiParameter | OpenApiReference>
+    | undefined;
+  parameters?: Array<OpenApiParameter | OpenApiReference>;
 }
 
 interface OpenApiServer {
@@ -121,33 +141,64 @@ interface CatalogManifest {
   generated: string;
   domains: Record<
     string,
-    { file: string; title: string; endpointCount: number }
+    {
+      file: string;
+      title: string;
+      endpointCount: number;
+    }
   >;
 }
 
-// ---------------------------------------------------------------------------
-// Spec source registry — add new spec submodules here
-// ---------------------------------------------------------------------------
-
-interface SpecSource {
-  /** Domain key used in the CLI (e.g. "location-addresses") */
-  domain: string;
-  /** Relative path from workspace root to the OpenAPI YAML file */
-  specPath: string;
+interface GitHubRepo {
+  name: string;
+  cloneUrl: string;
+  archived: boolean;
+  disabled: boolean;
+  private: boolean;
 }
 
-const __dirname = path.dirname(new URL(import.meta.url).pathname);
-const WORKSPACE_ROOT = path.resolve(__dirname, "../..");
-const OUTPUT_DIR = path.resolve(__dirname, "../src/cli/schemas/api");
+interface SpecSource {
+  domain: string;
+  repoName: string;
+  specFile: string;
+  specVersion: string;
+}
 
-const SPEC_SOURCES: SpecSource[] = [
-  {
-    domain: "location-addresses",
-    specPath: "location.addresses-specification/v1/schemas/openapi.yaml",
-  },
-  // Add more spec submodules here as they become available:
-  // { domain: "catalog", specPath: "catalog-specification/v1/schemas/openapi.yaml" },
+interface DiscoveredSpecSources {
+  sources: SpecSource[];
+  cloneRoot: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Discovery configuration
+// ---------------------------------------------------------------------------
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = path.resolve(__dirname, "..");
+const OUTPUT_DIR = path.resolve(PROJECT_ROOT, "src/cli/schemas/api");
+const REGISTRY_FILE = path.join(OUTPUT_DIR, "registry.generated.ts");
+
+const GITHUB_ORG = "gdcorp-platform";
+const GITHUB_API_BASE = "https://api.github.com";
+const GITHUB_REPOS_PAGE_SIZE = 100;
+const COMMERCE_SPEC_REPO_PATTERN = /^commerce\.[a-z0-9-]+-specification$/;
+const BOOTSTRAP_COMMERCE_REPOS = [
+  "commerce.catalog-products-specification",
+  "commerce.orders-specification",
+  "commerce.stores-specification",
+  "commerce.fulfillments-specification",
+  "commerce.metafields-specification",
+  "commerce.transactions-specification",
+  "commerce.businesses-specification",
+  "commerce.bulk-operations-specification",
+  "commerce.channels-specification",
+  "commerce.onboarding-specification",
 ];
+const LEGACY_ALWAYS_INCLUDE_REPOS = ["location.addresses-specification"];
+
+// ---------------------------------------------------------------------------
+// External $ref resolution security controls
+// ---------------------------------------------------------------------------
 
 const ALLOWED_REF_HOSTS = new Set(["schemas.api.godaddy.com"]);
 const MAX_REF_REDIRECTS = 5;
@@ -409,24 +460,18 @@ async function fetchExternalRef(url: string): Promise<Record<string, unknown>> {
 
 /**
  * Resolve a potentially relative $ref URL against a base URL.
- * "./country-code.yaml" resolved against
- * "https://schemas.api.godaddy.com/common-types/v1/schemas/yaml/address.yaml"
- * becomes "https://schemas.api.godaddy.com/common-types/v1/schemas/yaml/country-code.yaml"
  */
 function resolveRefUrl(ref: string, baseUrl?: string): string | null {
   if (ref.startsWith("https://") || ref.startsWith("http://")) return ref;
   if (ref.startsWith("#")) return null; // local JSON pointer — skip
   if (!baseUrl) return null;
-  // Relative path: resolve against the base URL's directory
   const base = baseUrl.substring(0, baseUrl.lastIndexOf("/") + 1);
   return new URL(ref, base).toString();
 }
 
 /**
  * Walk an object tree and resolve any { $ref: "..." } nodes by
- * fetching the URL and inlining the result. Resolves both absolute
- * and relative $refs (relative to parentUrl). Local JSON pointer
- * refs (e.g. "#/components/schemas/Foo") are left as-is.
+ * fetching the URL and inlining the result.
  */
 async function resolveRefs(obj: unknown, parentUrl?: string): Promise<unknown> {
   if (obj === null || obj === undefined) return obj;
@@ -438,20 +483,16 @@ async function resolveRefs(obj: unknown, parentUrl?: string): Promise<unknown> {
 
   const record = obj as Record<string, unknown>;
 
-  // Check if this node is a $ref
   if (typeof record.$ref === "string") {
     const resolvedUrl = resolveRefUrl(record.$ref, parentUrl);
     if (resolvedUrl) {
       const resolved = await fetchExternalRef(resolvedUrl);
-      // Preserve sibling properties (e.g. "description" next to "$ref")
       const { $ref, ...siblings } = record;
       const merged = { ...resolved, ...siblings };
-      // Recursively resolve any nested $refs, using this URL as the new base
       return resolveRefs(merged, resolvedUrl);
     }
   }
 
-  // Recurse into all properties
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(record)) {
     result[key] = await resolveRefs(value, parentUrl);
@@ -460,7 +501,320 @@ async function resolveRefs(obj: unknown, parentUrl?: string): Promise<unknown> {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// GitHub discovery helpers
+// ---------------------------------------------------------------------------
+
+function parseRepoOverride(): string[] | null {
+  const raw = process.env.API_CATALOG_REPOS?.trim();
+  if (!raw) return null;
+
+  const repos = raw
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  return repos.length > 0 ? repos : null;
+}
+
+function includeLegacyLocationRepo(): boolean {
+  const raw = process.env.API_CATALOG_INCLUDE_LEGACY_LOCATION;
+  if (!raw) return true;
+  return raw.toLowerCase() !== "false";
+}
+
+function githubHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    "User-Agent": "godaddy-cli-api-catalog-generator",
+  };
+
+  const token = process.env.GITHUB_TOKEN?.trim();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  return headers;
+}
+
+function isGitHubRepoObject(value: unknown): value is {
+  name: string;
+  clone_url: string;
+  archived: boolean;
+  disabled: boolean;
+  private: boolean;
+} {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.name === "string" &&
+    typeof record.clone_url === "string" &&
+    typeof record.archived === "boolean" &&
+    typeof record.disabled === "boolean" &&
+    typeof record.private === "boolean"
+  );
+}
+
+async function listReposForOwnerPath(ownerPath: string): Promise<GitHubRepo[]> {
+  const repos: GitHubRepo[] = [];
+
+  for (let page = 1; ; page += 1) {
+    const url = `${GITHUB_API_BASE}/${ownerPath}/${GITHUB_ORG}/repos?per_page=${GITHUB_REPOS_PAGE_SIZE}&page=${page}&type=public&sort=full_name&direction=asc`;
+
+    const response = await fetch(url, { headers: githubHeaders() });
+    if (!response.ok) {
+      if (response.status === 404) {
+        return [];
+      }
+      throw new Error(
+        `GitHub API request failed (${response.status}) while listing ${ownerPath} repos`,
+      );
+    }
+
+    const payload = (await response.json()) as unknown;
+    if (!Array.isArray(payload)) {
+      throw new Error("Unexpected GitHub API response: expected an array");
+    }
+
+    if (payload.length === 0) break;
+
+    for (const item of payload) {
+      if (!isGitHubRepoObject(item)) {
+        continue;
+      }
+      repos.push({
+        name: item.name,
+        cloneUrl: item.clone_url,
+        archived: item.archived,
+        disabled: item.disabled,
+        private: item.private,
+      });
+    }
+
+    if (payload.length < GITHUB_REPOS_PAGE_SIZE) {
+      break;
+    }
+  }
+
+  return repos;
+}
+
+async function listOrgRepos(): Promise<GitHubRepo[]> {
+  const orgRepos = await listReposForOwnerPath("orgs");
+  if (orgRepos.length > 0) {
+    return orgRepos;
+  }
+
+  const userRepos = await listReposForOwnerPath("users");
+  if (userRepos.length > 0) {
+    return userRepos;
+  }
+
+  return [];
+}
+
+function deriveDomainFromRepoName(repoName: string): string {
+  const withoutSuffix = repoName.endsWith("-specification")
+    ? repoName.slice(0, -"-specification".length)
+    : repoName;
+
+  const withoutCommercePrefix = withoutSuffix.startsWith("commerce.")
+    ? withoutSuffix.slice("commerce.".length)
+    : withoutSuffix;
+
+  return withoutCommercePrefix
+    .toLowerCase()
+    .replace(/\./g, "-")
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function parseVersionDirectory(versionDirName: string): number[] | null {
+  if (!/^v\d+(?:\.\d+)*$/.test(versionDirName)) {
+    return null;
+  }
+
+  const numeric = versionDirName.slice(1);
+  const parts = numeric.split(".").map((part) => Number.parseInt(part, 10));
+
+  if (parts.some((part) => Number.isNaN(part))) {
+    return null;
+  }
+
+  return parts;
+}
+
+function compareVersionArrays(a: number[], b: number[]): number {
+  const length = Math.max(a.length, b.length);
+  for (let index = 0; index < length; index += 1) {
+    const aPart = a[index] ?? 0;
+    const bPart = b[index] ?? 0;
+    if (aPart !== bPart) return aPart - bPart;
+  }
+  return 0;
+}
+
+function findLatestSpecFile(
+  repoDir: string,
+): { version: string; specFile: string } | null {
+  const versionCandidates = fs
+    .readdirSync(repoDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .map((name) => ({ name, parsed: parseVersionDirectory(name) }))
+    .filter(
+      (entry): entry is { name: string; parsed: number[] } =>
+        entry.parsed !== null,
+    )
+    .sort((left, right) => compareVersionArrays(left.parsed, right.parsed));
+
+  for (let index = versionCandidates.length - 1; index >= 0; index -= 1) {
+    const version = versionCandidates[index].name;
+
+    const candidates = [
+      path.join(repoDir, version, "schemas", "openapi.yaml"),
+      path.join(repoDir, version, "schemas", "openapi.yml"),
+      path.join(repoDir, version, "schemas", "openapi.json"),
+    ];
+
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        return { version, specFile: candidate };
+      }
+    }
+  }
+
+  return null;
+}
+
+function cloneRepository(cloneUrl: string, targetDir: string): void {
+  execFileSync(
+    "git",
+    ["clone", "--depth", "1", "--quiet", cloneUrl, targetDir],
+    {
+      stdio: "pipe",
+      env: process.env,
+    },
+  );
+}
+
+async function discoverSpecSources(): Promise<DiscoveredSpecSources> {
+  const allRepos = await listOrgRepos();
+  const repoMap = new Map(allRepos.map((repo) => [repo.name, repo]));
+
+  const overrides = parseRepoOverride();
+
+  const selectedRepoNames = new Set<string>();
+  if (overrides) {
+    for (const repoName of overrides) {
+      selectedRepoNames.add(repoName);
+    }
+  } else {
+    for (const repo of allRepos) {
+      if (COMMERCE_SPEC_REPO_PATTERN.test(repo.name)) {
+        selectedRepoNames.add(repo.name);
+      }
+    }
+  }
+
+  if (!overrides && selectedRepoNames.size === 0) {
+    console.error(
+      "WARNING: Dynamic GitHub discovery found no commerce specifications. Falling back to bootstrap repository list.",
+    );
+    for (const repoName of BOOTSTRAP_COMMERCE_REPOS) {
+      selectedRepoNames.add(repoName);
+    }
+  }
+
+  if (includeLegacyLocationRepo()) {
+    for (const legacyRepo of LEGACY_ALWAYS_INCLUDE_REPOS) {
+      selectedRepoNames.add(legacyRepo);
+    }
+  }
+
+  const selectedRepos = [...selectedRepoNames]
+    .map((name) => {
+      const discovered = repoMap.get(name);
+      if (discovered) {
+        return discovered;
+      }
+
+      return {
+        name,
+        cloneUrl: `https://github.com/${GITHUB_ORG}/${name}.git`,
+        archived: false,
+        disabled: false,
+        private: false,
+      } satisfies GitHubRepo;
+    })
+    .filter((repo) => !repo.private)
+    .filter((repo) => !repo.archived)
+    .filter((repo) => !repo.disabled)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  if (!overrides && allRepos.length === 0) {
+    console.error(
+      "WARNING: GitHub repo discovery returned 0 repositories. Set API_CATALOG_REPOS or provide GITHUB_TOKEN for broader discovery.",
+    );
+  }
+
+  if (selectedRepos.length === 0) {
+    return { sources: [], cloneRoot: null };
+  }
+
+  const cloneRoot = fs.mkdtempSync(
+    path.join(os.tmpdir(), "godaddy-api-catalog-"),
+  );
+  const sources: SpecSource[] = [];
+  const usedDomains = new Set<string>();
+
+  for (const repo of selectedRepos) {
+    const repoDir = path.join(cloneRoot, repo.name);
+    try {
+      cloneRepository(repo.cloneUrl, repoDir);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`WARNING: failed to clone ${repo.name}: ${message}`);
+      continue;
+    }
+
+    const latestSpec = findLatestSpecFile(repoDir);
+    if (!latestSpec) {
+      console.error(
+        `WARNING: ${repo.name} has no v*/schemas/openapi.{yaml,yml,json} — skipping`,
+      );
+      continue;
+    }
+
+    const domain = deriveDomainFromRepoName(repo.name);
+    if (!domain) {
+      console.error(
+        `WARNING: could not derive domain key from repo '${repo.name}' — skipping`,
+      );
+      continue;
+    }
+
+    if (usedDomains.has(domain)) {
+      console.error(
+        `WARNING: duplicate derived domain '${domain}' from repo '${repo.name}' — skipping`,
+      );
+      continue;
+    }
+
+    usedDomains.add(domain);
+    sources.push({
+      domain,
+      repoName: repo.name,
+      specFile: latestSpec.specFile,
+      specVersion: latestSpec.version,
+    });
+  }
+
+  return { sources, cloneRoot };
+}
+
+// ---------------------------------------------------------------------------
+// Spec processing helpers
 // ---------------------------------------------------------------------------
 
 const HTTP_METHODS = new Set([
@@ -486,40 +840,152 @@ function resolveBaseUrl(servers?: OpenApiServer[]): string {
   return url;
 }
 
+const COMMERCE_SCOPE_URN_REGEX =
+  /^urn:godaddy:services:commerce\.([a-z0-9-]+):([a-z-]+)$/i;
+const COMMERCE_SCOPE_URI_REGEX =
+  /^https:\/\/uri\.godaddy\.com\/services\/commerce\/([a-z0-9-]+)\/([a-z-]+)$/i;
+
+function normalizeScopeAction(action: string): string {
+  const normalized = action.toLowerCase();
+  if (normalized === "read-write") {
+    return "write";
+  }
+  return normalized;
+}
+
+function normalizeScopeToken(scope: string): string {
+  const trimmed = scope.trim();
+  if (!trimmed) return trimmed;
+
+  const urnMatch = trimmed.match(COMMERCE_SCOPE_URN_REGEX);
+  if (urnMatch) {
+    const domain = urnMatch[1].toLowerCase();
+    const action = normalizeScopeAction(urnMatch[2]);
+    return `commerce.${domain}:${action}`;
+  }
+
+  const uriMatch = trimmed.match(COMMERCE_SCOPE_URI_REGEX);
+  if (uriMatch) {
+    const domain = uriMatch[1].toLowerCase();
+    const action = normalizeScopeAction(uriMatch[2]);
+    return `commerce.${domain}:${action}`;
+  }
+
+  const commerceMatch = trimmed.match(/^commerce\.([a-z0-9-]+):([a-z-]+)$/i);
+  if (commerceMatch) {
+    const domain = commerceMatch[1].toLowerCase();
+    const action = normalizeScopeAction(commerceMatch[2]);
+    return `commerce.${domain}:${action}`;
+  }
+
+  return trimmed;
+}
+
 function extractScopes(security?: Array<Record<string, string[]>>): string[] {
   if (!security) return [];
-  const scopes: string[] = [];
+
+  const normalizedScopes = new Set<string>();
+
   for (const entry of security) {
     for (const scopeList of Object.values(entry)) {
-      scopes.push(...scopeList);
+      for (const rawScope of scopeList) {
+        const normalizedScope = normalizeScopeToken(rawScope);
+        if (normalizedScope) {
+          normalizedScopes.add(normalizedScope);
+        }
+      }
     }
   }
-  return [...new Set(scopes)];
+
+  return [...normalizedScopes];
+}
+
+function resolveLocalRef(
+  spec: OpenApiSpec,
+  ref: string,
+): Record<string, unknown> | null {
+  if (!ref.startsWith("#/")) return null;
+
+  const segments = ref
+    .slice(2)
+    .split("/")
+    .map((segment) => segment.replace(/~1/g, "/").replace(/~0/g, "~"));
+
+  let current: unknown = spec as unknown;
+  for (const segment of segments) {
+    if (typeof current !== "object" || current === null) {
+      return null;
+    }
+
+    const record = current as Record<string, unknown>;
+    current = record[segment];
+  }
+
+  if (typeof current !== "object" || current === null) {
+    return null;
+  }
+
+  return current as Record<string, unknown>;
+}
+
+function resolveParameter(
+  spec: OpenApiSpec,
+  parameter: OpenApiParameter | OpenApiReference,
+): OpenApiParameter | null {
+  if ("$ref" in parameter) {
+    const resolved = resolveLocalRef(spec, parameter.$ref);
+    if (!resolved) return null;
+
+    const name = resolved.name;
+    const location = resolved.in;
+    if (typeof name !== "string" || typeof location !== "string") {
+      return null;
+    }
+
+    return {
+      name,
+      in: location,
+      required:
+        typeof resolved.required === "boolean" ? resolved.required : undefined,
+      description:
+        typeof resolved.description === "string"
+          ? resolved.description
+          : undefined,
+      schema:
+        typeof resolved.schema === "object" && resolved.schema !== null
+          ? (resolved.schema as Record<string, unknown>)
+          : undefined,
+    };
+  }
+
+  return parameter;
 }
 
 function processOperation(
+  spec: OpenApiSpec,
   httpMethod: string,
   pathStr: string,
   operation: OpenApiOperation,
-  pathLevelParams?: OpenApiParameter[],
+  pathLevelParams?: Array<OpenApiParameter | OpenApiReference>,
 ): CatalogEndpoint {
-  // Merge path-level and operation-level parameters
   const allParams = [
     ...(pathLevelParams || []),
     ...(operation.parameters || []),
   ];
 
-  const parameters = allParams.map((p) => ({
-    name: p.name,
-    in: p.in,
-    required: p.required ?? false,
-    description: p.description,
-    schema: p.schema,
-  }));
+  const parameters = allParams
+    .map((parameter) => resolveParameter(spec, parameter))
+    .filter((parameter): parameter is OpenApiParameter => parameter !== null)
+    .map((parameter) => ({
+      name: parameter.name,
+      in: parameter.in,
+      required: parameter.required ?? false,
+      description: parameter.description,
+      schema: parameter.schema,
+    }));
 
-  // Process request body
   let requestBody: CatalogEndpoint["requestBody"];
-  if (operation.requestBody) {
+  if (operation.requestBody && !("$ref" in operation.requestBody)) {
     const rb = operation.requestBody;
     const contentTypes = rb.content ? Object.keys(rb.content) : [];
     const primaryCt = contentTypes[0] || "application/json";
@@ -529,11 +995,10 @@ function processOperation(
       required: rb.required ?? false,
       description: rb.description,
       contentType: primaryCt,
-      schema: schema,
+      schema,
     };
   }
 
-  // Process responses (skip $ref responses that we can't resolve inline)
   const responses: CatalogEndpoint["responses"] = {};
   if (operation.responses) {
     for (const [status, resp] of Object.entries(operation.responses)) {
@@ -552,7 +1017,6 @@ function processOperation(
     }
   }
 
-  // Generate a stable operationId if missing
   const operationId =
     operation.operationId ||
     `${httpMethod}${pathStr.replace(/[^a-zA-Z0-9]/g, "_")}`;
@@ -575,15 +1039,13 @@ function processSpec(spec: OpenApiSpec, domain: string): CatalogDomain {
   const endpoints: CatalogEndpoint[] = [];
 
   for (const [pathStr, pathItem] of Object.entries(spec.paths)) {
-    const pathLevelParams = pathItem.parameters as
-      | OpenApiParameter[]
-      | undefined;
+    const pathLevelParams = pathItem.parameters;
 
     for (const [key, value] of Object.entries(pathItem)) {
       if (key === "parameters" || !HTTP_METHODS.has(key) || !value) continue;
       const operation = value as OpenApiOperation;
       endpoints.push(
-        processOperation(key, pathStr, operation, pathLevelParams),
+        processOperation(spec, key, pathStr, operation, pathLevelParams),
       );
     }
   }
@@ -598,6 +1060,107 @@ function processSpec(spec: OpenApiSpec, domain: string): CatalogDomain {
   };
 }
 
+function repairMissingJsonCommas(raw: string): string {
+  const lines = raw.split("\n");
+
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    const currentLine = lines[index];
+    const nextLine = lines[index + 1];
+
+    const currentTrimmedRight = currentLine.trimEnd();
+    const nextTrimmedLeft = nextLine.trimStart();
+
+    if (currentTrimmedRight.length === 0) continue;
+    if (/[,\[{]\s*$/.test(currentTrimmedRight)) continue;
+    if (!/^"[^"\\]+"\s*:/.test(nextTrimmedLeft)) continue;
+    if (!/^\s*"[^"\\]+"\s*:/.test(currentTrimmedRight)) continue;
+    if (!/["}\]0-9a-zA-Z]$/.test(currentTrimmedRight)) continue;
+
+    lines[index] = `${currentLine},`;
+  }
+
+  return lines.join("\n");
+}
+
+function parseOpenApiSpec(raw: string, specFile: string): OpenApiSpec {
+  try {
+    return parseYaml(raw) as OpenApiSpec;
+  } catch (error) {
+    const lowerPath = specFile.toLowerCase();
+    if (!lowerPath.endsWith(".json")) {
+      throw error;
+    }
+
+    const repaired = repairMissingJsonCommas(raw);
+    if (repaired === raw) {
+      throw error;
+    }
+
+    try {
+      console.error(
+        `WARNING: detected malformed JSON in ${specFile}; attempting comma-repair fallback`,
+      );
+      return parseYaml(repaired) as OpenApiSpec;
+    } catch {
+      throw error;
+    }
+  }
+}
+
+function identifierForDomain(domain: string): string {
+  const clean = domain.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+
+  if (!clean) return "domain_json";
+  if (/^[0-9]/.test(clean)) return `domain_${clean}`;
+  return `${clean}_json`;
+}
+
+function writeRegistryFile(domains: string[]): void {
+  const sorted = [...domains].sort((a, b) => a.localeCompare(b));
+
+  const importLines = sorted.map((domain) => {
+    const identifier = identifierForDomain(domain);
+    return `import ${identifier} from "./${domain}.json";`;
+  });
+
+  const objectLines = sorted.map((domain) => {
+    const identifier = identifierForDomain(domain);
+    return `  "${domain}": ${identifier},`;
+  });
+
+  const content = [
+    "/**",
+    " * AUTO-GENERATED by scripts/generate-api-catalog.ts",
+    " * Do not edit manually.",
+    " */",
+    "",
+    ...importLines,
+    "",
+    "export const DOMAIN_REGISTRY: Record<string, unknown> = {",
+    ...objectLines,
+    "};",
+    "",
+  ].join("\n");
+
+  fs.writeFileSync(REGISTRY_FILE, content, "utf-8");
+}
+
+function removeStaleDomainJsonFiles(activeDomainFiles: Set<string>): void {
+  const entries = fs.readdirSync(OUTPUT_DIR, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    if (!entry.name.endsWith(".json")) continue;
+    if (entry.name === "manifest.json") continue;
+
+    if (!activeDomainFiles.has(entry.name)) {
+      fs.rmSync(path.join(OUTPUT_DIR, entry.name), {
+        recursive: false,
+        force: true,
+      });
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -605,48 +1168,74 @@ function processSpec(spec: OpenApiSpec, domain: string): CatalogDomain {
 async function main() {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
+  const { sources: specSources, cloneRoot } = await discoverSpecSources();
+
   const manifest: CatalogManifest = {
     generated: new Date().toISOString(),
     domains: {},
   };
 
+  const activeDomainFiles = new Set<string>();
   let totalEndpoints = 0;
 
-  for (const source of SPEC_SOURCES) {
-    const specFile = path.join(WORKSPACE_ROOT, source.specPath);
-
-    if (!fs.existsSync(specFile)) {
-      console.error(`WARNING: spec not found: ${specFile} — skipping`);
-      continue;
+  try {
+    if (specSources.length === 0) {
+      throw new Error(
+        "No specification repositories discovered. Refusing to overwrite catalog output.",
+      );
     }
 
-    const raw = fs.readFileSync(specFile, "utf-8");
-    const spec = parseYaml(raw) as OpenApiSpec;
-    const catalog = processSpec(spec, source.domain);
+    for (const source of specSources) {
+      if (!fs.existsSync(source.specFile)) {
+        console.error(
+          `WARNING: spec file not found for ${source.repoName}: ${source.specFile} — skipping`,
+        );
+        continue;
+      }
 
-    // Resolve all external $refs in the catalog
-    console.log(`  Resolving external $refs for ${source.domain}...`);
-    const resolved = (await resolveRefs(catalog)) as CatalogDomain;
+      try {
+        const raw = fs.readFileSync(source.specFile, "utf-8");
+        const spec = parseOpenApiSpec(raw, source.specFile);
+        const catalog = processSpec(spec, source.domain);
 
-    const filename = `${source.domain}.json`;
+        console.log(
+          `  Resolving external $refs for ${source.domain} (${source.repoName}/${source.specVersion})...`,
+        );
+        const resolved = (await resolveRefs(catalog)) as CatalogDomain;
 
-    fs.writeFileSync(
-      path.join(OUTPUT_DIR, filename),
-      JSON.stringify(resolved, null, "\t"),
-      "utf-8",
-    );
+        const filename = `${source.domain}.json`;
+        activeDomainFiles.add(filename);
 
-    manifest.domains[source.domain] = {
-      file: filename,
-      title: resolved.title,
-      endpointCount: resolved.endpoints.length,
-    };
+        fs.writeFileSync(
+          path.join(OUTPUT_DIR, filename),
+          JSON.stringify(resolved, null, "\t"),
+          "utf-8",
+        );
 
-    totalEndpoints += resolved.endpoints.length;
-    console.log(
-      `  ${source.domain}: ${resolved.endpoints.length} endpoints from ${spec.info.title} v${spec.info.version}`,
-    );
+        manifest.domains[source.domain] = {
+          file: filename,
+          title: resolved.title,
+          endpointCount: resolved.endpoints.length,
+        };
+
+        totalEndpoints += resolved.endpoints.length;
+        console.log(
+          `  ${source.domain}: ${resolved.endpoints.length} endpoints from ${spec.info.title} v${spec.info.version}`,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(
+          `WARNING: failed processing ${source.repoName} (${source.specVersion}): ${message}`,
+        );
+      }
+    }
+  } finally {
+    if (cloneRoot) {
+      fs.rmSync(cloneRoot, { recursive: true, force: true });
+    }
   }
+
+  removeStaleDomainJsonFiles(activeDomainFiles);
 
   fs.writeFileSync(
     path.join(OUTPUT_DIR, "manifest.json"),
@@ -654,12 +1243,14 @@ async function main() {
     "utf-8",
   );
 
+  writeRegistryFile(Object.keys(manifest.domains));
+
   console.log(
     `\nGenerated API catalog: ${Object.keys(manifest.domains).length} domains, ${totalEndpoints} endpoints`,
   );
 }
 
-main().catch((err) => {
-  console.error("Fatal error:", err);
+main().catch((error) => {
+  console.error("Fatal error:", error);
   process.exit(1);
 });

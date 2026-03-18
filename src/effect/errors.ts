@@ -5,17 +5,30 @@ export class ValidationError extends Data.TaggedError("ValidationError")<{
   readonly userMessage: string;
 }> {}
 
-export class NetworkError extends Data.TaggedError("NetworkError")<{
-  readonly message: string;
-  readonly userMessage: string;
-}> {}
+export interface ApiErrorContext {
+  readonly status?: number;
+  readonly statusText?: string;
+  readonly endpoint?: string;
+  readonly method?: string;
+  readonly requestId?: string;
+  readonly responseBody?: unknown;
+}
+
+export class NetworkError extends Data.TaggedError("NetworkError")<
+  {
+    readonly message: string;
+    readonly userMessage: string;
+  } & ApiErrorContext
+> {}
 
 export class AuthenticationError extends Data.TaggedError(
   "AuthenticationError",
-)<{
-  readonly message: string;
-  readonly userMessage: string;
-}> {}
+)<
+  {
+    readonly message: string;
+    readonly userMessage: string;
+  } & ApiErrorContext
+> {}
 
 export class ConfigurationError extends Data.TaggedError("ConfigurationError")<{
   readonly message: string;

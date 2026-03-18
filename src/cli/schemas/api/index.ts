@@ -14,8 +14,8 @@ import * as Option from "effect/Option";
 // Static imports — esbuild inlines these at bundle time
 // ---------------------------------------------------------------------------
 
-import locationAddressesJson from "./location-addresses.json";
 import manifestJson from "./manifest.json";
+import { DOMAIN_REGISTRY } from "./registry.generated";
 
 // ---------------------------------------------------------------------------
 // Types (match the generate-api-catalog output)
@@ -74,13 +74,10 @@ interface CatalogManifest {
 }
 
 // ---------------------------------------------------------------------------
-// Domain registry — maps domain names to their inlined JSON data.
-// When adding a new spec, add its import above and register it here.
+// Domain registry — generated at build time by generate-api-catalog.ts
 // ---------------------------------------------------------------------------
 
-const DOMAIN_REGISTRY: Record<string, CatalogDomain> = {
-  "location-addresses": locationAddressesJson as unknown as CatalogDomain,
-};
+const domainRegistry = DOMAIN_REGISTRY as Record<string, CatalogDomain>;
 
 const manifest = manifestJson as unknown as CatalogManifest;
 
@@ -124,7 +121,7 @@ export function listDomainsEffect(): Effect.Effect<
 export function loadDomainEffect(
   name: string,
 ): Effect.Effect<Option.Option<CatalogDomain>> {
-  const domain = DOMAIN_REGISTRY[name];
+  const domain = domainRegistry[name];
   return Effect.succeed(domain ? Option.some(domain) : Option.none());
 }
 
@@ -137,7 +134,7 @@ export function findEndpointByOperationIdEffect(
   Option.Option<{ domain: CatalogDomain; endpoint: CatalogEndpoint }>
 > {
   return Effect.sync(() => {
-    for (const domain of Object.values(DOMAIN_REGISTRY)) {
+    for (const domain of Object.values(domainRegistry)) {
       const endpoint = domain.endpoints.find(
         (e) => e.operationId === operationId,
       );
@@ -158,7 +155,7 @@ export function findEndpointByPathEffect(
 > {
   return Effect.sync(() => {
     const upperMethod = method.toUpperCase();
-    for (const domain of Object.values(DOMAIN_REGISTRY)) {
+    for (const domain of Object.values(domainRegistry)) {
       const endpoint = domain.endpoints.find(
         (e) => e.method === upperMethod && e.path === apiPath,
       );
@@ -199,7 +196,7 @@ export function searchEndpointsEffect(
       endpoint: CatalogEndpoint;
     }> = [];
 
-    for (const domain of Object.values(DOMAIN_REGISTRY)) {
+    for (const domain of Object.values(domainRegistry)) {
       for (const endpoint of domain.endpoints) {
         const searchable = [
           endpoint.operationId,

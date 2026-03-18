@@ -1,0 +1,1050 @@
+{
+  "name": "catalog-products",
+  "title": "Catalog Products API",
+  "description": "This API allows you to create, update and manage categories, products and product associations.",
+  "version": "1.3.0",
+  "baseUrl": "https://api.godaddy.com/v1/commerce",
+  "endpoints": [
+    {
+      "operationId": "getAssociations",
+      "method": "GET",
+      "path": "/stores/{storeId}/associations",
+      "summary": "Get associations",
+      "description": "This endpoint can be used to retrieve a list of product associations using the store ID.",
+      "parameters": [
+        {
+          "name": "type",
+          "in": "query",
+          "required": false,
+          "description": "Filter associations by `type`",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "sortBy",
+          "in": "query",
+          "required": false,
+          "description": "Sort associations by name, last updated, or sequence\n\n*Note:* when querying associations, `type` defaults to `category` if not provided\n",
+          "schema": {
+            "type": "string",
+            "default": "updated_at",
+            "enum": ["updated_at", "name", "sequence"]
+          }
+        },
+        {
+          "name": "sortOrder",
+          "in": "query",
+          "required": false,
+          "description": "Sort associations in descending or ascending order",
+          "schema": {
+            "type": "string",
+            "default": "desc",
+            "enum": ["asc", "desc"]
+          }
+        },
+        {
+          "name": "altId",
+          "in": "query",
+          "required": false,
+          "description": "Filter associations by `altId` (`type` is required or it defaults to `category`)",
+          "schema": {
+            "$ref": "./catalog-common-types/alt-id.json"
+          }
+        },
+        {
+          "name": "parentId",
+          "in": "query",
+          "required": false,
+          "description": "Filter associations by `parentId`",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Associations found",
+          "schema": {
+            "type": "object",
+            "title": "Associations",
+            "properties": {
+              "associations": {
+                "type": "array",
+                "items": {
+                  "$ref": "./models/Association.yaml"
+                }
+              },
+              "pagination": {
+                "$ref": "./http/Common.yaml#/components/schemas/Pagination"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "See ./http/Error.yaml#/components/responses/401"
+        },
+        "404": {
+          "description": "See ./http/Error.yaml#/components/responses/404"
+        },
+        "500": {
+          "description": "See ./http/Error.yaml#/components/responses/500"
+        }
+      },
+      "scopes": ["commerce.category:read"]
+    },
+    {
+      "operationId": "postAssociation",
+      "method": "POST",
+      "path": "/stores/{storeId}/associations",
+      "summary": "Create a new association",
+      "description": "Create a new product association to connect products within a catalog using the store ID.",
+      "requestBody": {
+        "required": true,
+        "description": "Properties to create an association",
+        "contentType": "application/json",
+        "schema": {
+          "$ref": "./models/Association.yaml",
+          "required": ["type", "name", "depth"]
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Association created",
+          "schema": {
+            "type": "object",
+            "title": "AssociationCreated",
+            "properties": {
+              "association": {
+                "$ref": "./models/Association.yaml"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "See ./http/Error.yaml#/components/responses/401"
+        },
+        "404": {
+          "description": "See ./http/Error.yaml#/components/responses/404"
+        },
+        "409": {
+          "description": "See ./http/CustomResponse.yaml#/components/responses/AssociationAlreadyExists"
+        },
+        "422": {
+          "description": "See ./http/Error.yaml#/components/responses/422"
+        },
+        "500": {
+          "description": "See ./http/Error.yaml#/components/responses/500"
+        }
+      },
+      "scopes": ["commerce.category:write"]
+    },
+    {
+      "operationId": "getAssociationTypes",
+      "method": "GET",
+      "path": "/stores/{storeId}/associations/types",
+      "summary": "Get association types",
+      "description": "This endpoint can be used to retrieve a list of unique association types for a store using the store ID.",
+      "responses": {
+        "200": {
+          "description": "Association types found",
+          "schema": {
+            "type": "object",
+            "title": "AssociationTypes",
+            "properties": {
+              "associationTypes": {
+                "type": "array",
+                "items": {
+                  "$ref": "./models/Association.yaml#/properties/type"
+                }
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "See ./http/Error.yaml#/components/responses/401"
+        },
+        "404": {
+          "description": "See ./http/Error.yaml#/components/responses/404"
+        },
+        "500": {
+          "description": "See ./http/Error.yaml#/components/responses/500"
+        }
+      },
+      "scopes": ["commerce.category:read"]
+    },
+    {
+      "operationId": "getAssociation",
+      "method": "GET",
+      "path": "/stores/{storeId}/associations/{associationId}",
+      "summary": "Get association by ID",
+      "description": "Retrieve the information of a single product association for a specific store using the store and association IDs.",
+      "parameters": [
+        {
+          "name": "associationId",
+          "in": "path",
+          "required": true,
+          "description": "The Association ID",
+          "schema": {
+            "$ref": "./common-types/v1/schemas/json/uuid.json"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Association found",
+          "schema": {
+            "type": "object",
+            "title": "GetAssociation",
+            "properties": {
+              "association": {
+                "$ref": "./models/Association.yaml"
+              },
+              "result": {
+                "$ref": "./models/Association.yaml",
+                "deprecated": true
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "See ./http/Error.yaml#/components/responses/401"
+        },
+        "404": {
+          "description": "See ./http/Error.yaml#/components/responses/404"
+        },
+        "500": {
+          "description": "See ./http/Error.yaml#/components/responses/500"
+        }
+      },
+      "scopes": ["commerce.category:read"]
+    },
+    {
+      "operationId": "patchAssociation",
+      "method": "PATCH",
+      "path": "/stores/{storeId}/associations/{associationId}",
+      "summary": "Update an association by ID",
+      "description": "This endpoint can be used to update the details of a single product association using the store and association IDs.",
+      "parameters": [
+        {
+          "name": "associationId",
+          "in": "path",
+          "required": true,
+          "description": "The Association ID",
+          "schema": {
+            "$ref": "./common-types/v1/schemas/json/uuid.json"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "description": "Properties to update an association",
+        "contentType": "application/json",
+        "schema": {
+          "$ref": "./models/Association.yaml"
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Association updated",
+          "schema": {
+            "title": "AssociationUpdated",
+            "type": "object",
+            "properties": {
+              "association": {
+                "$ref": "./models/Association.yaml"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "See ./http/Error.yaml#/components/responses/401"
+        },
+        "404": {
+          "description": "See ./http/Error.yaml#/components/responses/404"
+        },
+        "422": {
+          "description": "See ./http/Error.yaml#/components/responses/422"
+        },
+        "500": {
+          "description": "See ./http/Error.yaml#/components/responses/500"
+        }
+      },
+      "scopes": ["commerce.category:write"]
+    },
+    {
+      "operationId": "deleteAssociation",
+      "method": "DELETE",
+      "path": "/stores/{storeId}/associations/{associationId}",
+      "summary": "Delete an association by ID",
+      "description": "This endpoint can be used to delete a product association for a store using the store and association IDs.",
+      "parameters": [
+        {
+          "name": "associationId",
+          "in": "path",
+          "required": true,
+          "description": "The Association ID",
+          "schema": {
+            "$ref": "./common-types/v1/schemas/json/uuid.json"
+          }
+        }
+      ],
+      "responses": {
+        "204": {
+          "description": "See ./http/Success.yaml#/components/responses/204"
+        },
+        "401": {
+          "description": "See ./http/Error.yaml#/components/responses/401"
+        },
+        "404": {
+          "description": "See ./http/Error.yaml#/components/responses/404"
+        },
+        "422": {
+          "description": "See ./http/Error.yaml#/components/responses/422"
+        },
+        "500": {
+          "description": "See ./http/Error.yaml#/components/responses/500"
+        }
+      },
+      "scopes": ["commerce.category:write"]
+    },
+    {
+      "operationId": "getCategories",
+      "method": "GET",
+      "path": "/stores/{storeId}/categories",
+      "summary": "Get categories",
+      "description": "This endpoint can be used to retrieve the list of all product categories for a specific store using the store ID.",
+      "parameters": [
+        {
+          "name": "sortBy",
+          "in": "query",
+          "required": false,
+          "description": "Sort categories by name or last updated",
+          "schema": {
+            "type": "string",
+            "default": "updated_at",
+            "enum": ["updated_at", "name", "sequence"]
+          }
+        },
+        {
+          "name": "sortOrder",
+          "in": "query",
+          "required": false,
+          "description": "Sort categories in descending or ascending order",
+          "schema": {
+            "type": "string",
+            "default": "desc",
+            "enum": ["asc", "desc"]
+          }
+        },
+        {
+          "name": "ids",
+          "in": "query",
+          "required": false,
+          "description": "Filter results to only include categories that have these UUIDs (comma-separated list).\nMaximum of 50 ids per request.\n\n*Note*: Pagination is currently not supported when using this filter. Other filters are ignored when this one is received.\n",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "parentId",
+          "in": "query",
+          "required": false,
+          "description": "Filter categories by parent",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "altId",
+          "in": "query",
+          "required": false,
+          "description": "Filter results to only include a category with this altId",
+          "schema": {
+            "$ref": "./catalog-common-types/alt-id.json"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Categories found",
+          "schema": {
+            "type": "object",
+            "title": "Categories",
+            "properties": {
+              "categories": {
+                "type": "array",
+                "items": {
+                  "$ref": "./models/Category.yaml"
+                }
+              },
+              "pagination": {
+                "$ref": "./http/Common.yaml#/components/schemas/Pagination"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "See ./http/Error.yaml#/components/responses/401"
+        },
+        "404": {
+          "description": "See ./http/Error.yaml#/components/responses/404"
+        },
+        "500": {
+          "description": "See ./http/Error.yaml#/components/responses/500"
+        }
+      },
+      "scopes": ["commerce.category:read"]
+    },
+    {
+      "operationId": "postCategories",
+      "method": "POST",
+      "path": "/stores/{storeId}/categories",
+      "summary": "Create a new category",
+      "description": "Create a new product category for a store using the store ID.",
+      "requestBody": {
+        "required": true,
+        "description": "Properties to create a category",
+        "contentType": "application/json",
+        "schema": {
+          "$ref": "./models/Category.yaml",
+          "required": ["name", "depth"]
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Category Created",
+          "schema": {
+            "type": "object",
+            "title": "CategoryCreated",
+            "properties": {
+              "category": {
+                "$ref": "./models/Category.yaml"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "See ./http/Error.yaml#/components/responses/401"
+        },
+        "404": {
+          "description": "See ./http/Error.yaml#/components/responses/404"
+        },
+        "409": {
+          "description": "See ./http/CustomResponse.yaml#/components/responses/CategoryAlreadyExists"
+        },
+        "422": {
+          "description": "See ./http/Error.yaml#/components/responses/422"
+        },
+        "500": {
+          "description": "See ./http/Error.yaml#/components/responses/500"
+        }
+      },
+      "scopes": ["commerce.category:write"]
+    },
+    {
+      "operationId": "getCategory",
+      "method": "GET",
+      "path": "/stores/{storeId}/categories/{categoryId}",
+      "summary": "Get category by ID",
+      "description": "This endpoint can be used to retrieve the information of a single product category for a store using the store and category IDs.",
+      "parameters": [
+        {
+          "name": "categoryId",
+          "in": "path",
+          "required": true,
+          "description": "The Category ID",
+          "schema": {
+            "$ref": "./common-types/v1/schemas/json/uuid.json"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Category found",
+          "schema": {
+            "type": "object",
+            "title": "GetCategory",
+            "properties": {
+              "category": {
+                "$ref": "./models/Category.yaml"
+              },
+              "result": {
+                "$ref": "./models/Category.yaml",
+                "deprecated": true
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "See ./http/Error.yaml#/components/responses/401"
+        },
+        "404": {
+          "description": "See ./http/Error.yaml#/components/responses/404"
+        },
+        "500": {
+          "description": "See ./http/Error.yaml#/components/responses/500"
+        }
+      },
+      "scopes": ["commerce.category:read"]
+    },
+    {
+      "operationId": "patchCategory",
+      "method": "PATCH",
+      "path": "/stores/{storeId}/categories/{categoryId}",
+      "summary": "Update category by ID",
+      "description": "Update the details of a single product category within a store using the store and category IDs.",
+      "parameters": [
+        {
+          "name": "categoryId",
+          "in": "path",
+          "required": true,
+          "description": "The Category ID",
+          "schema": {
+            "$ref": "./common-types/v1/schemas/json/uuid.json"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "description": "Properties to update a category",
+        "contentType": "application/json",
+        "schema": {
+          "$ref": "./models/Category.yaml"
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Category updated",
+          "schema": {
+            "title": "CategoryUpdated",
+            "type": "object",
+            "properties": {
+              "category": {
+                "$ref": "./models/Category.yaml"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "See ./http/Error.yaml#/components/responses/401"
+        },
+        "404": {
+          "description": "See ./http/Error.yaml#/components/responses/404"
+        },
+        "422": {
+          "description": "See ./http/Error.yaml#/components/responses/422"
+        },
+        "500": {
+          "description": "See ./http/Error.yaml#/components/responses/500"
+        }
+      },
+      "scopes": ["commerce.category:write"]
+    },
+    {
+      "operationId": "deleteCategory",
+      "method": "DELETE",
+      "path": "/stores/{storeId}/categories/{categoryId}",
+      "summary": "Delete category by ID",
+      "description": "Delete a single product category within a store using the store and category IDs.",
+      "parameters": [
+        {
+          "name": "categoryId",
+          "in": "path",
+          "required": true,
+          "description": "The Category ID",
+          "schema": {
+            "$ref": "./common-types/v1/schemas/json/uuid.json"
+          }
+        }
+      ],
+      "responses": {
+        "204": {
+          "description": "See ./http/Success.yaml#/components/responses/204"
+        },
+        "401": {
+          "description": "See ./http/Error.yaml#/components/responses/401"
+        },
+        "404": {
+          "description": "See ./http/Error.yaml#/components/responses/404"
+        },
+        "422": {
+          "description": "See ./http/Error.yaml#/components/responses/422"
+        },
+        "500": {
+          "description": "See ./http/Error.yaml#/components/responses/500"
+        }
+      },
+      "scopes": ["commerce.category:write"]
+    },
+    {
+      "operationId": "postCategoryBatches",
+      "method": "POST",
+      "path": "/stores/{storeId}/category-batches",
+      "summary": "Edit categories in bulk",
+      "description": "This endpoint can be used to create, update or delete product categories in bulk using the store ID. You must specify if you want to CREATE, UPDATE, or DELETE in the request body to perform the desired action on the selected categories.",
+      "requestBody": {
+        "required": true,
+        "description": "Properties to update or delete categories in batch",
+        "contentType": "application/json",
+        "schema": {
+          "$ref": "./models/CategoryBatch.yaml"
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Categories batch action successful",
+          "schema": {
+            "$ref": "./models/CategoryBatch.yaml"
+          }
+        },
+        "204": {
+          "description": "See ./http/Success.yaml#/components/responses/204"
+        },
+        "400": {
+          "description": "Categories batch action failed",
+          "schema": {
+            "$ref": "./models/CategoryBatch.yaml"
+          }
+        },
+        "401": {
+          "description": "See ./http/Error.yaml#/components/responses/401"
+        },
+        "404": {
+          "description": "See ./http/Error.yaml#/components/responses/404"
+        },
+        "409": {
+          "description": "See ./http/CustomResponse.yaml#/components/responses/CategoryAlreadyExists"
+        },
+        "422": {
+          "description": "See ./http/Error.yaml#/components/responses/422"
+        },
+        "500": {
+          "description": "See ./http/Error.yaml#/components/responses/500"
+        }
+      },
+      "scopes": []
+    },
+    {
+      "operationId": "getProducts",
+      "method": "GET",
+      "path": "/stores/{storeId}/products",
+      "summary": "Get products",
+      "description": "This endpoint can be used to retrieve the list of products for a specific store using the store ID.",
+      "parameters": [
+        {
+          "name": "includeDeleted",
+          "in": "query",
+          "required": false,
+          "description": "If true, includes deleted products.",
+          "schema": {
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "includeChildProducts",
+          "in": "query",
+          "required": false,
+          "description": "If true, includes child products.\n\n*Note:* It will be ignored when sku, altId or parentId are present.\n",
+          "schema": {
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "type",
+          "in": "query",
+          "required": false,
+          "description": "Filter results to only include a product with this type",
+          "schema": {
+            "type": "string",
+            "description": "The type of product, can be physical, digital, service, or giftcard"
+          }
+        },
+        {
+          "name": "ids",
+          "in": "query",
+          "required": false,
+          "description": "Filter results to only include products that have these UUIDs (comma-separated list).\n\n*Note:* Pagination is currently not supported when using this filter.\n",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "searchTerm",
+          "in": "query",
+          "required": false,
+          "description": "Match different fields in inclusive fashion (OR).\n\n*Note:* Currently only supported on name and SKU.\n",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "name",
+          "in": "query",
+          "required": false,
+          "description": "Filter results to only include a product with this name (URL encoded)",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "sku",
+          "in": "query",
+          "required": false,
+          "description": "Filter results to only have a product with this sku",
+          "schema": {
+            "$ref": "./catalog-common-types/sku.json"
+          }
+        },
+        {
+          "name": "altId",
+          "in": "query",
+          "required": false,
+          "description": "Filter results to only include a product with this altId",
+          "schema": {
+            "$ref": "./catalog-common-types/alt-id.json"
+          }
+        },
+        {
+          "name": "categoryId",
+          "in": "query",
+          "required": false,
+          "description": "Filter results to only include products in this category.\n\n*Note:* Pagination is currently not supported when using this filter.\n",
+          "schema": {
+            "$ref": "./common-types/v1/schemas/json/uuid.json"
+          }
+        },
+        {
+          "name": "channelId",
+          "in": "query",
+          "required": false,
+          "description": "Filter results to only include products in this channel",
+          "schema": {
+            "$ref": "./common-types/v1/schemas/json/uuid.json"
+          }
+        },
+        {
+          "name": "parentId",
+          "in": "query",
+          "required": false,
+          "description": "Filter results to only include variants with this id as their parentId",
+          "schema": {
+            "$ref": "./common-types/v1/schemas/json/uuid.json"
+          }
+        },
+        {
+          "name": "externalIdType",
+          "in": "query",
+          "required": false,
+          "description": "Filter results based on externalIdType, must be used with externalIdValue",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "externalIdValue",
+          "in": "query",
+          "required": false,
+          "description": "Filter results based on externalIdValue, must be used with externalIdType",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "sortBy",
+          "in": "query",
+          "required": false,
+          "description": "Returns products by sortBy property",
+          "schema": {
+            "type": "string",
+            "enum": ["updatedAt", "name", "price"]
+          }
+        },
+        {
+          "name": "sortOrder",
+          "in": "query",
+          "required": false,
+          "description": "Return sorted products in descending or ascending order",
+          "schema": {
+            "type": "string",
+            "enum": ["asc", "desc"]
+          }
+        },
+        {
+          "name": "updatedAtStart",
+          "in": "query",
+          "required": false,
+          "description": "Filter results to only include products with an updatedAt timestamp after or at the provided timestamp",
+          "schema": {
+            "$ref": "./common-types/v1/schemas/yaml/date-time.yaml"
+          }
+        },
+        {
+          "name": "updatedAtEnd",
+          "in": "query",
+          "required": false,
+          "description": "Filter results to only include products with an updatedAt timestamp before or at the provided timestamp",
+          "schema": {
+            "$ref": "./common-types/v1/schemas/yaml/date-time.yaml"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Products found",
+          "schema": {
+            "type": "object",
+            "title": "Products",
+            "properties": {
+              "products": {
+                "type": "array",
+                "items": {
+                  "$ref": "./models/Product.yaml#/components/schemas/Product"
+                }
+              },
+              "pagination": {
+                "$ref": "./http/Common.yaml#/components/schemas/Pagination"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "See ./http/Error.yaml#/components/responses/401"
+        },
+        "404": {
+          "description": "See ./http/Error.yaml#/components/responses/404"
+        },
+        "500": {
+          "description": "See ./http/Error.yaml#/components/responses/500"
+        }
+      },
+      "scopes": ["commerce.product:read"]
+    },
+    {
+      "operationId": "postProducts",
+      "method": "POST",
+      "path": "/stores/{storeId}/products",
+      "summary": "Create a new product",
+      "description": "Create a new product for a specific store using the store ID.",
+      "requestBody": {
+        "required": true,
+        "description": "Properties to create a product",
+        "contentType": "application/json",
+        "schema": {
+          "$ref": "./models/Product.yaml#/components/schemas/CreateProduct"
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Product Created",
+          "schema": {
+            "title": "ProductCreated",
+            "type": "object",
+            "properties": {
+              "product": {
+                "$ref": "./models/Product.yaml#/components/schemas/Product"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "See ./http/Error.yaml#/components/responses/401"
+        },
+        "404": {
+          "description": "See ./http/Error.yaml#/components/responses/404"
+        },
+        "409": {
+          "description": "See ./http/CustomResponse.yaml#/components/responses/ProductAlreadyExists"
+        },
+        "422": {
+          "description": "See ./http/Error.yaml#/components/responses/422"
+        },
+        "500": {
+          "description": "See ./http/Error.yaml#/components/responses/500"
+        }
+      },
+      "scopes": ["commerce.product:write"]
+    },
+    {
+      "operationId": "getProduct",
+      "method": "GET",
+      "path": "/stores/{storeId}/products/{productId}",
+      "summary": "Get product by ID",
+      "description": "Retrieve all the details of a single product within a store using the store and product IDs.",
+      "parameters": [
+        {
+          "name": "productId",
+          "in": "path",
+          "required": true,
+          "description": "The Product ID",
+          "schema": {
+            "$ref": "./common-types/v1/schemas/json/uuid.json"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Product found",
+          "schema": {
+            "type": "object",
+            "title": "GetProduct",
+            "properties": {
+              "product": {
+                "$ref": "./models/Product.yaml#/components/schemas/Product"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "See ./http/Error.yaml#/components/responses/401"
+        },
+        "404": {
+          "description": "See ./http/Error.yaml#/components/responses/404"
+        },
+        "500": {
+          "description": "See ./http/Error.yaml#/components/responses/500"
+        }
+      },
+      "scopes": ["commerce.product:read"]
+    },
+    {
+      "operationId": "patchProduct",
+      "method": "PATCH",
+      "path": "/stores/{storeId}/products/{productId}",
+      "summary": "Update product by ID",
+      "description": "Update or modify the details of a single product within a specific store using the store and product IDs.",
+      "parameters": [
+        {
+          "name": "productId",
+          "in": "path",
+          "required": true,
+          "description": "The Product ID",
+          "schema": {
+            "$ref": "./common-types/v1/schemas/json/uuid.json"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "description": "Properties to update a product",
+        "contentType": "application/json",
+        "schema": {
+          "$ref": "./models/Product.yaml#/components/schemas/UpdateProduct"
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Product updated",
+          "schema": {
+            "title": "ProductUpdated",
+            "type": "object",
+            "properties": {
+              "product": {
+                "$ref": "./models/Product.yaml#/components/schemas/Product"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "See ./http/Error.yaml#/components/responses/401"
+        },
+        "404": {
+          "description": "See ./http/Error.yaml#/components/responses/404"
+        },
+        "422": {
+          "description": "See ./http/Error.yaml#/components/responses/422"
+        },
+        "500": {
+          "description": "See ./http/Error.yaml#/components/responses/500"
+        }
+      },
+      "scopes": ["commerce.product:write"]
+    },
+    {
+      "operationId": "deleteProduct",
+      "method": "DELETE",
+      "path": "/stores/{storeId}/products/{productId}",
+      "summary": "Delete product and variants by ID",
+      "description": "This endpoint can be used to delete a product and its variants within a store using the store and product IDs.",
+      "parameters": [
+        {
+          "name": "productId",
+          "in": "path",
+          "required": true,
+          "description": "The Product ID",
+          "schema": {
+            "$ref": "./common-types/v1/schemas/json/uuid.json"
+          }
+        }
+      ],
+      "responses": {
+        "204": {
+          "description": "See ./http/Success.yaml#/components/responses/204"
+        },
+        "401": {
+          "description": "See ./http/Error.yaml#/components/responses/401"
+        },
+        "404": {
+          "description": "See ./http/Error.yaml#/components/responses/404"
+        },
+        "422": {
+          "description": "See ./http/Error.yaml#/components/responses/422"
+        },
+        "500": {
+          "description": "See ./http/Error.yaml#/components/responses/500"
+        }
+      },
+      "scopes": ["commerce.product:write"]
+    },
+    {
+      "operationId": "postProductBatches",
+      "method": "POST",
+      "path": "/stores/{storeId}/product-batches",
+      "summary": "Edit products in bulk",
+      "description": "This endpoint can be used to modify and manage products in bulk for a specific store using the store ID. You must specify CREATE, UPDATE, or DELETE within the request body to peform the desired action on the selected products.",
+      "requestBody": {
+        "required": true,
+        "description": "Properties to create, update or delete Products in batch",
+        "contentType": "application/json",
+        "schema": {
+          "$ref": "./models/ProductBatch.yaml"
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Products batch action successful",
+          "schema": {
+            "$ref": "./models/ProductBatch.yaml"
+          }
+        },
+        "204": {
+          "description": "See ./http/Success.yaml#/components/responses/204"
+        },
+        "400": {
+          "description": "Products Batch action failed",
+          "schema": {
+            "$ref": "./models/ProductBatch.yaml"
+          }
+        },
+        "401": {
+          "description": "See ./http/Error.yaml#/components/responses/401"
+        },
+        "404": {
+          "description": "See ./http/Error.yaml#/components/responses/404"
+        },
+        "409": {
+          "description": "See ./http/CustomResponse.yaml#/components/responses/ProductAlreadyExists"
+        },
+        "422": {
+          "description": "See ./http/Error.yaml#/components/responses/422"
+        },
+        "500": {
+          "description": "See ./http/Error.yaml#/components/responses/500"
+        }
+      },
+      "scopes": ["commerce.product:write"]
+    }
+  ]
+}

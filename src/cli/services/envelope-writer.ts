@@ -30,7 +30,7 @@ export interface EnvelopeWriterShape {
    */
   readonly emitError: (
     command: string,
-    error: { message: string; code: string },
+    error: { message: string; code: string; details?: Record<string, unknown> },
     fix: string,
     nextActions: NextAction[],
   ) => Effect.Effect<AgentErrorEnvelope>;
@@ -55,7 +55,7 @@ export interface EnvelopeWriterShape {
    */
   readonly emitStreamError: (
     command: string,
-    error: { message: string; code: string },
+    error: { message: string; code: string; details?: Record<string, unknown> },
     fix: string,
     nextActions: NextAction[],
   ) => Effect.Effect<void>;
@@ -114,7 +114,11 @@ export const EnvelopeWriterLive: Layer.Layer<EnvelopeWriter, never, CliConfig> =
 
       const emitError = (
         command: string,
-        error: { message: string; code: string },
+        error: {
+          message: string;
+          code: string;
+          details?: Record<string, unknown>;
+        },
         fix: string,
         nextActions: NextAction[],
       ): Effect.Effect<AgentErrorEnvelope> =>
@@ -160,7 +164,11 @@ export const EnvelopeWriterLive: Layer.Layer<EnvelopeWriter, never, CliConfig> =
 
       const emitStreamError = (
         command: string,
-        error: { message: string; code: string },
+        error: {
+          message: string;
+          code: string;
+          details?: Record<string, unknown>;
+        },
         fix: string,
         nextActions: NextAction[],
       ): Effect.Effect<void> =>
@@ -234,7 +242,11 @@ export const makeTestEnvelopeWriter = (): Effect.Effect<
 
       emitError: (
         command: string,
-        error: { message: string; code: string },
+        error: {
+          message: string;
+          code: string;
+          details?: Record<string, unknown>;
+        },
         fix: string,
         nextActions: NextAction[],
       ) =>
@@ -271,7 +283,11 @@ export const makeTestEnvelopeWriter = (): Effect.Effect<
 
       emitStreamError: (
         command: string,
-        error: { message: string; code: string },
+        error: {
+          message: string;
+          code: string;
+          details?: Record<string, unknown>;
+        },
         fix: string,
         nextActions: NextAction[],
       ) =>

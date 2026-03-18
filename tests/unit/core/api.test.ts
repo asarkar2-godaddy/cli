@@ -105,6 +105,60 @@ describe("API Core Functions", () => {
       expect(err._tag).toBe("AuthenticationError");
       expect(err.userMessage).toContain("re-authenticate");
     });
+
+    test("returns structured network error details for 400 responses", async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: "VALIDATION_FAILED",
+            message: "Validation error",
+            fields: [{ path: "lineItems[0].sku", message: "Required" }],
+          }),
+          {
+            status: 400,
+            statusText: "Bad Request",
+            headers: {
+              "content-type": "application/json",
+              "godaddy-request-id": "req-123",
+            },
+          },
+        ),
+      );
+
+      const exit = await runEffectExit(
+        apiRequestEffect({
+          endpoint: "/v1/commerce/stores/test-store/orders",
+          method: "POST",
+          body: "{}",
+        }),
+      );
+
+      const err = extractFailure(exit) as {
+        _tag: string;
+        userMessage: string;
+        status?: number;
+        statusText?: string;
+        endpoint?: string;
+        method?: string;
+        requestId?: string;
+        responseBody?: unknown;
+      };
+
+      expect(err._tag).toBe("NetworkError");
+      expect(err.userMessage).toContain("API request rejected (400)");
+      expect(err.userMessage).toContain("Validation error");
+      expect(err.status).toBe(400);
+      expect(err.statusText).toBe("Bad Request");
+      expect(err.endpoint).toBe("/v1/commerce/stores/test-store/orders");
+      expect(err.method).toBe("POST");
+      expect(err.requestId).toBe("req-123");
+      expect(err.responseBody).toEqual(
+        expect.objectContaining({
+          code: "VALIDATION_FAILED",
+          message: "Validation error",
+        }),
+      );
+    });
   });
 
   describe("parseFieldsEffect", () => {

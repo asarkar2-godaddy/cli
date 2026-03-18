@@ -1,0 +1,219 @@
+{
+  "name": "onboarding",
+  "title": "Commerce Onboarding API",
+  "description": "<p>Onboarding platform facilitates onboarding a merchant onto GoDaddy's omni-channel products.<br><p>To onboard a merchant, various steps are taken to verify the owner information which permits access to payments, orders and GoDaddy products.",
+  "version": "1.0.0",
+  "baseUrl": "https://api.godaddy.com/v1/commerce",
+  "endpoints": [
+    {
+      "operationId": "getOnboardingApplications",
+      "method": "GET",
+      "path": "/onboarding-applications",
+      "summary": "Get onboarding applications",
+      "description": "Returns a list of existing onboarding applications",
+      "parameters": [
+        {
+          "name": "businessId",
+          "in": "query",
+          "required": false,
+          "description": "Unique ID for the business",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "storeId",
+          "in": "query",
+          "required": false,
+          "description": "Unique ID for the store",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "List of onboarding applications",
+          "schema": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PagedList"
+              }
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "./models/Application.yaml"
+                }
+              }
+            }
+          }
+        }
+      },
+      "scopes": ["commerce.onboarding:read", "commerce.onboarding:write"]
+    },
+    {
+      "operationId": "createApplication",
+      "method": "POST",
+      "path": "/onboarding-applications",
+      "summary": "Create an onboarding application",
+      "description": "Creates an application and start the onboarding process",
+      "parameters": [
+        {
+          "name": "mock",
+          "in": "query",
+          "required": false,
+          "description": "Test account",
+          "schema": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        {
+          "name": "onboard",
+          "in": "query",
+          "required": false,
+          "description": "When false, the application will be created without processing",
+          "schema": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "contentType": "application/json",
+        "schema": {
+          "$ref": "./models/Application.yaml"
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Onboarding Application has been created successfully",
+          "schema": {
+            "$ref": "./models/Application.yaml"
+          }
+        },
+        "400": {
+          "description": "See #/components/responses/badRequest"
+        }
+      },
+      "scopes": ["commerce.onboarding:write"]
+    },
+    {
+      "operationId": "getOnboardingApplication",
+      "method": "GET",
+      "path": "/onboarding-applications/{onboardingApplicationId}",
+      "summary": "Get an onboarding application",
+      "description": "Returns an onboarding application by id",
+      "parameters": [
+        {
+          "name": "onboardingApplicationId",
+          "in": "path",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Found onboarding application",
+          "schema": {
+            "allOf": [
+              {
+                "$ref": "./models/Application.yaml"
+              }
+            ],
+            "properties": {
+              "links": {
+                "type": "array",
+                "description": "An array of error-related HATEOAS links.",
+                "readOnly": true,
+                "items": {
+                  "$ref": "./common-types/link-description.json"
+                }
+              }
+            }
+          }
+        },
+        "404": {
+          "description": "See #/components/responses/notFound"
+        }
+      },
+      "scopes": ["commerce.onboarding:read", "commerce.onboarding:write"]
+    },
+    {
+      "operationId": "patchOnboardingApplication",
+      "method": "PATCH",
+      "path": "/onboarding-applications/{onboardingApplicationId}",
+      "summary": "Patch an onboarding application",
+      "description": "Updates an application by id",
+      "parameters": [
+        {
+          "name": "onboardingApplicationId",
+          "in": "path",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "contentType": "application/json",
+        "schema": {
+          "$ref": "./common-types/patch-request.json"
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Updated onboarding application",
+          "schema": {
+            "$ref": "./models/Application.yaml"
+          }
+        },
+        "400": {
+          "description": "See #/components/responses/badRequest"
+        },
+        "404": {
+          "description": "See #/components/responses/notFound"
+        }
+      },
+      "scopes": ["commerce.onboarding:write"]
+    },
+    {
+      "operationId": "patchOnboardingApplication",
+      "method": "POST",
+      "path": "/onboarding-applications/{onboardingApplicationId}/onboard",
+      "summary": "Start onboarding a merchant",
+      "description": "Start the onboarding process for an existing application",
+      "parameters": [
+        {
+          "name": "onboardingApplicationId",
+          "in": "path",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Onboarded an existing onboarding application",
+          "schema": {
+            "$ref": "./models/Application.yaml"
+          }
+        },
+        "400": {
+          "description": "See #/components/responses/badRequest"
+        },
+        "404": {
+          "description": "See #/components/responses/notFound"
+        }
+      },
+      "scopes": ["commerce.onboarding:write"]
+    }
+  ]
+}

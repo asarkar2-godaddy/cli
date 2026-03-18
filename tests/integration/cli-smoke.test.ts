@@ -98,18 +98,32 @@ describe("CLI Smoke Tests", () => {
     };
     expect(payload.ok).toBe(true);
     expect(payload.command).toBe("godaddy api list");
-    expect(
-      payload.result.domains.some(
-        (domain) => domain.name === "location-addresses",
-      ),
-    ).toBe(true);
+    const expectedDomains = [
+      "location-addresses",
+      "catalog-products",
+      "orders",
+      "stores",
+      "fulfillments",
+      "metafields",
+      "transactions",
+      "businesses",
+      "bulk-operations",
+      "channels",
+      "onboarding",
+    ];
+
+    for (const expectedDomain of expectedDomains) {
+      expect(
+        payload.result.domains.some((domain) => domain.name === expectedDomain),
+      ).toBe(true);
+    }
   });
 
   it("api describe returns endpoint details", () => {
     const result = runCli([
       "api",
       "describe",
-      "commerce.location.verify-address",
+      "/location/address-verifications",
     ]);
     expect(result.status).toBe(0);
 

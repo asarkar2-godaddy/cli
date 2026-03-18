@@ -71,6 +71,128 @@ function redactSensitiveBodyFields(body: string): string {
   }
 }
 
+const MAX_ERROR_BODY_CHARS = 4000;
+const MAX_ERROR_SUMMARY_CHARS = 240;
+const MAX_ERROR_DEPTH = 6;
+const MAX_ERROR_ARRAY_ITEMS = 40;
+const MAX_ERROR_OBJECT_KEYS = 80;
+
+function truncateString(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, maxChars)}…`;
+}
+
+function sanitizeErrorValue(value: unknown, depth = 0): unknown {
+  if (depth > MAX_ERROR_DEPTH) {
+    return "[TRUNCATED_DEPTH]";
+  }
+
+  if (typeof value === "string") {
+    return truncateString(value, MAX_ERROR_BODY_CHARS);
+  }
+
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    value === null ||
+    value === undefined
+  ) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    const limited = value
+      .slice(0, MAX_ERROR_ARRAY_ITEMS)
+      .map((item) => sanitizeErrorValue(item, depth + 1));
+
+    if (value.length > MAX_ERROR_ARRAY_ITEMS) {
+      limited.push({
+        truncated: true,
+        omitted_items: value.length - MAX_ERROR_ARRAY_ITEMS,
+      });
+    }
+
+    return limited;
+  }
+
+  if (typeof value === "object") {
+    const sanitized: Record<string, unknown> = {};
+    const entries = Object.entries(value);
+    const limitedEntries = entries.slice(0, MAX_ERROR_OBJECT_KEYS);
+
+    for (const [key, entry] of limitedEntries) {
+      sanitized[key] = isSensitiveHeader(key)
+        ? "[REDACTED]"
+        : sanitizeErrorValue(entry, depth + 1);
+    }
+
+    if (entries.length > MAX_ERROR_OBJECT_KEYS) {
+      sanitized.__truncated_keys__ = entries.length - MAX_ERROR_OBJECT_KEYS;
+    }
+
+    return sanitized;
+  }
+
+  return String(value);
+}
+
+function summarizeApiErrorBody(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    return truncateString(trimmed, MAX_ERROR_SUMMARY_CHARS);
+  }
+
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const candidates = [
+    record.message,
+    record.error,
+    record.detail,
+    record.title,
+    record.code,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return truncateString(candidate.trim(), MAX_ERROR_SUMMARY_CHARS);
+    }
+  }
+
+  const fields = record.fields;
+  if (Array.isArray(fields) && fields.length > 0) {
+    const first = fields[0];
+    if (typeof first === "object" && first !== null) {
+      const firstRecord = first as Record<string, unknown>;
+      const fieldPath =
+        typeof firstRecord.path === "string" ? firstRecord.path : "field";
+      const fieldMessage =
+        typeof firstRecord.message === "string"
+          ? firstRecord.message
+          : "validation failed";
+      return truncateString(
+        `${fieldPath}: ${fieldMessage}`,
+        MAX_ERROR_SUMMARY_CHARS,
+      );
+    }
+  }
+
+  return undefined;
+}
+
+function responseRequestId(
+  headers: Record<string, string>,
+): string | undefined {
+  return (
+    headers["godaddy-request-id"] ||
+    headers["x-request-id"] ||
+    headers["x-amzn-requestid"]
+  );
+}
+
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export interface ApiRequestOptions {
@@ -395,12 +517,22 @@ export function apiRequestEffect(
 
     // Check for error status codes
     if (!response.ok) {
-      // Internal message includes the raw server payload for debugging;
-      // userMessage is a safe, generic description shown to users/agents.
+      const safeErrorBody = sanitizeErrorValue(data);
+      const summary = summarizeApiErrorBody(safeErrorBody);
+      const requestId = responseRequestId(responseHeaders);
       const internalDetail =
-        typeof data === "object" && data !== null
-          ? JSON.stringify(data)
-          : String(data || response.statusText);
+        typeof safeErrorBody === "string"
+          ? safeErrorBody
+          : JSON.stringify(safeErrorBody);
+
+      const context = {
+        status: response.status,
+        statusText: response.statusText,
+        endpoint,
+        method,
+        requestId,
+        responseBody: safeErrorBody,
+      };
 
       // Handle 401 Unauthorized specifically - token may be revoked or invalid
       if (response.status === 401) {
@@ -409,6 +541,7 @@ export function apiRequestEffect(
             message: `Authentication failed (401): ${internalDetail}`,
             userMessage:
               "Your session has expired or is invalid. Run 'godaddy auth login' to re-authenticate.",
+            ...context,
           }),
         );
       }
@@ -420,14 +553,23 @@ export function apiRequestEffect(
             message: `Access denied (403): ${internalDetail}`,
             userMessage:
               "You don't have permission to access this resource. Check your account permissions.",
+            ...context,
           }),
         );
       }
 
+      const userMessage =
+        response.status >= 400 && response.status < 500
+          ? summary
+            ? `API request rejected (${response.status}): ${summary}`
+            : `API request rejected with status ${response.status}: ${response.statusText}`
+          : `API request failed with status ${response.status}: ${response.statusText}`;
+
       return yield* Effect.fail(
         new NetworkError({
           message: `API error (${response.status}): ${internalDetail}`,
-          userMessage: `API request failed with status ${response.status}: ${response.statusText}`,
+          userMessage,
+          ...context,
         }),
       );
     }

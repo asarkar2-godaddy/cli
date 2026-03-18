@@ -19,7 +19,7 @@ import {
   type CatalogDomain,
   type CatalogEndpoint,
   findEndpointByAnyMethodEffect,
-  findEndpointByOperationIdEffect,
+  findEndpointByPathEffect,
   listDomainsEffect,
   loadDomainEffect,
   searchEndpointsEffect,
@@ -49,8 +49,7 @@ const apiGroupActions: NextAction[] = [
     description: "Describe an API endpoint's schema and parameters",
     params: {
       endpoint: {
-        description:
-          "Operation ID or path (e.g. commerce.location.verify-address or /location/addresses)",
+        description: "API path (e.g. /location/addresses)",
         required: true,
       },
     },
@@ -68,7 +67,7 @@ const apiGroupActions: NextAction[] = [
     params: {
       endpoint: {
         description:
-          "Relative API endpoint (e.g. /v1/commerce/location/addresses)",
+          "Relative API endpoint path (e.g. /v1/commerce/location/addresses)",
         required: true,
       },
     },
@@ -87,7 +86,7 @@ function describeNextActions(
   );
   const callParams: NonNullable<NextAction["params"]> = {
     endpoint: {
-      description: "Relative API endpoint",
+      description: "Relative API endpoint path",
       value: fullPath,
       required: true,
     },
@@ -126,8 +125,8 @@ function describeNextActions(
       description: `Describe ${next.summary}`,
       params: {
         endpoint: {
-          description: "Operation ID or path",
-          value: next.operationId,
+          description: "API path",
+          value: next.path,
           required: true,
         },
       },
@@ -160,16 +159,16 @@ function listNextActions(firstDomain?: string): NextAction[] {
   ];
 }
 
-function searchNextActions(firstOperationId?: string): NextAction[] {
+function searchNextActions(firstPath?: string): NextAction[] {
   const actions: NextAction[] = [];
-  if (firstOperationId) {
+  if (firstPath) {
     actions.push({
       command: "godaddy api describe <endpoint>",
       description: "Describe this endpoint",
       params: {
         endpoint: {
-          description: "Operation ID or path",
-          value: firstOperationId,
+          description: "API path",
+          value: firstPath,
           required: true,
         },
       },
@@ -189,7 +188,7 @@ function callNextActions(): NextAction[] {
       description: "Call another API endpoint",
       params: {
         endpoint: {
-          description: "Relative API endpoint (e.g. /v1/domains)",
+          description: "Relative API endpoint path (e.g. /v1/domains)",
           required: true,
         },
       },
@@ -285,6 +284,42 @@ function tokenHasScopes(token: string, required: string[]): boolean {
   return required.every((s) => granted.has(s));
 }
 
+function isHttpMethod(value: string): value is HttpMethod {
+  return VALID_METHODS.includes(value as HttpMethod);
+}
+
+function stripApiHost(endpoint: string): string {
+  return endpoint.replace(/^https:\/\/api\.godaddy\.com/i, "");
+}
+
+function normalizeRelativeEndpoint(endpoint: string): string {
+  const stripped = stripApiHost(endpoint.trim());
+  if (stripped.length === 0) return "/";
+  return stripped.startsWith("/") ? stripped : `/${stripped}`;
+}
+
+function catalogPathCandidates(endpoint: string): string[] {
+  const relative = normalizeRelativeEndpoint(endpoint);
+  const candidates = [relative];
+
+  const commercePrefixMatch = relative.match(/^\/v\d+\/commerce(\/.*)$/i);
+  if (commercePrefixMatch?.[1]) {
+    candidates.push(commercePrefixMatch[1]);
+  }
+
+  return [...new Set(candidates)];
+}
+
+function buildCallEndpoint(
+  domain: CatalogDomain,
+  endpoint: CatalogEndpoint,
+): string {
+  return `${domain.baseUrl}${endpoint.path}`.replace(
+    /^https:\/\/api\.godaddy\.com/i,
+    "",
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Subcommand: api list
 // ---------------------------------------------------------------------------
@@ -350,8 +385,8 @@ const apiList = Command.make(
                   description: `Describe ${endpointSummaries[0].summary}`,
                   params: {
                     endpoint: {
-                      description: "Operation ID or path",
-                      value: endpointSummaries[0].operationId,
+                      description: "API path",
+                      value: endpointSummaries[0].path,
                       required: true,
                     },
                   },
@@ -398,26 +433,32 @@ const apiDescribe = Command.make(
   "describe",
   {
     endpoint: Args.text({ name: "endpoint" }).pipe(
-      Args.withDescription(
-        "Operation ID (e.g. commerce.location.verify-address) or path (e.g. /location/addresses)",
-      ),
+      Args.withDescription("API path (e.g. /location/addresses)"),
     ),
   },
   ({ endpoint }) =>
     Effect.gen(function* () {
       const writer = yield* EnvelopeWriter;
 
-      // Try to find by operation ID first, then by path
-      let result = yield* findEndpointByOperationIdEffect(endpoint);
+      const pathCandidates = catalogPathCandidates(endpoint);
 
-      if (Option.isNone(result)) {
-        // Try as a path, testing all HTTP methods
-        result = yield* findEndpointByAnyMethodEffect(endpoint);
+      // Try exact path lookup first
+      let result: Option.Option<{
+        domain: CatalogDomain;
+        endpoint: CatalogEndpoint;
+      }> = Option.none();
+
+      for (const candidatePath of pathCandidates) {
+        const exactMatch = yield* findEndpointByAnyMethodEffect(candidatePath);
+        if (Option.isSome(exactMatch)) {
+          result = exactMatch;
+          break;
+        }
       }
 
       // Fallback: fuzzy search
       if (Option.isNone(result)) {
-        const searchResults = yield* searchEndpointsEffect(endpoint);
+        const searchResults = yield* searchEndpointsEffect(pathCandidates[0]);
 
         if (searchResults.length === 1) {
           result = Option.some(searchResults[0]);
@@ -441,8 +482,8 @@ const apiDescribe = Command.make(
               description: `${m.method} ${m.path} — ${m.summary}`,
               params: {
                 endpoint: {
-                  description: "Operation ID or path",
-                  value: m.operationId,
+                  description: "API path",
+                  value: m.path,
                   required: true,
                 },
               },
@@ -511,7 +552,7 @@ const apiSearch = Command.make(
   {
     query: Args.text({ name: "query" }).pipe(
       Args.withDescription(
-        "Search term (matches operation ID, summary, description, path)",
+        "Search term (matches path, summary, and description)",
       ),
     ),
   },
@@ -541,7 +582,7 @@ const apiSearch = Command.make(
           truncated: truncated.metadata.truncated,
           full_output: truncated.metadata.full_output,
         },
-        searchNextActions(items[0]?.operationId),
+        searchNextActions(items[0]?.path),
       );
     }),
 ).pipe(Command.withDescription("Search for API endpoints by keyword"));
@@ -555,13 +596,13 @@ const apiCall = Command.make(
   {
     endpoint: Args.text({ name: "endpoint" }).pipe(
       Args.withDescription(
-        "API endpoint (for example: /v1/commerce/location/addresses)",
+        "API endpoint path (for example: /v1/commerce/location/addresses)",
       ),
     ),
     method: Options.text("method").pipe(
       Options.withAlias("X"),
       Options.withDescription("HTTP method (GET, POST, PUT, PATCH, DELETE)"),
-      Options.withDefault("GET"),
+      Options.optional,
     ),
     field: Options.text("field").pipe(
       Options.withAlias("f"),
@@ -601,18 +642,67 @@ const apiCall = Command.make(
     Effect.gen(function* () {
       const writer = yield* EnvelopeWriter;
       const cliConfig = yield* CliConfig;
-      const methodInput = config.method.toUpperCase();
 
-      if (!VALID_METHODS.includes(methodInput as HttpMethod)) {
+      const methodInput = Option.getOrElse(
+        config.method,
+        () => "GET",
+      ).toUpperCase();
+      if (!isHttpMethod(methodInput)) {
         return yield* Effect.fail(
           new ValidationError({
-            message: `Invalid HTTP method: ${config.method}`,
+            message: `Invalid HTTP method: ${methodInput}`,
             userMessage: `Method must be one of: ${VALID_METHODS.join(", ")}`,
           }),
         );
       }
 
-      const method = methodInput as HttpMethod;
+      const methodProvided = Option.isSome(config.method);
+      let method: HttpMethod = methodInput;
+      let resolvedEndpoint = config.endpoint;
+
+      let catalogMatch:
+        | { domain: CatalogDomain; endpoint: CatalogEndpoint }
+        | undefined;
+
+      const pathCandidates = catalogPathCandidates(config.endpoint);
+      if (methodProvided) {
+        for (const candidatePath of pathCandidates) {
+          const byPath = yield* findEndpointByPathEffect(method, candidatePath);
+          if (Option.isSome(byPath)) {
+            catalogMatch = byPath.value;
+            break;
+          }
+        }
+      } else {
+        for (const candidatePath of pathCandidates) {
+          const byAnyMethod =
+            yield* findEndpointByAnyMethodEffect(candidatePath);
+          if (Option.isSome(byAnyMethod)) {
+            catalogMatch = byAnyMethod.value;
+            break;
+          }
+        }
+      }
+
+      if (catalogMatch) {
+        resolvedEndpoint = buildCallEndpoint(
+          catalogMatch.domain,
+          catalogMatch.endpoint,
+        );
+
+        if (!methodProvided && isHttpMethod(catalogMatch.endpoint.method)) {
+          method = catalogMatch.endpoint.method;
+        }
+
+        if (cliConfig.verbosity >= 1) {
+          process.stderr.write(
+            `Resolved endpoint to ${catalogMatch.endpoint.method} ${resolvedEndpoint}\n`,
+          );
+        }
+      } else {
+        resolvedEndpoint = normalizeRelativeEndpoint(config.endpoint);
+      }
+
       const fields = yield* parseFieldsEffect(
         normalizeStringArray(config.field),
       );
@@ -626,15 +716,25 @@ const apiCall = Command.make(
         body = yield* readBodyFromFileEffect(filePath);
       }
 
-      const requiredScopes = config.scope.flatMap((s) =>
-        s
-          .split(/[\s,]+/)
-          .map((t) => t.trim())
-          .filter((t) => t.length > 0),
+      const requiredScopesSet = new Set(
+        config.scope.flatMap((scopeToken) =>
+          scopeToken
+            .split(/[\s,]+/)
+            .map((token) => token.trim())
+            .filter((token) => token.length > 0),
+        ),
       );
 
+      if (catalogMatch) {
+        for (const scope of catalogMatch.endpoint.scopes) {
+          requiredScopesSet.add(scope);
+        }
+      }
+
+      const requiredScopes = [...requiredScopesSet];
+
       const requestOpts = {
-        endpoint: config.endpoint,
+        endpoint: resolvedEndpoint,
         method,
         fields: Object.keys(fields).length > 0 ? fields : undefined,
         body,
@@ -725,12 +825,21 @@ const apiCall = Command.make(
       yield* writer.emitSuccess(
         "godaddy api call",
         {
-          endpoint: config.endpoint.startsWith("/")
-            ? config.endpoint
-            : `/${config.endpoint}`,
+          endpoint: resolvedEndpoint,
           method,
           status: response.status,
           status_text: response.statusText,
+          resolved:
+            catalogMatch === undefined
+              ? undefined
+              : {
+                  domain: catalogMatch.domain.name,
+                  path: catalogMatch.endpoint.path,
+                  method: catalogMatch.endpoint.method,
+                  scopes: catalogMatch.endpoint.scopes,
+                },
+          scopes_requested:
+            requiredScopes.length > 0 ? requiredScopes : undefined,
           headers: config.include
             ? sanitizeResponseHeaders(response.headers)
             : undefined,
@@ -768,8 +877,8 @@ const apiParent = Command.make("api", {}, () =>
           {
             command: "godaddy api describe <endpoint>",
             description:
-              "Show detailed schema information for an API endpoint (by operation ID or path)",
-            usage: "godaddy api describe <operationId-or-path>",
+              "Show detailed schema information for an API endpoint (by path)",
+            usage: "godaddy api describe <path>",
           },
           {
             command: "godaddy api search <query>",
@@ -778,7 +887,7 @@ const apiParent = Command.make("api", {}, () =>
           },
           {
             command: "godaddy api call <endpoint>",
-            description: "Make an authenticated API request",
+            description: "Make an authenticated API request (endpoint path)",
             usage:
               "godaddy api call <endpoint> [-X method] [-f field=value] [-F file] [-H header] [-q path] [-i] [-s scope]",
           },

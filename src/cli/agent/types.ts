@@ -27,6 +27,7 @@ export interface AgentErrorEnvelope {
   error: {
     message: string;
     code: string;
+    details?: Record<string, unknown>;
   };
   fix: string;
   next_actions: NextAction[];
