@@ -197,8 +197,10 @@ function extractGraphQLError(err: unknown): string {
 function safeGraphQLUserMessage(err: unknown): string {
   if (err instanceof ClientError) {
     const status = err.response.status;
-    if (status === 401 || status === 403)
+    if (status === 401)
       return "Authentication failed. Run 'godaddy auth login'.";
+    if (status === 403)
+      return "Access denied. You may not have permission for this operation in the current environment.";
     if (status === 404) return "The requested resource was not found.";
     if (status && status >= 500)
       return "The server encountered an error. Please try again later.";
